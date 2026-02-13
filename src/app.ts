@@ -3,7 +3,7 @@ import { pinoHttp } from 'pino-http';
 import { logger } from './logger.js';
 import { createRouter } from './routes.js';
 import { WriteLock } from './lock.js';
-import { errorToProblem, PROBLEM_JSON } from './errors.js';
+import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
 
 /**
  * Create and configure the Express app. Exported for testing.
@@ -32,13 +32,19 @@ export function createApp(): express.Application {
 
   app.use(createRouter(writeLock));
 
+  // Catch-all for unknown routes — return RFC 9457 JSON, not Express's default HTML
+  app.use((req: express.Request, res: express.Response) => {
+    res.status(404).contentType(PROBLEM_JSON).json(
+      problemDetail(404, 'Not Found', `Cannot ${req.method} ${req.path}`)
+    );
+  });
+
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (res.headersSent) return;
 
     const problem = errorToProblem(err);
     if (problem.status >= 500) {
-      const isNodeError = err instanceof Error;
-      const stack = isNodeError ? (err as Error).stack : undefined;
+      const stack = err instanceof Error ? err.stack : undefined;
       logger.error({ err, stack }, 'Unhandled error');
     }
 

@@ -10,7 +10,7 @@ export interface LockState {
 export class WriteLock {
   private state: LockState | null = null;
   private ttlMs: number;
-  private renewalTimer: ReturnType<typeof setTimeout> | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(ttlMs = DEFAULT_TTL_MS) {
     this.ttlMs = ttlMs;
@@ -81,16 +81,16 @@ export class WriteLock {
   private scheduleExpiry(): void {
     this.clearTimer();
     const remaining = this.state!.expiresAt - Date.now();
-    this.renewalTimer = setTimeout(() => {
-      this.renewalTimer = null;
+    this.expiryTimer = setTimeout(() => {
+      this.expiryTimer = null;
       this.state = null;
     }, Math.max(0, remaining));
   }
 
   private clearTimer(): void {
-    if (this.renewalTimer) {
-      clearTimeout(this.renewalTimer);
-      this.renewalTimer = null;
+    if (this.expiryTimer) {
+      clearTimeout(this.expiryTimer);
+      this.expiryTimer = null;
     }
   }
 }

@@ -37,7 +37,7 @@ describe('SF Project Service API', () => {
       const res = await request(app)
         .post('/project/init')
         .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.ok).toBe(true);
       expect(res.body.message).toContain('Project scaffolded');
@@ -67,9 +67,48 @@ describe('SF Project Service API', () => {
 
       expect(res.body.status).toBe(400);
     });
+
+    it('returns 400 when instanceUrl is not a valid URL', async () => {
+      const res = await request(app)
+        .post('/project/init')
+        .send({ accessToken: 'test-token', instanceUrl: 'not-a-url' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+      expect(res.body.detail).toContain('valid URL');
+    });
+
+    it('returns 409 when lock is held', async () => {
+      await request(app).post('/internal/lock').expect(200);
+
+      const res = await request(app)
+        .post('/project/init')
+        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
+        .expect(409);
+
+      expect(res.body).toMatchObject({ status: 409, title: 'Agent Active' });
+    });
   });
 
   describe('GET /project/tree', () => {
+    it('excludes .git, .sf, node_modules, and dotfiles', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
+      await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+      await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+      await fs.mkdir(path.join(tmpDir, 'node_modules'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, '.env'), 'secret');
+
+      const res = await request(app).get('/project/tree').expect(200);
+
+      const names = res.body.children?.map((c: { name: string }) => c.name) ?? [];
+      expect(names).toContain('force-app');
+      expect(names).not.toContain('.git');
+      expect(names).not.toContain('.sf');
+      expect(names).not.toContain('node_modules');
+      expect(names).not.toContain('.env');
+    });
+
     it('returns directory tree', async () => {
       await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
 
@@ -78,6 +117,15 @@ describe('SF Project Service API', () => {
       expect(res.body).toHaveProperty('name');
       expect(res.body).toHaveProperty('type', 'directory');
       expect(res.body).toHaveProperty('children');
+    });
+
+    it('returns 404 with RFC 9457 when project directory does not exist', async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+
+      const res = await request(app).get('/project/tree').expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 404 });
     });
   });
 
@@ -145,6 +193,30 @@ describe('SF Project Service API', () => {
       const stat = await fs.stat(path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Bar.cls'));
       expect(stat.isFile()).toBe(true);
     });
+
+    it('returns 400 when body is unparsable (wrong content type)', async () => {
+      const res = await request(app)
+        .put('/project/file')
+        .query({ path: 'force-app/main/default/classes/Foo.cls' })
+        .set('Content-Type', 'application/x-www-form-urlencoded')
+        .send('content=class Foo {}')
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('Request body');
+    });
+
+    it('returns 400 on path traversal', async () => {
+      const res = await request(app)
+        .put('/project/file')
+        .query({ path: '../../../etc/passwd' })
+        .set('Content-Type', 'text/plain')
+        .send('content')
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('Path escapes project root');
+    });
   });
 
   describe('DELETE /project/file', () => {
@@ -177,6 +249,30 @@ describe('SF Project Service API', () => {
 
       expect(res.body).toMatchObject({ status: 404, title: 'File Not Found' });
     });
+
+    it('returns 400 when target is a directory', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+
+      const res = await request(app)
+        .delete('/project/file')
+        .query({ path: 'force-app/main/default/classes' })
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('Not a file');
+    });
+
+    it('returns 400 on path traversal', async () => {
+      const res = await request(app)
+        .delete('/project/file')
+        .query({ path: '../../../etc/passwd' })
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('Path escapes project root');
+    });
   });
 
   describe('GET /project/events', () => {
@@ -196,6 +292,70 @@ describe('SF Project Service API', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toContain('text/event-stream');
       expect(res.headers['cache-control']).toBe('no-cache');
+    });
+
+    it('emits SSE events when files are written or deleted', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
+
+      const server = app.listen(0);
+      const port = (server.address() as { port: number }).port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      const events: Array<{ type: string; path: string }> = [];
+      const client = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(`${baseUrl}/project/events`, (res) => {
+          res.on('data', (chunk: Buffer) => {
+            const lines = chunk.toString().split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  events.push(JSON.parse(line.slice(6)));
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+          });
+          resolve(res);
+        });
+        req.on('error', reject);
+      });
+
+      // Give watcher time to attach
+      await new Promise((r) => setTimeout(r, 200));
+
+      // Use server for PUT/DELETE so watcher (same process) sees filesystem changes
+      await request(app)
+        .put('/project/file')
+        .query({ path: 'force-app/main/default/Test.cls' })
+        .set('Content-Type', 'text/plain')
+        .send('class Test {}')
+        .expect(200);
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      await request(app)
+        .delete('/project/file')
+        .query({ path: 'force-app/main/default/Test.cls' })
+        .expect(200);
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      (client as http.IncomingMessage).destroy();
+      server.close();
+
+      expect(events.some((e) => e.type === 'add' && e.path.includes('Test.cls'))).toBe(true);
+      expect(events.some((e) => e.type === 'unlink' && e.path.includes('Test.cls'))).toBe(true);
+    });
+  });
+
+  describe('Unknown routes', () => {
+    it('returns 404 with RFC 9457 JSON for nonexistent path', async () => {
+      const res = await request(app).get('/nonexistent').expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 404, title: 'Not Found' });
+      expect(res.body.detail).toContain('Cannot GET');
     });
   });
 

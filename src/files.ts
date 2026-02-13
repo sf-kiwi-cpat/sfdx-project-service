@@ -25,8 +25,16 @@ export function resolveProjectPath(queryPath: string): { absolute: string; relat
   return { absolute, relative };
 }
 
+/** Paths to exclude from the tree (matches chokidar watcher ignores). */
+const IGNORED_NAMES = new Set(['node_modules', '.git', '.sf']);
+
+function shouldIgnoreEntry(entryName: string): boolean {
+  return IGNORED_NAMES.has(entryName) || entryName.startsWith('.');
+}
+
 /**
  * Build a directory tree for the file explorer. Root is the project path.
+ * Excludes .git, .sf, node_modules, and dotfiles (matches watcher ignores).
  */
 export async function buildTree(rootPath?: string): Promise<TreeNode> {
   const projectPath = getProjectPath();
@@ -43,6 +51,8 @@ export async function buildTree(rootPath?: string): Promise<TreeNode> {
   const children: TreeNode[] = [];
 
   for (const entry of entries) {
+    if (shouldIgnoreEntry(entry.name)) continue;
+
     const fullPath = path.join(basePath, entry.name);
     const childRelative = path.relative(projectPath, fullPath);
 

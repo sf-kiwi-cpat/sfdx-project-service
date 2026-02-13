@@ -12,6 +12,14 @@ export function createRouter(writeLock: WriteLock): express.Router {
   // --- Project init ---
   router.post('/project/init', async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (writeLock.isHeld()) {
+        logger.warn({ path: req.path }, 'Init rejected: agent lock active');
+        res.status(409).contentType(PROBLEM_JSON).json(
+          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
+        );
+        return;
+      }
+
       const { accessToken, instanceUrl } = req.body as InitInput;
       if (!accessToken || !instanceUrl) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -20,10 +28,19 @@ export function createRouter(writeLock: WriteLock): express.Router {
         return;
       }
 
+      try {
+        new URL(instanceUrl);
+      } catch {
+        res.status(400).contentType(PROBLEM_JSON).json(
+          problemDetail(400, 'Bad Request', 'instanceUrl must be a valid URL')
+        );
+        return;
+      }
+
       await scaffoldProject();
       await connectOrg({ accessToken, instanceUrl });
 
-      res.status(200).json({ ok: true, message: 'Project scaffolded and org connected' });
+      res.status(201).json({ ok: true, message: 'Project scaffolded and org connected' });
     } catch (err) {
       next(err);
     }
@@ -76,8 +93,15 @@ export function createRouter(writeLock: WriteLock): express.Router {
         return;
       }
 
-      const content = typeof req.body === 'string' ? req.body : req.body?.content ?? '';
-      await writeFile(pathParam, content);
+      const content = typeof req.body === 'string' ? req.body : req.body?.content;
+      if (content === undefined || content === null) {
+        res.status(400).contentType(PROBLEM_JSON).json(
+          problemDetail(400, 'Bad Request', 'Request body must be text/plain, application/json with content field, or application/octet-stream')
+        );
+        return;
+      }
+
+      await writeFile(pathParam, String(content));
       res.status(200).json({ ok: true });
     } catch (err) {
       next(err);
