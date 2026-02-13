@@ -39,8 +39,8 @@ Read every `.ts` file in `src/`. For a service this size (< 500 lines of applica
 
 Recommended reading order:
 1. `config.ts` — understand how project root is determined
-2. `errors.ts` — understand the error mapping strategy
-3. `files.ts` — core file operations, path resolution, tree building
+2. `errors.ts` — typed error classes (`RestrictedPathError`, `PathTraversalError`, `FileNotFoundError`, `NotAFileError`) and the `errorToProblem()` mapping that converts them to RFC 9457 responses via `instanceof` checks
+3. `files.ts` — core file operations, path resolution (`resolveProjectPath`), restricted-path filtering (`isRestrictedPath`), tree building (`buildTree`). Verify that `isRestrictedPath` checks every segment (not just the first) and that `shouldIgnoreEntry` is shared between `isRestrictedPath` and `buildTree`.
 4. `lock.ts` — write lock mechanism
 5. `project.ts` — project scaffolding and org connection
 6. `events.ts` — filesystem watcher
@@ -61,6 +61,8 @@ For each endpoint in the spec's API Surface table, verify in `routes.ts`:
 | Write lock | Write endpoints (PUT, DELETE, POST /project/init) check `writeLock.isHeld()` |
 | Error format | All error responses use `application/problem+json` with `status`, `title`, `detail` |
 | Path traversal | File endpoints validate paths via `resolveProjectPath` |
+| Restricted paths | `resolveProjectPath` → `isRestrictedPath` blocks `.sf/`, `.git/`, `node_modules/`, and dotfiles at *every* path segment, not just the first. Verify `segments.some()` pattern. |
+| Error class mapping | `files.ts` throws typed error classes from `errors.ts`; `errorToProblem()` uses `instanceof` (not string matching). Adding a new error class that isn't handled should be caught at review time. |
 
 Cross-cutting concerns to verify:
 - Unknown routes return RFC 9457 JSON (not Express's default HTML 404)
@@ -137,6 +139,19 @@ mkdir -p /tmp/sf-qa-project/force-app/main/default/classes
 echo 'class Foo {}' > /tmp/sf-qa-project/force-app/main/default/classes/Foo.cls
 echo '{"packageDirectories":[{"path":"force-app","default":true}]}' > /tmp/sf-qa-project/sfdx-project.json
 
+# Create sensitive directories (for restricted-path testing)
+mkdir -p /tmp/sf-qa-project/.sf /tmp/sf-qa-project/.git
+echo '{"accessToken":"secret"}' > /tmp/sf-qa-project/.sf/auth.json
+echo '[core]' > /tmp/sf-qa-project/.git/config
+echo 'SECRET=abc' > /tmp/sf-qa-project/.env
+
+# Create nested sensitive directories (for nested restricted-path testing)
+mkdir -p /tmp/sf-qa-project/force-app/.git /tmp/sf-qa-project/force-app/.hidden
+mkdir -p /tmp/sf-qa-project/force-app/node_modules
+echo 'nested git' > /tmp/sf-qa-project/force-app/.git/config
+echo 'nested secret' > /tmp/sf-qa-project/force-app/.hidden/secret.txt
+echo 'nested nm' > /tmp/sf-qa-project/force-app/node_modules/pkg.js
+
 # Build and start the server
 npm run build
 PROJECT_ROOT=/tmp/sf-qa-project node dist/index.js &
@@ -180,6 +195,10 @@ Work through every row in this matrix. For each test, verify the HTTP status cod
 | 16 | Absolute path | `?path=/etc/passwd` | 400, RFC 9457 |
 | 17 | Path is a directory | `?path=force-app/main/default/classes` | 400, RFC 9457, `"Not a file"` |
 | 18 | While lock is held | Acquire lock, then GET file | 200 — reads are not blocked |
+| 18a | Restricted path (top-level) | `?path=.sf/auth.json` | 400, RFC 9457, `"Access to this path is restricted"` |
+| 18b | Restricted path (nested) | `?path=force-app/.git/config` | 400, RFC 9457, `"Access to this path is restricted"` |
+| 18c | Restricted path (dotfile) | `?path=force-app/.hidden/secret.txt` | 400, RFC 9457 |
+| 18d | Restricted path (node_modules) | `?path=force-app/node_modules/pkg.js` | 400, RFC 9457 |
 
 #### PUT /project/file
 
@@ -190,6 +209,8 @@ Work through every row in this matrix. For each test, verify the HTTP status cod
 | 21 | Auto-create parent dirs | PUT to `force-app/main/default/triggers/X.trigger` (triggers/ doesn't exist) | 200, parent dirs created |
 | 22 | Missing path param | No `?path=` | 400, RFC 9457 |
 | 23 | Path traversal | `?path=../../etc/malicious` | 400, RFC 9457 |
+| 23a | Restricted path (top-level) | `-X PUT -H "Content-Type: text/plain" -d 'x' ?path=.sf/auth.json` | 400, RFC 9457, `"Access to this path is restricted"` |
+| 23b | Restricted path (nested) | `-X PUT -H "Content-Type: text/plain" -d 'x' ?path=force-app/.sf/evil.json` | 400, RFC 9457 |
 | 24 | While lock is held | Acquire lock, then PUT | 409, RFC 9457, `"Agent Active"` |
 | 25 | Wrong content type | `-d 'content'` without `-H "Content-Type: text/plain"` | Should not silently write empty file — check what happens |
 | 26 | Empty body | PUT with no body | Check behavior — should it be an error or create empty file? |
@@ -203,6 +224,8 @@ Work through every row in this matrix. For each test, verify the HTTP status cod
 | 29 | File not found | DELETE on nonexistent path | 404, RFC 9457 |
 | 30 | Missing path param | No `?path=` | 400, RFC 9457 |
 | 31 | Path traversal | `?path=../../../etc/passwd` | 400, RFC 9457 |
+| 31a | Restricted path (top-level) | `-X DELETE ?path=.sf/auth.json` | 400, RFC 9457, `"Access to this path is restricted"` |
+| 31b | Restricted path (nested) | `-X DELETE ?path=force-app/node_modules/pkg.js` | 400, RFC 9457 |
 | 32 | Target is a directory | `?path=force-app/main/default/classes` | 400, RFC 9457, `"Not a file"` |
 | 33 | While lock is held | Acquire lock, then DELETE | 409, RFC 9457 |
 
@@ -287,6 +310,8 @@ These checks are specific to this service's trust model and deployment context.
 | Check | How to verify |
 |:---|:---|
 | Path traversal blocked on all file endpoints | Tested in Phase 4 (tests 14-16, 23, 31) |
+| Restricted paths blocked at all depths | Tested in Phase 4 (tests 18a-18d, 23a-23b, 31a-31b). Verify both top-level (`.sf/auth.json`) and nested (`force-app/.git/config`) paths return 400. |
+| Tree and file endpoint filtering are consistent | Paths hidden from `/project/tree` must also be blocked by `/project/file` GET/PUT/DELETE. Verify by creating nested `.git/`, `.sf/`, `node_modules/`, and dotfile directories inside `force-app/`, then checking tree excludes them AND file endpoints return 400. |
 | Auth tokens not exposed via tree/file read | GET /project/tree should not include `.sf/` directory; GET /project/file should not serve `.sf/` contents |
 | Auth tokens not logged | Search `routes.ts`, `project.ts` for any logging of `accessToken` or `instanceUrl`. Check pino-http serializer doesn't log request bodies. |
 | No customer data in logs | Review `logger.ts` and all `logger.*()` calls — they should log paths/shapes, not contents |
