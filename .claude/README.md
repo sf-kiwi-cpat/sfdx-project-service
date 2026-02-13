@@ -4,75 +4,151 @@ This directory contains specialized agents for this project. Each agent encapsul
 
 ## Available Agents
 
-### code-review-bot
+### code-review
 
-**Purpose:** Systematic code review against the spec and test plan
+**Purpose:** Static code analysis for code quality and maintainability
+
+**Focus Areas:**
+- Readability and naming
+- Maintainability and abstractions
+- Type safety and error handling patterns
+- Code smells and duplication
+- Consistency with project patterns
+- Security code patterns (from a structural perspective)
 
 **When to use:**
-- After completing a feature or bug fix
-- After addressing previous review feedback
-- Before merging changes to main
-- When you want to verify security posture
+- After making code changes that affect structure or patterns
+- Before merging to verify code quality
+- To get feedback on abstractions and organization
+- When refactoring or adding new features
+
+**What it does NOT do:**
+- Does not test runtime behavior
+- Does not run curl commands or manual tests
+- Does not verify spec compliance (that's QA's job)
 
 **How to invoke:**
 
-For the first review of new code:
 ```
-Please perform a full code review of the current state of the codebase
-using the code-review-bot agent.
+Please use the code-review agent to analyze my recent code changes
+for code quality and maintainability.
 ```
-
-For incremental review after addressing feedback:
-```
-I've addressed the findings in feedback-3.md. Please use the code-review-bot
-agent to re-review my changes and verify the fixes.
-```
-
-**What it does:**
-1. Reads the spec and prior feedback (if any)
-2. Runs automated checks (TypeScript, ESLint, tests, build)
-3. Analyzes source code for bugs, security issues, spec compliance
-4. Performs manual testing (full test plan or targeted spot-checks)
-5. Documents findings in `.agents/feedback-N.md`
-6. Never modifies your code—only provides feedback
 
 **Output:**
-- Feedback file at `.agents/feedback-N.md`
-- Summary with finding counts and priorities
-- Evidence-based findings with severity classification
+- Code review file at `.agents/code-review-N.md`
+- Feedback on: readability, maintainability, type safety, code smells, patterns
+- Branch: `u/code-review/review-N`
+
+---
+
+### quality-assurance
+
+**Purpose:** Behavioral validation through testing
+
+**Focus Areas:**
+- Running automated test suite
+- Manual testing against test plan
+- Spec compliance verification
+- Runtime security posture
+- Integration behavior
+- Error response validation
+
+**When to use:**
+- After completing a feature or bug fix
+- After addressing QA feedback
+- Before merging to verify behavior matches spec
+- To validate security posture through testing
+
+**What it does NOT do:**
+- Does not analyze code structure or quality
+- Does not comment on naming or abstractions
+- Does not suggest code improvements
+
+**How to invoke:**
+
+For the first QA run:
+```
+Please use the quality-assurance agent to verify the application
+behavior matches the spec. Run the full test plan.
+```
+
+For incremental QA after fixes:
+```
+I've addressed the issues in qa-report-2.md. Please use the
+quality-assurance agent to re-test and verify the fixes.
+```
+
+**Output:**
+- QA test report at `.agents/qa-report-N.md`
+- Summary of automated and manual test results
+- Security verification results
+- Branch: `u/qa/qa-report-N`
+
+---
+
+## Using Both Agents Together
+
+For comprehensive review of completed work, use both agents:
+
+```
+I've finished implementing the new feature. Please:
+
+1. Use the code-review agent to analyze code quality
+2. Use the quality-assurance agent to verify behavior matches the spec
+```
+
+**Typical workflow:**
+1. Developer implements feature
+2. **Code Review** → identifies code quality issues
+3. Developer improves code quality
+4. **QA** → validates behavior against spec
+5. Developer fixes behavioral issues
+6. **QA** → re-validates fixes
+7. Merge when both agents approve
 
 ## Agent Guidelines
 
 ### What Agents Do
 - Follow systematic, repeatable processes
 - Document findings without implementing fixes
-- Use the spec as the source of truth
+- Use the spec as the source of truth (QA) or context (Code Review)
 - Provide evidence-based analysis
 - Help developers learn through detailed feedback
+- Use topic branches for isolation
 
 ### What Agents Don't Do
 - Don't modify source code (unless explicitly instructed)
-- Don't guess or assume—they verify against spec and tests
-- Don't skip security checks
+- Don't guess or assume—they verify through analysis or testing
 - Don't provide vague feedback
+- Don't commit directly to main
 
 ## Creating New Agents
 
 To add a new agent for this project:
 
 1. Create `.claude/agents/your-agent-name.md`
-2. Start with a clear **Role** section
-3. Document the **Process** step-by-step
-4. Include **Decision Trees** for common choices
-5. Provide **Examples** from this project
-6. Add **Checklist** for completeness
-7. Update this README with usage instructions
+2. Start with a clear **Role** section (what the agent is)
+3. Define **Core Principles** (how it operates)
+4. Document the **Process** step-by-step
+5. Include **Decision Trees** for common choices
+6. Provide **Examples** from this project
+7. Add **Checklist** for completeness
+8. Update this README with usage instructions
 
 ## Project Context
 
 Key files agents should be aware of:
 - `.agents/sf-project-service-spec.md` — spec is source of truth
 - `.agents/q3-test-plan.md` — systematic QA process
-- `.agents/feedback-N.md` — review history
+- `.agents/code-review-N.md` — code quality review history
+- `.agents/qa-report-N.md` — behavioral testing history
 - `src/` — source code
 - `dist/` — compiled output
+
+## Branch Strategy
+
+All agents use topic branches for isolation:
+- Code Review: `u/code-review/review-N`
+- QA: `u/qa/qa-report-N`
+
+The human user is responsible for reviewing agent output and merging branches to main when appropriate.
