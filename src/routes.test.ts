@@ -178,6 +178,20 @@ describe('SF Project Service API', () => {
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toBe('Access to this path is restricted');
     });
+
+    it('returns 400 for nested restricted path force-app/.git/config', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', '.git'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'force-app', '.git', 'config'), '[core]');
+
+      const res = await request(app)
+        .get('/project/file')
+        .query({ path: 'force-app/.git/config' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toBe('Access to this path is restricted');
+    });
   });
 
   describe('PUT /project/file', () => {

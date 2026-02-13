@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getProjectPath } from './config.js';
+import { FileNotFoundError, NotAFileError, PathTraversalError, RestrictedPathError } from './errors.js';
 
 export interface TreeNode {
   name: string;
@@ -19,11 +20,11 @@ export function resolveProjectPath(queryPath: string): { absolute: string; relat
   const relative = path.relative(projectPath, absolute);
 
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Path escapes project root: ${queryPath}`);
+    throw new PathTraversalError(queryPath);
   }
 
   if (isRestrictedPath(relative)) {
-    throw new Error('Access to this path is restricted');
+    throw new RestrictedPathError();
   }
 
   return { absolute, relative };
@@ -36,11 +37,10 @@ function shouldIgnoreEntry(entryName: string): boolean {
   return IGNORED_NAMES.has(entryName) || entryName.startsWith('.');
 }
 
-/** Reject paths that resolve into .sf/, .git/, node_modules/, or dotfiles at the project root. */
+/** Reject paths that resolve into .sf/, .git/, node_modules/, or dotfiles at any level. */
 function isRestrictedPath(relative: string): boolean {
   const segments = relative.split(/[/\\]/).filter(Boolean);
-  const first = segments[0];
-  return first !== undefined && shouldIgnoreEntry(first);
+  return segments.some((seg) => shouldIgnoreEntry(seg));
 }
 
 /**
@@ -91,13 +91,13 @@ export async function readFile(queryPath: string): Promise<string> {
   try {
     const stat = await fs.stat(absolute);
     if (!stat.isFile()) {
-      throw new Error(`Not a file: ${queryPath}`);
+      throw new NotAFileError(queryPath);
     }
     return fs.readFile(absolute, 'utf-8');
   } catch (err) {
     const nodeErr = err as NodeJS.ErrnoException;
     if (nodeErr?.code === 'ENOENT') {
-      throw new Error(`No file exists at path '${queryPath}'`);
+      throw new FileNotFoundError(queryPath);
     }
     throw err;
   }
@@ -120,13 +120,13 @@ export async function deleteFile(queryPath: string): Promise<void> {
   try {
     const stat = await fs.stat(absolute);
     if (!stat.isFile()) {
-      throw new Error(`Not a file: ${queryPath}`);
+      throw new NotAFileError(queryPath);
     }
     await fs.unlink(absolute);
   } catch (err) {
     const nodeErr = err as NodeJS.ErrnoException;
     if (nodeErr?.code === 'ENOENT') {
-      throw new Error(`No file exists at path '${queryPath}'`);
+      throw new FileNotFoundError(queryPath);
     }
     throw err;
   }

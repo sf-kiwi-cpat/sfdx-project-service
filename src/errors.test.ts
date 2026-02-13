@@ -1,19 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { errorToProblem } from './errors.js';
+import {
+  errorToProblem,
+  FileNotFoundError,
+  NotAFileError,
+  PathTraversalError,
+  RestrictedPathError,
+} from './errors.js';
 
 describe('errorToProblem', () => {
-  it('maps path traversal to 400 Bad Request', () => {
-    const problem = errorToProblem(new Error('Path escapes project root: ../../../etc/passwd'));
-    expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
+  it('maps RestrictedPathError to 400 Bad Request', () => {
+    const problem = errorToProblem(new RestrictedPathError());
+    expect(problem).toMatchObject({ status: 400, title: 'Bad Request', detail: 'Access to this path is restricted' });
   });
 
-  it('maps "No file exists" to 404 File Not Found', () => {
-    const problem = errorToProblem(new Error("No file exists at path 'foo.cls'"));
+  it('maps PathTraversalError to 400 Bad Request', () => {
+    const problem = errorToProblem(new PathTraversalError('../../../etc/passwd'));
+    expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
+    expect(problem.detail).toContain('Path escapes project root');
+  });
+
+  it('maps FileNotFoundError to 404 File Not Found', () => {
+    const problem = errorToProblem(new FileNotFoundError('foo.cls'));
     expect(problem).toMatchObject({ status: 404, title: 'File Not Found' });
   });
 
-  it('maps "Not a file" to 400 Bad Request', () => {
-    const problem = errorToProblem(new Error('Not a file: force-app'));
+  it('maps NotAFileError to 400 Bad Request', () => {
+    const problem = errorToProblem(new NotAFileError('force-app'));
     expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
   });
 

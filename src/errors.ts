@@ -16,23 +16,53 @@ export function problemDetail(status: number, title: string, detail: string): Pr
 
 export const PROBLEM_JSON = 'application/problem+json';
 
+/** Thrown when a path resolves into .sf/, .git/, node_modules/, or dotfiles. */
+export class RestrictedPathError extends Error {
+  constructor() {
+    super('Access to this path is restricted');
+    this.name = 'RestrictedPathError';
+  }
+}
+
+/** Thrown when a path escapes the project root (path traversal). */
+export class PathTraversalError extends Error {
+  constructor(queryPath: string) {
+    super(`Path escapes project root: ${queryPath}`);
+    this.name = 'PathTraversalError';
+  }
+}
+
+/** Thrown when a file does not exist at the given path. */
+export class FileNotFoundError extends Error {
+  constructor(path: string) {
+    super(`No file exists at path '${path}'`);
+    this.name = 'FileNotFoundError';
+  }
+}
+
+/** Thrown when the path refers to a directory, not a file. */
+export class NotAFileError extends Error {
+  constructor(path: string) {
+    super(`Not a file: ${path}`);
+    this.name = 'NotAFileError';
+  }
+}
+
 /**
  * Map thrown errors to HTTP problem details.
  */
 export function errorToProblem(err: unknown): ProblemDetail {
-  if (err instanceof Error) {
-    if (err.message === 'Access to this path is restricted') {
-      return problemDetail(400, 'Bad Request', err.message);
-    }
-    if (err.message.startsWith('Path escapes project root')) {
-      return problemDetail(400, 'Bad Request', err.message);
-    }
-    if (err.message.startsWith('No file exists')) {
-      return problemDetail(404, 'File Not Found', err.message);
-    }
-    if (err.message.startsWith('Not a file:')) {
-      return problemDetail(400, 'Bad Request', err.message);
-    }
+  if (err instanceof RestrictedPathError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof PathTraversalError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof FileNotFoundError) {
+    return problemDetail(404, 'File Not Found', err.message);
+  }
+  if (err instanceof NotAFileError) {
+    return problemDetail(400, 'Bad Request', err.message);
   }
 
   const nodeErr = err as NodeJS.ErrnoException;

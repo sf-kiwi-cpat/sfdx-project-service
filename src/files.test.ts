@@ -37,6 +37,15 @@ describe('files', () => {
       expect(() => resolveProjectPath('node_modules/pkg/index.js')).toThrow('Access to this path is restricted');
       expect(() => resolveProjectPath('.env')).toThrow('Access to this path is restricted');
     });
+
+    it('rejects nested restricted paths at any depth', () => {
+      expect(() => resolveProjectPath('force-app/.git/config')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('force-app/node_modules/pkg/index.js')).toThrow(
+        'Access to this path is restricted'
+      );
+      expect(() => resolveProjectPath('force-app/.sf/evil.json')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('force-app/main/.eslintrc')).toThrow('Access to this path is restricted');
+    });
   });
 
   describe('buildTree', () => {
