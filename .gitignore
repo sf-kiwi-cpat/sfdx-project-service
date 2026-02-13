@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Runtime & logs
+*.log
+logs/
+.pino-pretty
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.vitest/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Salesforce / SFDX
+.sfdx/
+.sf/
+.salesforcerc
+*.sfdx
+force-app/
+sfdx-project.json
+
+# Claude Code (local settings)
+.claude/settings.local.json
+
+# Project-specific
+.cache/
+temp/
+tmp/

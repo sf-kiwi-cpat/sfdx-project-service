@@ -1,0 +1,235 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import request from 'supertest';
+import http from 'node:http';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { createApp } from './app.js';
+
+vi.mock('@salesforce/core', () => ({
+  AuthInfo: {
+    create: vi.fn().mockResolvedValue({
+      save: vi.fn().mockResolvedValue(undefined),
+      setAsDefault: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+describe('SF Project Service API', () => {
+  let tmpDir: string;
+  let originalProjectRoot: string | undefined;
+  let app: ReturnType<typeof createApp>;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-project-'));
+    originalProjectRoot = process.env.PROJECT_ROOT;
+    process.env.PROJECT_ROOT = tmpDir;
+    app = createApp();
+  });
+
+  afterEach(async () => {
+    process.env.PROJECT_ROOT = originalProjectRoot;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('POST /project/init', () => {
+    it('scaffolds project and connects org', async () => {
+      const res = await request(app)
+        .post('/project/init')
+        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
+        .expect(200);
+
+      expect(res.body.ok).toBe(true);
+      expect(res.body.message).toContain('Project scaffolded');
+
+      const projectJson = await fs.readFile(path.join(tmpDir, 'sfdx-project.json'), 'utf-8');
+      const config = JSON.parse(projectJson);
+      expect(config.packageDirectories).toBeDefined();
+      expect(config.sourceApiVersion).toBeDefined();
+    });
+
+    it('returns 400 when accessToken is missing', async () => {
+      const res = await request(app)
+        .post('/project/init')
+        .send({ instanceUrl: 'https://test.salesforce.com' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+      expect(res.body.title).toBe('Bad Request');
+    });
+
+    it('returns 400 when instanceUrl is missing', async () => {
+      const res = await request(app)
+        .post('/project/init')
+        .send({ accessToken: 'test-token' })
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+    });
+  });
+
+  describe('GET /project/tree', () => {
+    it('returns directory tree', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
+
+      const res = await request(app).get('/project/tree').expect(200);
+
+      expect(res.body).toHaveProperty('name');
+      expect(res.body).toHaveProperty('type', 'directory');
+      expect(res.body).toHaveProperty('children');
+    });
+  });
+
+  describe('GET /project/file', () => {
+    beforeEach(async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'),
+        'class Foo {}'
+      );
+    });
+
+    it('returns file contents', async () => {
+      const res = await request(app)
+        .get('/project/file')
+        .query({ path: 'force-app/main/default/classes/Foo.cls' })
+        .expect(200);
+
+      expect(res.text).toBe('class Foo {}');
+    });
+
+    it('returns 404 with RFC 9457 problem detail when file does not exist', async () => {
+      const res = await request(app)
+        .get('/project/file')
+        .query({ path: 'force-app/main/default/classes/Nonexistent.cls' })
+        .expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 404, title: 'File Not Found' });
+      expect(res.body.detail).toContain('No file exists');
+    });
+
+    it('returns 400 when path is missing', async () => {
+      const res = await request(app).get('/project/file').expect(400);
+      expect(res.body.status).toBe(400);
+    });
+  });
+
+  describe('PUT /project/file', () => {
+    it('creates file with content', async () => {
+      await request(app)
+        .put('/project/file')
+        .query({ path: 'force-app/main/default/classes/Foo.cls' })
+        .set('Content-Type', 'text/plain')
+        .send('class Foo {}')
+        .expect(200);
+
+      const content = await fs.readFile(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'),
+        'utf-8'
+      );
+      expect(content).toBe('class Foo {}');
+    });
+
+    it('creates parent directories', async () => {
+      await request(app)
+        .put('/project/file')
+        .query({ path: 'force-app/main/default/classes/Bar.cls' })
+        .set('Content-Type', 'text/plain')
+        .send('class Bar {}')
+        .expect(200);
+
+      const stat = await fs.stat(path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Bar.cls'));
+      expect(stat.isFile()).toBe(true);
+    });
+  });
+
+  describe('DELETE /project/file', () => {
+    beforeEach(async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'),
+        'class Foo {}'
+      );
+    });
+
+    it('deletes file', async () => {
+      await request(app)
+        .delete('/project/file')
+        .query({ path: 'force-app/main/default/classes/Foo.cls' })
+        .expect(200);
+
+      await expect(
+        fs.access(path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'))
+      ).rejects.toThrow();
+    });
+
+    it('returns 404 when file does not exist', async () => {
+      const res = await request(app)
+        .delete('/project/file')
+        .query({ path: 'force-app/main/default/classes/Nonexistent.cls' })
+        .expect(404);
+
+      expect(res.body).toMatchObject({ status: 404, title: 'File Not Found' });
+    });
+  });
+
+  describe('GET /project/events', () => {
+    it('returns SSE stream with correct headers', async () => {
+      const server = app.listen(0);
+      const port = (server.address() as { port: number }).port;
+
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:${port}/project/events`, (res) => {
+          resolve(res);
+          res.destroy();
+          server.close();
+        });
+        req.on('error', reject);
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      expect(res.headers['cache-control']).toBe('no-cache');
+    });
+  });
+
+  describe('Internal lock API', () => {
+    it('POST /internal/lock acquires lock and returns lockId', async () => {
+      const res = await request(app).post('/internal/lock').expect(200);
+      expect(res.body).toHaveProperty('lockId');
+    });
+
+    it('PATCH /internal/lock renews lock with valid lockId', async () => {
+      const acquireRes = await request(app).post('/internal/lock').expect(200);
+      const lockId = acquireRes.body.lockId;
+
+      await request(app).patch('/internal/lock').send({ lockId }).expect(200);
+    });
+
+    it('DELETE /internal/lock releases lock with valid lockId', async () => {
+      const acquireRes = await request(app).post('/internal/lock').expect(200);
+      const lockId = acquireRes.body.lockId;
+
+      await request(app).delete('/internal/lock').send({ lockId }).expect(200);
+    });
+
+    it('write operations return 409 when lock is held', async () => {
+      await request(app).post('/internal/lock').expect(200);
+
+      const res = await request(app)
+        .put('/project/file')
+        .query({ path: 'force-app/main/default/classes/Foo.cls' })
+        .set('Content-Type', 'text/plain')
+        .send('class Foo {}')
+        .expect(409);
+
+      expect(res.body).toMatchObject({ status: 409, title: 'Agent Active' });
+    });
+  });
+});

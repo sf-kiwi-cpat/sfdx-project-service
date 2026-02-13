@@ -1,0 +1,108 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { buildTree, readFile, writeFile, deleteFile, resolveProjectPath } from './files.js';
+
+describe('files', () => {
+  let tmpDir: string;
+  let originalProjectRoot: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-project-'));
+    originalProjectRoot = process.env.PROJECT_ROOT;
+    process.env.PROJECT_ROOT = tmpDir;
+    // Config is read at call time, so this takes effect for all file operations
+  });
+
+  afterEach(async () => {
+    process.env.PROJECT_ROOT = originalProjectRoot;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('resolveProjectPath', () => {
+    it('resolves relative path within project', () => {
+      const { absolute, relative } = resolveProjectPath('force-app/main/default/classes/Foo.cls');
+      expect(absolute).toContain(tmpDir);
+      expect(relative).toBe('force-app/main/default/classes/Foo.cls');
+    });
+
+    it('rejects path traversal', () => {
+      expect(() => resolveProjectPath('../../../etc/passwd')).toThrow('Path escapes project root');
+    });
+  });
+
+  describe('buildTree', () => {
+    it('returns tree structure for empty directory', async () => {
+      const tree = await buildTree();
+      expect(tree.name).toBeDefined();
+      expect(tree.type).toBe('directory');
+      expect(tree.children).toEqual([]);
+    });
+
+    it('returns tree with files and directories', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'force-app', 'main', 'default', 'Foo.cls'), 'class Foo {}');
+      await fs.writeFile(path.join(tmpDir, 'sfdx-project.json'), '{}');
+
+      const tree = await buildTree();
+      expect(tree.children).toBeDefined();
+      const names = tree.children!.map((c) => c.name);
+      expect(names).toContain('force-app');
+      expect(names).toContain('sfdx-project.json');
+    });
+  });
+
+  describe('readFile', () => {
+    it('reads file contents', async () => {
+      const filePath = 'force-app/main/default/classes/Foo.cls';
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+      await fs.writeFile(path.join(tmpDir, filePath), 'class Foo {}');
+
+      const content = await readFile(filePath);
+      expect(content).toBe('class Foo {}');
+    });
+
+    it('throws when file does not exist', async () => {
+      await expect(readFile('nonexistent.cls')).rejects.toThrow('No file exists at path');
+    });
+  });
+
+  describe('writeFile', () => {
+    it('creates file with content', async () => {
+      const filePath = 'force-app/main/default/classes/Foo.cls';
+      await writeFile(filePath, 'class Foo {}');
+
+      const content = await fs.readFile(path.join(tmpDir, filePath), 'utf-8');
+      expect(content).toBe('class Foo {}');
+    });
+
+    it('auto-creates parent directories', async () => {
+      const filePath = 'force-app/main/default/classes/Bar.cls';
+      await writeFile(filePath, 'class Bar {}');
+
+      const stat = await fs.stat(path.join(tmpDir, filePath));
+      expect(stat.isFile()).toBe(true);
+    });
+  });
+
+  describe('deleteFile', () => {
+    it('deletes existing file', async () => {
+      const filePath = 'force-app/main/default/classes/Foo.cls';
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+      await fs.writeFile(path.join(tmpDir, filePath), 'class Foo {}');
+
+      await deleteFile(filePath);
+
+      await expect(fs.access(path.join(tmpDir, filePath))).rejects.toThrow();
+    });
+
+    it('throws when file does not exist', async () => {
+      await expect(deleteFile('nonexistent.cls')).rejects.toThrow('No file exists at path');
+    });
+  });
+});

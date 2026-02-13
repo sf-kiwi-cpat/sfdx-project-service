@@ -1,0 +1,40 @@
+{
+  "name": "sf-project-service",
+  "version": "1.0.0",
+  "description": "REST API wrapping an SFDX project for remote IDE-like operations",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@salesforce/core": "^6.0.0",
+    "chokidar": "^4.0.0",
+    "express": "^4.21.0",
+    "pino": "^9.4.0",
+    "pino-http": "^10.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.14.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.14.0",
+    "typescript-eslint": "^8.14.0",
+    "prettier": "^3.3.3",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite-tsconfig-paths": "^5.0.0",
+    "vitest": "^2.1.4"
+  }
+}
