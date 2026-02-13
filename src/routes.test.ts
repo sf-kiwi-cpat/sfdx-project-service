@@ -164,6 +164,20 @@ describe('SF Project Service API', () => {
       const res = await request(app).get('/project/file').expect(400);
       expect(res.body.status).toBe(400);
     });
+
+    it('returns 400 for restricted path .sf/auth.json', async () => {
+      await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, '.sf', 'auth.json'), '{"accessToken":"secret"}');
+
+      const res = await request(app)
+        .get('/project/file')
+        .query({ path: '.sf/auth.json' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toBe('Access to this path is restricted');
+    });
   });
 
   describe('PUT /project/file', () => {
@@ -216,6 +230,18 @@ describe('SF Project Service API', () => {
 
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Path escapes project root');
+    });
+
+    it('returns 400 for restricted path .sf/auth.json', async () => {
+      const res = await request(app)
+        .put('/project/file')
+        .query({ path: '.sf/auth.json' })
+        .set('Content-Type', 'text/plain')
+        .send('{"accessToken":"secret"}')
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toBe('Access to this path is restricted');
     });
   });
 
@@ -272,6 +298,19 @@ describe('SF Project Service API', () => {
 
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Path escapes project root');
+    });
+
+    it('returns 400 for restricted path .sf/auth.json', async () => {
+      await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, '.sf', 'auth.json'), '{}');
+
+      const res = await request(app)
+        .delete('/project/file')
+        .query({ path: '.sf/auth.json' })
+        .expect(400);
+
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toBe('Access to this path is restricted');
     });
   });
 

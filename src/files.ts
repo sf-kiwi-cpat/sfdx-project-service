@@ -22,14 +22,25 @@ export function resolveProjectPath(queryPath: string): { absolute: string; relat
     throw new Error(`Path escapes project root: ${queryPath}`);
   }
 
+  if (isRestrictedPath(relative)) {
+    throw new Error('Access to this path is restricted');
+  }
+
   return { absolute, relative };
 }
 
-/** Paths to exclude from the tree (matches chokidar watcher ignores). */
+/** Paths to exclude from the tree and block from file operations (matches chokidar watcher ignores). */
 const IGNORED_NAMES = new Set(['node_modules', '.git', '.sf']);
 
 function shouldIgnoreEntry(entryName: string): boolean {
   return IGNORED_NAMES.has(entryName) || entryName.startsWith('.');
+}
+
+/** Reject paths that resolve into .sf/, .git/, node_modules/, or dotfiles at the project root. */
+function isRestrictedPath(relative: string): boolean {
+  const segments = relative.split(/[/\\]/).filter(Boolean);
+  const first = segments[0];
+  return first !== undefined && shouldIgnoreEntry(first);
 }
 
 /**

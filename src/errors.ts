@@ -21,6 +21,9 @@ export const PROBLEM_JSON = 'application/problem+json';
  */
 export function errorToProblem(err: unknown): ProblemDetail {
   if (err instanceof Error) {
+    if (err.message === 'Access to this path is restricted') {
+      return problemDetail(400, 'Bad Request', err.message);
+    }
     if (err.message.startsWith('Path escapes project root')) {
       return problemDetail(400, 'Bad Request', err.message);
     }

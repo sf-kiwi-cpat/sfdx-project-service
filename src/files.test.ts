@@ -30,6 +30,13 @@ describe('files', () => {
     it('rejects path traversal', () => {
       expect(() => resolveProjectPath('../../../etc/passwd')).toThrow('Path escapes project root');
     });
+
+    it('rejects restricted paths (.sf, .git, node_modules, dotfiles)', () => {
+      expect(() => resolveProjectPath('.sf/auth.json')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('.git/config')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('node_modules/pkg/index.js')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('.env')).toThrow('Access to this path is restricted');
+    });
   });
 
   describe('buildTree', () => {
