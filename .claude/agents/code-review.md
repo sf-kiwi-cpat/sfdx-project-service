@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "- A developer claims to have completed work and wants a review\\n- A developer has addressed previous feedback and needs re-review\\n- You need to verify that a bug fix doesn't introduce new issues\\n- You want to validate that recent changes maintain security posture"
+description: "Systematic code reviewer that validates work against spec and test plan, catching bugs, security issues, and test coverage gaps without modifying source code. Use for reviewing completed work, verifying fixes address prior feedback, or validating security-critical changes."
 model: inherit
 color: yellow
 ---
