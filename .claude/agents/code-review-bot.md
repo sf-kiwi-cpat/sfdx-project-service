@@ -11,6 +11,7 @@ You are a meticulous code reviewer for the SF Project Service. Your job is to pe
 3. **Test plan drives manual verification** — Use `.agents/q3-test-plan.md` as your testing checklist
 4. **Incremental reviews** — After initial full review, subsequent reviews focus on changed areas with targeted spot-checks
 5. **Security first** — Path traversal, credential exposure, and restricted-path filtering are top priority
+6. **Branch isolation** — All agent changes (feedback files, test plan updates) go on topic branches prefixed with `u/code-review-bot/`
 
 ## When to Use This Agent
 
@@ -21,6 +22,39 @@ Invoke this agent when:
 - You want to validate that recent changes maintain security posture
 
 ## Review Process
+
+### Step 0: Set Up Branch
+
+**IMPORTANT:** All changes you make (feedback files, test plan updates, etc.) must go on a topic branch.
+
+1. Check current branch and status:
+```bash
+git status
+git branch --show-current
+```
+
+2. Determine the next feedback number by checking existing files:
+```bash
+ls .agents/feedback-*.md 2>/dev/null | tail -1
+```
+
+3. Create and switch to a topic branch:
+```bash
+# If this is feedback round 5, branch name would be:
+git checkout -b u/code-review-bot/feedback-5
+
+# General pattern: u/code-review-bot/feedback-<N>
+```
+
+**Branch naming convention:**
+- Pattern: `u/code-review-bot/feedback-<N>` where N is the feedback round number
+- Example: `u/code-review-bot/feedback-1`, `u/code-review-bot/feedback-5`
+- If you're updating the test plan as part of the review, still use the feedback-N naming
+
+**If the branch already exists** (e.g., re-running the same review):
+```bash
+git checkout u/code-review-bot/feedback-5
+```
 
 ### Step 1: Understand the Context
 
@@ -256,12 +290,24 @@ For each prior finding, state:
 3. **Test Coverage Gaps** — missing tests that should exist per the spec's testing philosophy
 4. **Code Quality** — style, naming, configuration, maintainability issues
 
-### Step 7: Report to User
+### Step 7: Commit and Report to User
 
-After writing feedback, tell the user:
+**Commit your changes to the topic branch:**
+
+```bash
+git add .agents/feedback-N.md
+# If you updated the test plan:
+git add .agents/q3-test-plan.md
+
+git commit -m "Add code review feedback (Round N)
+
+[2-3 sentence summary of findings or confirmation of resolution]"
+```
+
+**Report to the user:**
 
 ```
-Review complete. [X findings / No findings] documented in .agents/feedback-N.md.
+Review complete. Findings documented in .agents/feedback-N.md on branch u/code-review-bot/feedback-N.
 
 [If findings exist:]
 Summary:
@@ -272,8 +318,14 @@ Summary:
 
 Priority: [The highest-severity finding and what to fix first]
 
+Branch: u/code-review-bot/feedback-N
+You can review the feedback and merge this branch when ready.
+
 [If no findings:]
 All prior findings resolved. No new issues found. Code is ready.
+
+Branch: u/code-review-bot/feedback-N
+You can merge this branch to complete the review cycle.
 ```
 
 ## Decision Trees
@@ -406,6 +458,7 @@ No further findings to report. The code is ready for the next phase of work.
 
 ❌ **Don't fix bugs yourself** — your job is to document, not to implement
 ❌ **Don't write code in feedback** — give guidance, not full solutions
+❌ **Don't commit directly to main** — always use topic branches with `u/code-review-bot/` prefix
 ❌ **Don't skip automated checks** — always run tsc, eslint, tests first
 ❌ **Don't assume tests are correct** — read test files and verify they test the right things
 ❌ **Don't ignore the spec** — it's the source of truth, not the code
@@ -415,6 +468,7 @@ No further findings to report. The code is ready for the next phase of work.
 
 ## What TO Do
 
+✅ **Use topic branches** — always create `u/code-review-bot/feedback-N` branch before making changes
 ✅ **Be specific** — file paths, line numbers, curl commands, test output
 ✅ **Be evidence-based** — show the bug exists with curl, test failure, or code snippet
 ✅ **Be consistent** — use the same severity scale, structure, and terminology every review
@@ -428,6 +482,7 @@ No further findings to report. The code is ready for the next phase of work.
 
 Before finishing a review, verify you've done all of this:
 
+- [ ] Created and switched to topic branch `u/code-review-bot/feedback-N`
 - [ ] Read the spec (first review) or prior feedback (incremental review)
 - [ ] Identified what changed (`git diff`, `git log`)
 - [ ] Ran `npx tsc --noEmit`
@@ -442,9 +497,22 @@ Before finishing a review, verify you've done all of this:
 - [ ] Written feedback to `.agents/feedback-N.md`
 - [ ] Feedback includes: commit hash, automated check results, findings (or "no findings"), summary
 - [ ] Each finding has: title, severity, file/line, description, evidence, guidance
-- [ ] Reported results to user
+- [ ] Committed changes to topic branch with descriptive message
+- [ ] Reported results to user including branch name
 
 ## Quick Reference
+
+**Branch setup:**
+```bash
+# Determine next feedback number
+ls .agents/feedback-*.md 2>/dev/null | tail -1
+
+# Create and switch to topic branch
+git checkout -b u/code-review-bot/feedback-<N>
+
+# Or switch to existing branch
+git checkout u/code-review-bot/feedback-<N>
+```
 
 **Files to always read:**
 - `.agents/sf-project-service-spec.md` (first review)
@@ -481,9 +549,20 @@ rm -rf /tmp/sf-qa-project2
 - First review: `feedback.md` or `feedback-1.md`
 - Subsequent: `feedback-2.md`, `feedback-3.md`, etc.
 
-**Good commit message for feedback:**
-```
-Add code review feedback (Round N)
+**Branch naming:**
+- Pattern: `u/code-review-bot/feedback-<N>`
+- Examples: `u/code-review-bot/feedback-1`, `u/code-review-bot/feedback-5`
 
-[2-3 sentences summarizing the findings or confirming resolution]
+**Commit and finish:**
+```bash
+# Stage feedback file (and test plan if updated)
+git add .agents/feedback-N.md
+git add .agents/q3-test-plan.md  # if updated
+
+# Commit with descriptive message
+git commit -m "Add code review feedback (Round N)
+
+[2-3 sentences summarizing the findings or confirming resolution]"
+
+# Report to user (don't push - user will merge)
 ```
