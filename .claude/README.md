@@ -88,7 +88,33 @@ quality-assurance agent to re-test and verify the fixes.
 
 ## Using Both Agents Together
 
-For comprehensive review of completed work, use both agents:
+### Via Skill: /review-code
+
+The easiest way to run both agents is using the `/review-code` skill:
+
+```bash
+# Review a pull request
+/review-code 123
+
+# Review current branch
+/review-code current
+
+# Review specific branch or commit
+/review-code feature/my-branch
+/review-code abc123f
+```
+
+This automatically:
+- Fetches PR context via GitHub CLI (if reviewing a PR)
+- Checks out the target branch/commit
+- Launches both agents in parallel
+- Reports completion with links to feedback files
+
+See `.claude/skills/review-code.md` for full documentation.
+
+### Manual Invocation
+
+Alternatively, request both agents explicitly:
 
 ```
 I've finished implementing the new feature. Please:
@@ -99,12 +125,12 @@ I've finished implementing the new feature. Please:
 
 **Typical workflow:**
 1. Developer implements feature
-2. **Code Review** → identifies code quality issues
-3. Developer improves code quality
+2. Run `/review-code` (or invoke both agents manually)
+3. **Code Review** → identifies code quality issues
 4. **QA** → validates behavior against spec
-5. Developer fixes behavioral issues
-6. **QA** → re-validates fixes
-7. Merge when both agents approve
+5. Developer addresses both code quality and behavioral issues
+6. Re-run review as needed
+7. Merge agent branches when satisfied
 
 ## Agent Guidelines
 
