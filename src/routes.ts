@@ -5,21 +5,122 @@ import { logger } from './logger.js';
 import { scaffoldProject, connectOrg, type InitInput } from './project.js';
 import { createProjectWatcher } from './events.js';
 import { WriteLock } from './lock.js';
+import {
+  generateAuthorizationUrl,
+  handleCallback,
+  getSession,
+  isAuthenticated,
+  clearSession,
+} from './oauth.js';
+import { isOAuthConfigured } from './config.js';
+
+/**
+ * Express middleware that rejects requests with 409 if the write lock is held.
+ * Applies to write operations (POST, PUT, DELETE) that should not run while
+ * the agent is active.
+ */
+function requireWriteUnlocked(writeLock: WriteLock) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (writeLock.isHeld()) {
+      logger.warn({ path: req.path }, 'Write rejected: agent lock active');
+      res.status(409).contentType(PROBLEM_JSON).json(
+        problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
+      );
+      return;
+    }
+    next();
+  };
+}
 
 export function createRouter(writeLock: WriteLock): express.Router {
   const router = express.Router();
 
-  // --- Project init ---
-  router.post('/project/init', async (req: Request, res: Response, next: NextFunction) => {
+  // --- OAuth endpoints ---
+  router.get('/oauth/authorize', (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Init rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
+      if (!isOAuthConfigured()) {
+        res.status(400).contentType(PROBLEM_JSON).json(
+          problemDetail(400, 'OAuth Not Configured', 'SF_CLIENT_ID and SF_CLIENT_SECRET are required')
         );
         return;
       }
 
+      const loginUrl = req.query.loginUrl as string | undefined;
+      const authorizationUrl = generateAuthorizationUrl(loginUrl);
+
+      res.status(200).json({ authorizationUrl });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * OAuth callback endpoint. Returns HTTP 200 for all outcomes (success and error).
+   * This is intentional for browser-based OAuth flows to provide a consistent user
+   * experience. Error details are shown in the rendered HTML page rather than using
+   * RFC 9457 problem details format.
+   */
+  router.get('/oauth/callback', async (req: Request, res: Response, _next: NextFunction) => {
+    try {
+      const error = req.query.error as string | undefined;
+      const errorDescription = req.query.error_description as string | undefined;
+
+      if (error) {
+        const errorMsg = `OAuth Error: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`;
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', errorMsg));
+        return;
+      }
+
+      const code = req.query.code as string | undefined;
+      const state = req.query.state as string | undefined;
+
+      if (!code || !state) {
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Missing code or state parameter.'));
+        return;
+      }
+
+      if (writeLock.isHeld()) {
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Server is busy. Please try again later.'));
+        return;
+      }
+
+      const loginUrl = req.query.loginUrl as string | undefined;
+      const session = await handleCallback(code, state, loginUrl);
+
+      // Auto-connect org after successful OAuth
+      await scaffoldProject();
+      await connectOrg({ accessToken: session.accessToken, instanceUrl: session.instanceUrl });
+
+      res.status(200).type('text/html').send(renderCallbackPage('Authentication Successful', 'Authentication successful', 'You can close this tab.'));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', message));
+    }
+  });
+
+  router.get('/oauth/status', (_req: Request, res: Response) => {
+    const session = getSession();
+    const auth = isAuthenticated();
+
+    res.status(200).json({
+      authenticated: auth,
+      ...(auth && session ? {
+        instanceUrl: session.instanceUrl,
+        orgId: session.orgId,
+        orgName: session.orgName,
+        userId: session.userId,
+      } : {}),
+    });
+  });
+
+  router.post('/oauth/disconnect', (_req: Request, res: Response) => {
+    clearSession();
+    res.status(204).send();
+  });
+
+  // --- Project init ---
+  router.post('/project/init', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
+    try {
       const { accessToken, instanceUrl } = req.body as InitInput;
       if (!accessToken || !instanceUrl) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -75,16 +176,8 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   // --- Put file (write) ---
-  router.put('/project/file', async (req: Request, res: Response, next: NextFunction) => {
+  router.put('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Write rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-        );
-        return;
-      }
-
       const pathParam = req.query.path as string;
       if (!pathParam) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -109,16 +202,8 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   // --- Delete file ---
-  router.delete('/project/file', async (req: Request, res: Response, next: NextFunction) => {
+  router.delete('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Delete rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-        );
-        return;
-      }
-
       const pathParam = req.query.path as string;
       if (!pathParam) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -201,4 +286,34 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   return router;
+}
+
+/**
+ * Escape HTML special characters to prevent XSS in error messages.
+ */
+function escapeHtml(text: string): string {
+  const map: { [key: string]: string } = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char] || char);
+}
+
+/**
+ * Render OAuth callback response page (success or failure).
+ */
+function renderCallbackPage(title: string, heading: string, message: string): string {
+  return `
+    <html>
+      <head><title>${escapeHtml(title)}</title></head>
+      <body>
+        <h1>${escapeHtml(heading)}</h1>
+        <p>${escapeHtml(message)}</p>
+        <p>You can close this tab.</p>
+      </body>
+    </html>
+  `;
 }

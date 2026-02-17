@@ -1,13 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AuthInfo } from '@salesforce/core';
-import { getProjectPath } from './config.js';
+import { getProjectPath, SF_API_VERSION } from './config.js';
 
 const SFDX_PROJECT_JSON = {
   packageDirectories: [{ path: 'force-app', default: true }],
   namespace: '',
   sfdcLoginUrl: 'https://login.salesforce.com',
-  sourceApiVersion: '62.0',
+  sourceApiVersion: SF_API_VERSION,
 };
 
 export interface InitInput {

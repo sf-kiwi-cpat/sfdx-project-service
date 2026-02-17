@@ -48,3 +48,8 @@ sfdx-project.json
 .cache/
 temp/
 tmp/
+
+# Ephemeral review documents (agent use only)
+.agents/review-*.md
+.agents/.code-review-draft.md
+.agents/.qa-draft.md

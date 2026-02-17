@@ -18,12 +18,18 @@ export function createProjectWatcher(onEvent: (event: FsEvent) => void): FSWatch
 
   const watcher = chokidar.watch(projectPath, {
     ignoreInitial: true,
-    ignored: [
-      '**/node_modules/**',
-      '**/.git/**',
-      '**/.sf/**',
-      '**/.*', // dotfiles - often temp/editor files
-    ],
+    ignored: (filePath: string) => {
+      const normalized = filePath.replace(/\\/g, '/');
+      return (
+        normalized.includes('/node_modules/') ||
+        normalized.includes('/.git/') ||
+        normalized.includes('/.sf/') ||
+        normalized.endsWith('/node_modules') ||
+        normalized.endsWith('/.git') ||
+        normalized.endsWith('/.sf') ||
+        /\/\.[^/]+(\/|$)/.test(normalized) // dotfile or dotfile directory
+      );
+    },
   });
 
   const toRelative = (absPath: string): string =>

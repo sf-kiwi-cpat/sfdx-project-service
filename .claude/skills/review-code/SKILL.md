@@ -6,7 +6,7 @@ model: inherit
 
 ## Purpose
 
-This skill orchestrates a comprehensive code review by launching both the `code-review` (static analysis) and `quality-assurance` (behavioral testing) agents in parallel. It handles fetching PR context, preparing the target branch, and coordinating the review process.
+This skill orchestrates a comprehensive code review by launching both the `code-review` (static analysis) and `quality-assurance` (behavioral testing) agents in parallel. Both agents work on the **current branch** without creating topic branches. The skill then merges their findings into a single unified report and commits it.
 
 ## Usage
 
@@ -36,8 +36,12 @@ This skill orchestrates a comprehensive code review by launching both the `code-
 1. **Parse target**: Determines what to review (PR, branch, commit, or current)
 2. **Fetch context**: Uses GitHub CLI to get PR information if reviewing a PR
 3. **Prepare branch**: Fetches latest changes and checks out the target branch/commit
-4. **Launch agents in parallel**: Starts both `code-review` and `quality-assurance` agents simultaneously
-5. **Report completion**: Provides links to both feedback branches and report files
+4. **Record branch name**: Captures the branch we're reviewing (to pass to agents)
+5. **Determine review round**: Checks existing `.agents/review-N.md` files to find the next round number
+6. **Launch agents in parallel**: Starts both `code-review` and `quality-assurance` agents on the current branch
+7. **Merge findings**: Reads draft files (`.agents/.code-review-draft.md`, `.agents/.qa-draft.md`), merges findings, deduplicates
+8. **Write unified report**: Creates `.agents/review-N.md` with all findings, test results, and implementation notes
+9. **Commit report**: Commits the final report to the current branch
 
 ## Process
 
@@ -60,15 +64,7 @@ If reviewing a PR, use GitHub CLI to get context:
 gh pr view <PR_NUMBER> --json number,title,headRefName,baseRefName,body,state
 ```
 
-This provides:
-- PR title and description
-- Source branch (`headRefName`) to check out
-- Base branch (`baseRefName`) for comparison
-- PR state (open, closed, merged)
-
-### Step 3: Prepare Git State
-
-Ensure we have latest changes and check out target:
+### Step 3: Prepare Git State and Record Current Branch
 
 ```bash
 # Fetch latest from remote
@@ -87,9 +83,25 @@ git checkout <commit_hash>
 
 # For current: stay on current branch, ensure it's up to date
 git pull origin <current_branch>
+
+# Capture current branch name for passing to agents
+REVIEW_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+COMMIT_HASH=$(git rev-parse HEAD)
 ```
 
-### Step 4: Launch Both Agents in Parallel
+### Step 4: Determine Review Round Number
+
+Check existing reports to find the next sequential number:
+
+```bash
+# Find the highest existing review-N.md file
+ls .agents/review-*.md 2>/dev/null | sed 's/.*review-//' | sed 's/.md//' | sort -n | tail -1
+# If result is N, next round is N+1; if no files, start at 1
+```
+
+### Step 5: Launch Both Agents in Parallel
+
+**IMPORTANT**: Pass both the branch name and explicit instruction to **stay on current branch**.
 
 Use the Task tool to launch both agents simultaneously:
 
@@ -98,7 +110,12 @@ Use the Task tool to launch both agents simultaneously:
 Task({
   subagent_type: "code-review",
   description: "Static code analysis",
-  prompt: "Perform static code analysis review following the established process. Create a new review branch and feedback file.",
+  prompt: `Perform static code analysis review on branch ${REVIEW_BRANCH} (commit ${COMMIT_HASH}).
+
+CRITICAL: Stay on ${REVIEW_BRANCH}. Do NOT create or checkout other branches.
+
+Write your findings to .agents/.code-review-draft.md (intermediate artifact).
+The skill will merge this with the QA findings into the final review-${NEXT_ROUND}.md report.`,
   run_in_background: false
 })
 
@@ -106,59 +123,193 @@ Task({
 Task({
   subagent_type: "quality-assurance",
   description: "QA behavioral testing",
-  prompt: "Perform quality assurance testing following the established process. Run automated tests and manual test plan validation. Create a new QA report branch and report file.",
+  prompt: `Perform quality assurance testing on branch ${REVIEW_BRANCH} (commit ${COMMIT_HASH}).
+
+CRITICAL: Stay on ${REVIEW_BRANCH}. Do NOT create or checkout other branches.
+
+Write your findings to .agents/.qa-draft.md (intermediate artifact).
+The skill will merge this with the code-review findings into the final review-${NEXT_ROUND}.md report.`,
   run_in_background: false
 })
 ```
 
 **Important**: Both Task calls must be made in a single message to run in parallel.
 
-### Step 5: Report Results
+### Step 6: Merge Findings into Unified Report
 
-After both agents complete, provide a summary:
+After both agents complete:
+
+1. **Read both draft files:**
+   - Read `.agents/.code-review-draft.md`
+   - Read `.agents/.qa-draft.md`
+
+2. **Merge and deduplicate findings:**
+   - Parse findings from both agents
+   - Identify duplicate issues (same issue flagged by both)
+   - Order findings by severity: High → Medium → Low
+   - Mark source for each finding: "Code Review", "QA", or "Both"
+
+3. **Create unified report:** `.agents/review-N.md` with structure:
+
+```markdown
+# Review (Round N) — SF Project Service
+
+Review of `<branch>` at commit `<hash>`.
+
+---
+
+## Checks
+
+| Check | Result |
+|:---|:---|
+| `npx tsc --noEmit` | ... |
+| `npx eslint .` | ... |
+| `npm run build` | ... |
+| `npm test` | ... |
+
+## Status of Round (N-1) Findings
+
+[Both agents contribute — code-review checks code changes, QA re-tests]
+
+For each prior finding, state:
+- Finding number and title
+- Whether it's resolved, partially resolved, or unresolved
+- Evidence (code snippets, curl output, test results)
+
+---
+
+## Findings
+
+[All findings from both agents, ordered by severity (High → Low), deduplicated]
+
+### 1. [Title]
+
+**Source:** Code Review | QA | Both
+**Category:** [Security Risk | Type Safety | Bug | Maintainability | Spec Violation | etc.]
+**Severity:** [High | Medium | Low]
+**File/Endpoint:** [file.ts:line-range or /endpoint]
+
+[Description]
+
+**Evidence:** [Code snippet or curl output]
+
+---
+
+## Test Results
+
+[QA agent's automated + manual test results]
+
+### Automated Tests
+| Check | Result |
+|:---|:---|
+| `npm test` | ... |
+| Test pass rate | ... |
+
+### Manual Test Results
+[Test plan sections run and results]
+
+---
+
+## Security Verification
+
+[QA agent's runtime security results + code-review's structural observations]
+
+| Check | Status | Evidence |
+|:---|:---|:---|
+| Path traversal blocked | [Pass/Fail] | [curl output] |
+| Restricted paths at all depths | [Pass/Fail] | [curl output] |
+| Credentials not exposed | [Pass/Fail] | [How verified] |
+| Error message safety | [Pass/Fail] | [Examples] |
+| RFC 9457 compliance | [Pass/Fail] | [Spot checks] |
+
+---
+
+## Implementation Notes
+
+[For each finding, note second-order considerations when addressing the fix]
+
+For example:
+- If suggesting a new function, note it needs tests
+- If suggesting a timer, note it should be `.unref()`'d
+- If suggesting a validation function, note what inputs it should handle
+- Note any interactions between fixes (e.g., "Fix #3 requires coordinating with Fix #1")
+
+---
+
+## Summary
+
+[2-3 sentences: overall review status, whether code quality and behavior are acceptable, what's most important to address first]
+
+**Important:** Read all findings before addressing any — some interact with each other. Consider second-order effects of each fix (see Implementation Notes).
+```
+
+4. **Delete draft files:**
+   ```bash
+   rm -f .agents/.code-review-draft.md .agents/.qa-draft.md
+   ```
+
+### Step 7: Commit Report to Current Branch
+
+```bash
+git add .agents/review-N.md
+git commit -m "Add review (Round N)
+
+Comprehensive review of $(git rev-parse --short HEAD):
+- Code quality analysis (code-review agent)
+- Behavioral testing and security verification (QA agent)
+- Unified findings with implementation notes"
+```
+
+### Step 8: Report Results to User
+
+After both agents complete and report is committed:
 
 ```markdown
 ## Code Review Complete
 
-Both agents have completed their reviews:
+**Branch:** <branch_name>
+**Commit:** <commit_hash>
+**Report:** `.agents/review-N.md`
 
-### Static Code Analysis (code-review agent)
-- Branch: `u/code-review/review-N`
-- Feedback: `.agents/code-review-N.md`
-- Focus: Code quality, maintainability, patterns, type safety
+Both agents have completed their reviews and findings have been merged into a single unified report.
 
-### Quality Assurance (quality-assurance agent)
-- Branch: `u/qa/qa-report-N`
-- Report: `.agents/qa-report-N.md`
-- Focus: Runtime behavior, spec compliance, automated tests, security
+[If findings exist:]
+**Summary:**
+- X High-severity findings
+- X Medium-severity findings
+- X Low-severity findings
+- X findings from code review, Y from QA, Z flagged by both
 
-### Next Steps
-1. Review both feedback files
-2. Address findings as appropriate
-3. Merge agent branches back to main when satisfied
+**Priority:** [The highest-severity finding and what to improve first]
+
+**Important:** Read all findings before addressing any — some interact with each other. See "Implementation Notes" section for second-order effects.
+
+[If no findings:]
+All prior issues addressed. Code quality and behavior are good. No new issues found.
+
+The report has been committed to branch `<branch_name>`.
 ```
 
 ## Agent Coordination
 
+### Single-Branch Workflow
+Both agents work on the **current branch**—no topic branches, no branch switching:
+- Code-review writes to `.agents/.code-review-draft.md`
+- QA writes to `.agents/.qa-draft.md`
+- Skill merges both drafts into `.agents/review-N.md` and commits to current branch
+
 ### Parallel Execution
-Both agents run simultaneously for efficiency. They work on independent branches:
-- `code-review` creates `u/code-review/review-N` branch
-- `quality-assurance` creates `u/qa/qa-report-N` branch
+Both agents run simultaneously for efficiency. No conflicts because:
+- Each agent writes only to its own draft file
+- Neither agent modifies source code
+- Skill handles merging and commit
 
-### No Conflicts
-Since each agent:
-- Works on its own topic branch
-- Only creates/modifies its own feedback files
-- Never modifies source code
+### Unified Report Sequence
+Single sequential numbering: `review-1.md`, `review-2.md`, `review-3.md`, ...
 
-There are no merge conflicts between them.
-
-### Review Numbers
-Each agent maintains its own sequence:
-- Code review rounds: `review-1`, `review-2`, `review-3`, ...
-- QA test rounds: `qa-report-1`, `qa-report-2`, `qa-report-3`, ...
-
-These sequences are independent and may not align (e.g., you might have 3 code reviews but 5 QA reports).
+This replaces:
+- Old code-review naming: `code-review-N.md` (now intermediate: `.code-review-draft.md`)
+- Old QA naming: `qa-report-N.md` (now intermediate: `.qa-draft.md`)
 
 ## Examples
 
