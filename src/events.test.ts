@@ -70,12 +70,14 @@ describe('createProjectWatcher', () => {
   });
 
   it('does not emit events for ignored paths (.git, .sf, node_modules)', async () => {
+    const events: Array<{ type: string; path: string }> = [];
+    const watcher = createProjectWatcher((e) => events.push(e));
+
+    await new Promise<void>((resolve) => watcher.on('ready', resolve));
+
     await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
     await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
     await fs.mkdir(path.join(tmpDir, 'node_modules', 'pkg'), { recursive: true });
-
-    const events: Array<{ type: string; path: string }> = [];
-    const watcher = createProjectWatcher((e) => events.push(e));
 
     await fs.writeFile(path.join(tmpDir, '.git', 'config'), 'content');
     await fs.writeFile(path.join(tmpDir, '.sf', 'auth.json'), '{}');

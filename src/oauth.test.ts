@@ -539,7 +539,7 @@ describe('OAuth Service', () => {
     });
   });
 
-  describe('validateTokenResponse', () => {
+  describe('validateExchangeTokenResponse', () => {
     let mockFetch: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
@@ -547,7 +547,7 @@ describe('OAuth Service', () => {
       global.fetch = mockFetch as unknown as typeof fetch;
     });
 
-    it('accepts a valid token response', async () => {
+    it('accepts a valid token response with all required fields', async () => {
       const authUrl = generateAuthorizationUrl();
       const state = new URL(authUrl).searchParams.get('state')!;
 
@@ -675,7 +675,103 @@ describe('OAuth Service', () => {
       );
     });
 
-    it('validates token response in refreshAccessToken', async () => {
+    it('rejects exchange response missing both instance_url and id', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          token_type: 'Bearer',
+          // neither instance_url nor id - would have passed old heuristic
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: missing required field 'instance_url'"
+      );
+    });
+  });
+
+  describe('validateRefreshTokenResponse', () => {
+    let mockFetch: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockFetch = vi.fn();
+      global.fetch = mockFetch as unknown as typeof fetch;
+    });
+
+    it('accepts refresh response with only access_token and token_type', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'original-token',
+          refresh_token: 'refresh-token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      await handleCallback('code', state);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+      });
+
+      const session = await refreshAccessToken();
+      expect(session.accessToken).toBe('new-token');
+    });
+
+    it('rejects refresh response missing access_token', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          refresh_token: 'refresh-token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      await handleCallback('code', state);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(refreshAccessToken()).rejects.toThrow(
+        "Invalid token response: missing required field 'access_token'"
+      );
+    });
+
+    it('rejects refresh response missing token_type', async () => {
       const authUrl = generateAuthorizationUrl();
       const state = new URL(authUrl).searchParams.get('state')!;
 
@@ -709,6 +805,73 @@ describe('OAuth Service', () => {
 
       await expect(refreshAccessToken()).rejects.toThrow(
         "Invalid token response: missing required field 'token_type'"
+      );
+    });
+
+    it('rejects refresh response with non-object', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          refresh_token: 'refresh-token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      await handleCallback('code', state);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => 'not an object',
+      });
+
+      await expect(refreshAccessToken()).rejects.toThrow(
+        'Invalid token response: expected an object'
+      );
+    });
+
+    it('rejects refresh response with wrong type for access_token', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          refresh_token: 'refresh-token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      await handleCallback('code', state);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 123,
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(refreshAccessToken()).rejects.toThrow(
+        "Invalid token response: field 'access_token' must be a string"
       );
     });
   });

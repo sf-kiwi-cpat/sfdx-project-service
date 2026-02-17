@@ -88,19 +88,44 @@ function parseIdUrl(idUrl: string): { orgId: string; userId: string } {
 }
 
 /**
- * Validate that a token response from Salesforce has required fields.
- * For token exchange (authorization code grant): requires access_token, instance_url, id, token_type
- * For token refresh (refresh_token grant): requires only access_token, token_type (refreshes don't return id/instance_url)
+ * Validate that a token exchange response (authorization code grant) has all required fields.
+ * Requires access_token, token_type, instance_url, id.
  * Throws OAuthError if validation fails.
  */
-function validateTokenResponse(data: unknown): asserts data is TokenResponse {
+function validateExchangeTokenResponse(data: unknown): asserts data is TokenResponse {
   if (!data || typeof data !== 'object') {
     throw new OAuthError('Invalid token response: expected an object');
   }
 
   const response = data as Record<string, unknown>;
+  const requiredFields: Array<{ name: string; type: string }> = [
+    { name: 'access_token', type: 'string' },
+    { name: 'token_type', type: 'string' },
+    { name: 'instance_url', type: 'string' },
+    { name: 'id', type: 'string' },
+  ];
 
-  // Fields required in all token responses
+  for (const { name, type } of requiredFields) {
+    if (!(name in response)) {
+      throw new OAuthError(`Invalid token response: missing required field '${name}'`);
+    }
+    if (typeof response[name] !== type) {
+      throw new OAuthError(`Invalid token response: field '${name}' must be a ${type}`);
+    }
+  }
+}
+
+/**
+ * Validate that a token refresh response has required fields.
+ * Requires only access_token and token_type (refreshes don't return id/instance_url).
+ * Throws OAuthError if validation fails.
+ */
+function validateRefreshTokenResponse(data: unknown): asserts data is Pick<TokenResponse, 'access_token' | 'token_type' | 'expires_in'> {
+  if (!data || typeof data !== 'object') {
+    throw new OAuthError('Invalid token response: expected an object');
+  }
+
+  const response = data as Record<string, unknown>;
   const requiredFields: Array<{ name: string; type: string }> = [
     { name: 'access_token', type: 'string' },
     { name: 'token_type', type: 'string' },
@@ -112,29 +137,6 @@ function validateTokenResponse(data: unknown): asserts data is TokenResponse {
     }
     if (typeof response[name] !== type) {
       throw new OAuthError(`Invalid token response: field '${name}' must be a ${type}`);
-    }
-  }
-
-  // Fields required only for token exchange (authorization code flow)
-  const exchangeRequiredFields: Array<{ name: string; type: string }> = [
-    { name: 'instance_url', type: 'string' },
-    { name: 'id', type: 'string' },
-  ];
-
-  // If both exchange-required fields are present, validate them (token exchange flow)
-  // If neither are present, skip validation (token refresh flow)
-  const hasInstanceUrl = 'instance_url' in response;
-  const hasId = 'id' in response;
-
-  if (hasInstanceUrl || hasId) {
-    // At least one exchange field present, so validate all exchange fields
-    for (const { name, type } of exchangeRequiredFields) {
-      if (!(name in response)) {
-        throw new OAuthError(`Invalid token response: missing required field '${name}'`);
-      }
-      if (typeof response[name] !== type) {
-        throw new OAuthError(`Invalid token response: field '${name}' must be a ${type}`);
-      }
     }
   }
 }
@@ -196,7 +198,7 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string, loginUr
   }
 
   const data = await response.json();
-  validateTokenResponse(data);
+  validateExchangeTokenResponse(data);
   return data;
 }
 
@@ -354,12 +356,11 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
   }
 
   const data = await response.json();
-  validateTokenResponse(data);
-  const tokenResponse = data;
+  validateRefreshTokenResponse(data);
 
-  currentSession.accessToken = tokenResponse.access_token;
+  currentSession.accessToken = data.access_token;
   currentSession.issuedAt = Date.now();
-  currentSession.expiresAt = tokenResponse.expires_in !== undefined ? Date.now() + tokenResponse.expires_in * 1000 : null;
+  currentSession.expiresAt = data.expires_in !== undefined ? Date.now() + data.expires_in * 1000 : null;
 
   logger.info('Access token refreshed');
 
