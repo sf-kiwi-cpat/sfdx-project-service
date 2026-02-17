@@ -43,3 +43,32 @@ export function isOAuthConfigured(): boolean {
   const { clientId, clientSecret } = getOAuthConfig();
   return clientId !== '' && clientSecret !== '';
 }
+
+/**
+ * Allowed Salesforce login domains for OAuth loginUrl parameter.
+ * Restricts to known Salesforce instances to prevent credential exfiltration.
+ */
+const ALLOWED_LOGIN_DOMAINS = [
+  'login.salesforce.com',
+  'test.salesforce.com',
+  'sandbox.salesforce.com',
+  'localhost', // for local development
+];
+
+/**
+ * Validate that a login URL is from a trusted Salesforce domain.
+ * Returns true if the URL hostname is in the allowed list, false otherwise.
+ */
+export function isValidLoginUrl(loginUrl: string | undefined): boolean {
+  if (!loginUrl) return true; // undefined/empty is valid (uses config default)
+
+  try {
+    const url = new URL(loginUrl);
+    const hostname = url.hostname.toLowerCase();
+
+    // Check if hostname matches any allowed domain or is localhost with a port
+    return ALLOWED_LOGIN_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false; // invalid URL
+  }
+}

@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { getOAuthConfig, isOAuthConfigured } from './config.js';
+import { getOAuthConfig, isOAuthConfigured, isValidLoginUrl } from './config.js';
 import { logger } from './logger.js';
 import { OAuthError } from './errors.js';
 
@@ -155,6 +155,10 @@ export function generateAuthorizationUrl(loginUrl?: string): string {
     throw new OAuthError('OAuth is not configured. Set SF_CLIENT_ID and SF_CLIENT_SECRET environment variables.');
   }
 
+  if (!isValidLoginUrl(loginUrl)) {
+    throw new OAuthError('Invalid loginUrl: must be a trusted Salesforce domain (e.g., login.salesforce.com, test.salesforce.com)');
+  }
+
   const config = getOAuthConfig();
   const state = randomUUID();
   const codeVerifier = generateCodeVerifier();
@@ -180,6 +184,11 @@ export function generateAuthorizationUrl(loginUrl?: string): string {
  * Exchanges authorization code for tokens and stores the session.
  */
 export async function handleCallback(code: string, state: string, loginUrl?: string): Promise<OAuthSession> {
+  // Validate loginUrl before processing callback
+  if (!isValidLoginUrl(loginUrl)) {
+    throw new OAuthError('Invalid loginUrl: must be a trusted Salesforce domain (e.g., login.salesforce.com, test.salesforce.com)');
+  }
+
   // Validate state (one-time use, must not be expired)
   const pending = pendingStates.get(state);
   if (!pending) {
