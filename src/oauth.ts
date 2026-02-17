@@ -233,10 +233,11 @@ export async function handleCallback(code: string, state: string, loginUrl?: str
 }
 
 /**
- * Get the current OAuth session, or null if not authenticated.
+ * Get the current OAuth session (shallow copy), or null if not authenticated.
+ * Returns a snapshot to prevent accidental mutation of internal state.
  */
 export function getSession(): OAuthSession | null {
-  return currentSession;
+  return currentSession ? { ...currentSession } : null;
 }
 
 /**
