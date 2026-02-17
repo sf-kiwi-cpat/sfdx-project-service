@@ -307,7 +307,7 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
 
     logger.info('Access token refreshed');
 
-    return currentSession;
+    return { ...currentSession };
   } catch (err) {
     clearSession();
     throw err;
