@@ -59,14 +59,15 @@ function generateCodeChallenge(verifier: string): string {
  * Format: https://login.salesforce.com/id/{orgId}/{userId}
  */
 function parseIdUrl(idUrl: string): { orgId: string; userId: string } {
-  try {
-    const parts = idUrl.split('/');
-    const userId = parts[parts.length - 1];
-    const orgId = parts[parts.length - 2];
-    return { orgId, userId };
-  } catch {
-    throw new Error(`Failed to parse id URL: ${idUrl}`);
+  const parts = idUrl.split('/');
+  const userId = parts[parts.length - 1];
+  const orgId = parts[parts.length - 2];
+
+  if (!orgId || !userId) {
+    throw new OAuthError(`Failed to parse id URL: ${idUrl}`);
   }
+
+  return { orgId, userId };
 }
 
 /**
