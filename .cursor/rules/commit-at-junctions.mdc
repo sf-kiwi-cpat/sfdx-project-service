@@ -1,0 +1,14 @@
+---
+description: Commit changes at key junctions, especially when a plan is completed
+alwaysApply: true
+---
+
+# Commit Workflow
+
+Commit changes at key junctions during work, and **especially once a plan is completed**.
+
+## When to Commit
+
+- After finishing execution of a plan or multi-step task
+- After completing a logical unit of work (e.g., a feature, a refactor, a batch of fixes)
+- Before switching context to a different task
