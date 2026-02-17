@@ -101,7 +101,7 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 2. **Connect the org** — registers the provided auth credentials (token or equivalent) with `@salesforce/core`'s `AuthInfo` so that subsequent sf operations (deploy, retrieve) target the correct org. The credentials are expected to come from the broader VaaS infrastructure (the user has already authenticated through the platform).
 
 Input: an OAuth **access token** and **instance URL** for the target Salesforce org. The VaaS infrastructure is responsible for obtaining these through the user's login flow; the Project Service simply receives and registers them.
-Output: confirmation that the project is scaffolded and the org is connected.
+Output: 201 Created with confirmation that the project is scaffolded and the org is connected.
 
 ### Filesystem Events (SSE)
 

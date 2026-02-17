@@ -170,7 +170,7 @@ Work through every row in this matrix. For each test, verify the HTTP status cod
 
 | # | Scenario | curl command | Expected |
 |:--|:---|:---|:---|
-| 1 | Happy path | `-X POST -H "Content-Type: application/json" -d '{"accessToken":"tok","instanceUrl":"https://test.salesforce.com"}'` | 200, `{ ok: true }` (may 500 if no real org — that's expected, note it) |
+| 1 | Happy path | `-X POST -H "Content-Type: application/json" -d '{"accessToken":"tok","instanceUrl":"https://test.salesforce.com"}'` | 201, `{ ok: true }` (may 500 if no real org — that's expected, note it) |
 | 2 | Missing accessToken | `-d '{"instanceUrl":"https://test.salesforce.com"}'` | 400, RFC 9457, `"accessToken and instanceUrl are required"` |
 | 3 | Missing instanceUrl | `-d '{"accessToken":"tok"}'` | 400, RFC 9457 |
 | 4 | Empty body | `-d '{}'` | 400, RFC 9457 |
@@ -319,7 +319,7 @@ For each test case, record in a table or spreadsheet:
 
 | # | Scenario | Expected Status | Actual Status | Pass/Fail | Notes |
 |:--|:---|:--|:--|:--|:---|
-| 1 | POST /project/init happy path | 200 | 500 | FAIL | Expected — no real org available |
+| 1 | POST /project/init happy path | 201 | 500 | FAIL | Expected — no real org available |
 | ... | | | | | |
 
 Use `-w "\nHTTP_CODE: %{http_code}\nCONTENT_TYPE: %{content_type}\n"` with curl to capture status code and content type in a single command:
