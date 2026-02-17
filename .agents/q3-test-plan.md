@@ -38,16 +38,17 @@ Read every `.ts` file in `src/`. For a service this size (< 500 lines of applica
 - **Consistency** — are similar endpoints handled the same way? (e.g., do all write endpoints check the lock?)
 
 Recommended reading order:
-1. `config.ts` — understand how project root is determined
-2. `errors.ts` — typed error classes (`RestrictedPathError`, `PathTraversalError`, `FileNotFoundError`, `NotAFileError`) and the `errorToProblem()` mapping that converts them to RFC 9457 responses via `instanceof` checks
+1. `config.ts` — understand how project root is determined and OAuth configuration
+2. `errors.ts` — typed error classes (`RestrictedPathError`, `PathTraversalError`, `FileNotFoundError`, `NotAFileError`, `OAuthError`) and the `errorToProblem()` mapping that converts them to RFC 9457 responses via `instanceof` checks
 3. `files.ts` — core file operations, path resolution (`resolveProjectPath`), restricted-path filtering (`isRestrictedPath`), tree building (`buildTree`). Verify that `isRestrictedPath` checks every segment (not just the first) and that `shouldIgnoreEntry` is shared between `isRestrictedPath` and `buildTree`.
 4. `lock.ts` — write lock mechanism
 5. `project.ts` — project scaffolding and org connection
-6. `events.ts` — filesystem watcher
-7. `routes.ts` — HTTP handlers (this ties everything together)
-8. `app.ts` — Express app setup, middleware, global error handler
-9. `logger.ts` — logging configuration
-10. `index.ts` — entry point
+6. `oauth.ts` — OAuth 2.0 Authorization Code flow with PKCE. Verify: state is single-use, PKCE code challenge is base64url-encoded SHA-256, tokens are never logged
+7. `events.ts` — filesystem watcher
+8. `routes.ts` — HTTP handlers (this ties everything together)
+9. `app.ts` — Express app setup, middleware, global error handler
+10. `logger.ts` — logging configuration
+11. `index.ts` — entry point
 
 ### 2.2 Review Against Spec (Checklist)
 
@@ -58,11 +59,13 @@ For each endpoint in the spec's API Surface table, verify in `routes.ts`:
 | Endpoint exists | Route is registered with correct HTTP method and path |
 | Happy path works | Handler calls the right domain function and returns the expected response |
 | Input validation | Missing/invalid inputs return 400 with RFC 9457 JSON |
-| Write lock | Write endpoints (PUT, DELETE, POST /project/init) check `writeLock.isHeld()` |
+| Write lock | Write endpoints (PUT, DELETE, POST /project/init, GET /oauth/callback) check `writeLock.isHeld()` |
 | Error format | All error responses use `application/problem+json` with `status`, `title`, `detail` |
 | Path traversal | File endpoints validate paths via `resolveProjectPath` |
 | Restricted paths | `resolveProjectPath` → `isRestrictedPath` blocks `.sf/`, `.git/`, `node_modules/`, and dotfiles at *every* path segment, not just the first. Verify `segments.some()` pattern. |
 | Error class mapping | `files.ts` throws typed error classes from `errors.ts`; `errorToProblem()` uses `instanceof` (not string matching). Adding a new error class that isn't handled should be caught at review time. |
+| OAuth endpoints | GET /oauth/authorize (returns authorizationUrl), GET /oauth/callback (returns HTML), GET /oauth/status (returns JSON), POST /oauth/disconnect (returns 204). Verify callback returns HTML not JSON. |
+| OAuth security | State parameter is single-use; PKCE code challenge is present; tokens/secrets never logged. |
 
 Cross-cutting concerns to verify:
 - Unknown routes return RFC 9457 JSON (not Express's default HTML 404)
@@ -267,14 +270,48 @@ Watch tab 1 for the SSE event. Then Ctrl+C tab 1 and verify no errors in the ser
 | 48 | TTL auto-expiry | Acquire lock, wait > 60 seconds, then PUT a file | PUT should succeed (lock expired) |
 | 49 | Renew extends TTL | Acquire, wait 30s, renew, wait 30s more | Lock should still be held (TTL reset) |
 
+#### GET /oauth/authorize
+
+| # | Scenario | curl command | Expected |
+|:--|:---|:---|:---|
+| 54 | Happy path (OAuth configured) | `GET /oauth/authorize` | 200, `{ authorizationUrl: "https://login.salesforce.com/services/oauth2/authorize?..." }` containing `response_type=code`, `client_id`, `code_challenge`, `state` |
+| 55 | Custom login URL | `GET /oauth/authorize?loginUrl=https://test.salesforce.com` | 200, URL starts with `https://test.salesforce.com` |
+| 56 | OAuth not configured | (start server without SF_CLIENT_ID/SF_CLIENT_SECRET) `GET /oauth/authorize` | 400, RFC 9457, `"OAuth Not Configured"` |
+
+#### GET /oauth/callback
+
+| # | Scenario | How to test | Expected |
+|:--|:---|:---|:---|
+| 57 | Full flow | Get authorize URL, open in browser, log in, observe redirect | Browser shows HTML: "Authentication successful" |
+| 58 | Error from Salesforce | `GET /oauth/callback?error=access_denied&error_description=user+denied` | HTML page with error message |
+| 59 | Missing params | `GET /oauth/callback` (no code/state) | HTML error page |
+| 60 | Invalid/expired state | Manually call with a random state | HTML error page |
+| 61 | Token exchange fails | (mock Salesforce 400 response) | HTML error page |
+| 62 | While write lock is held | Acquire lock, then trigger callback | HTML error page mentioning "busy" |
+
+#### GET /oauth/status
+
+| # | Scenario | curl command | Expected |
+|:--|:---|:---|:---|
+| 63 | Before auth | `GET /oauth/status` | 200, `{ authenticated: false }` |
+| 64 | After successful auth | (after callback completes) `GET /oauth/status` | 200, `{ authenticated: true, instanceUrl: "...", orgId: "...", orgName: "..." }` |
+
+#### POST /oauth/disconnect
+
+| # | Scenario | curl command | Expected |
+|:--|:---|:---|:---|
+| 65 | Disconnect active session | `POST /oauth/disconnect` | 204 |
+| 66 | Disconnect when no session | `POST /oauth/disconnect` | 204 (idempotent) |
+| 67 | Status after disconnect | `GET /oauth/status` | 200, `{ authenticated: false }` |
+
 #### Cross-Cutting
 
 | # | Scenario | How to test | Expected |
 |:--|:---|:---|:---|
-| 50 | Unknown route | `GET /nonexistent` | 404 with RFC 9457 JSON (not HTML) |
-| 51 | Wrong HTTP method | `POST /project/tree` | Should return 404 or 405, with RFC 9457 JSON |
-| 52 | RFC 9457 shape | Every error response in the matrix above | Must have `status` (number), `title` (string), `detail` (string) |
-| 53 | Content-Type on errors | Every error response | Must be `application/problem+json` |
+| 68 | Unknown route | `GET /nonexistent` | 404 with RFC 9457 JSON (not HTML) |
+| 69 | Wrong HTTP method | `POST /project/tree` | Should return 404 or 405, with RFC 9457 JSON |
+| 70 | RFC 9457 shape | Every error response in the matrix above | Must have `status` (number), `title` (string), `detail` (string) |
+| 71 | Content-Type on errors | Every error response | Must be `application/problem+json` |
 
 ### 4.3 Recording Results
 
@@ -313,9 +350,12 @@ These checks are specific to this service's trust model and deployment context.
 | Restricted paths blocked at all depths | Tested in Phase 4 (tests 18a-18d, 23a-23b, 31a-31b). Verify both top-level (`.sf/auth.json`) and nested (`force-app/.git/config`) paths return 400. |
 | Tree and file endpoint filtering are consistent | Paths hidden from `/project/tree` must also be blocked by `/project/file` GET/PUT/DELETE. Verify by creating nested `.git/`, `.sf/`, `node_modules/`, and dotfile directories inside `force-app/`, then checking tree excludes them AND file endpoints return 400. |
 | Auth tokens not exposed via tree/file read | GET /project/tree should not include `.sf/` directory; GET /project/file should not serve `.sf/` contents |
-| Auth tokens not logged | Search `routes.ts`, `project.ts` for any logging of `accessToken` or `instanceUrl`. Check pino-http serializer doesn't log request bodies. |
+| Auth tokens not logged | Search `routes.ts`, `project.ts`, `oauth.ts` for any logging of `accessToken`, `refreshToken`, `instanceUrl`, or `clientSecret`. Check pino-http serializer doesn't log request bodies. |
 | No customer data in logs | Review `logger.ts` and all `logger.*()` calls — they should log paths/shapes, not contents |
 | `sfdx-project.json` not overwritten on re-init | Call POST /project/init twice — second call should preserve existing config |
+| OAuth state is single-use | In `oauth.ts`, verify state → codeVerifier mapping is deleted after first use. Attempting to reuse a state should fail. |
+| OAuth PKCE implemented | Verify `generateCodeChallenge()` does SHA-256 and base64url encoding (no padding). Verify code_challenge_method=S256 in authorization URL. |
+| OAuth callback escapes HTML | Verify error messages in callback HTML are HTML-escaped (< becomes &lt;, etc.) to prevent XSS |
 
 ## Phase 6: Write Feedback
 
