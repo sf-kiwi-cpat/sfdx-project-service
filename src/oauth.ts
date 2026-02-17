@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { getOAuthConfig, isOAuthConfigured } from './config.js';
 import { logger } from './logger.js';
+import { OAuthError } from './errors.js';
 
 /**
  * OAuth session after successful authentication.
@@ -120,7 +121,7 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string, loginUr
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Token exchange failed: ${response.status} ${errorText}`);
+    throw new OAuthError(`Token exchange failed: ${response.status} ${errorText}`);
   }
 
   return (await response.json()) as TokenResponse;
@@ -133,7 +134,7 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string, loginUr
  */
 export function generateAuthorizationUrl(loginUrl?: string): string {
   if (!isOAuthConfigured()) {
-    throw new Error('OAuth is not configured. Set SF_CLIENT_ID and SF_CLIENT_SECRET environment variables.');
+    throw new OAuthError('OAuth is not configured. Set SF_CLIENT_ID and SF_CLIENT_SECRET environment variables.');
   }
 
   const config = getOAuthConfig();
@@ -164,7 +165,7 @@ export async function handleCallback(code: string, state: string, loginUrl?: str
   // Validate state (one-time use)
   const codeVerifier = pendingStates.get(state);
   if (!codeVerifier) {
-    throw new Error('Invalid or expired state parameter');
+    throw new OAuthError('Invalid or expired state parameter');
   }
   pendingStates.delete(state);
 
@@ -234,7 +235,7 @@ export function clearSession(): void {
  */
 export async function refreshAccessToken(): Promise<OAuthSession> {
   if (!currentSession || !currentSession.refreshToken) {
-    throw new Error('No refresh token available');
+    throw new OAuthError('No refresh token available');
   }
 
   try {
@@ -258,7 +259,7 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
       const errorText = await response.text();
       logger.warn({ status: response.status }, 'Token refresh failed');
       clearSession();
-      throw new Error(`Token refresh failed: ${response.status} ${errorText}`);
+      throw new OAuthError(`Token refresh failed: ${response.status} ${errorText}`);
     }
 
     const tokenResponse = (await response.json()) as TokenResponse;
