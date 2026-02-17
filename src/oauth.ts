@@ -138,7 +138,8 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string, loginUr
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new OAuthError(`Token exchange failed: ${response.status} ${errorText}`);
+    logger.debug({ status: response.status, error: errorText }, 'Token exchange failed');
+    throw new OAuthError(`Token exchange failed (HTTP ${response.status})`);
   }
 
   return (await response.json()) as TokenResponse;
@@ -283,8 +284,9 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
     if (!response.ok) {
       const errorText = await response.text();
       logger.warn({ status: response.status }, 'Token refresh failed');
+      logger.debug({ status: response.status, error: errorText }, 'Token refresh error details');
       clearSession();
-      throw new OAuthError(`Token refresh failed: ${response.status} ${errorText}`);
+      throw new OAuthError(`Token refresh failed (HTTP ${response.status})`);
     }
 
     const tokenResponse = (await response.json()) as TokenResponse;
