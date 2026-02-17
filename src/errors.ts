@@ -48,6 +48,14 @@ export class NotAFileError extends Error {
   }
 }
 
+/** Thrown when OAuth operations fail. */
+export class OAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OAuthError';
+  }
+}
+
 /**
  * Map thrown errors to HTTP problem details.
  */
@@ -63,6 +71,9 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof NotAFileError) {
     return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof OAuthError) {
+    return problemDetail(400, 'OAuth Error', err.message);
   }
 
   const nodeErr = err as NodeJS.ErrnoException;
