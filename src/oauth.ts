@@ -31,9 +31,25 @@ interface TokenResponse {
 
 /**
  * Module-level state for pending authorization requests.
- * Maps state → codeVerifier for PKCE.
+ * Maps state → { codeVerifier, createdAt } with TTL-based cleanup.
  */
-const pendingStates = new Map<string, string>();
+interface PendingState {
+  codeVerifier: string;
+  createdAt: number;
+}
+const pendingStates = new Map<string, PendingState>();
+
+// Clean up expired pending states every 60 seconds (10-minute TTL)
+const PENDING_STATE_TTL = 10 * 60 * 1000; // 10 minutes
+const CLEANUP_INTERVAL = 60 * 1000; // 60 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, { createdAt }] of pendingStates.entries()) {
+    if (now - createdAt > PENDING_STATE_TTL) {
+      pendingStates.delete(state);
+    }
+  }
+}, CLEANUP_INTERVAL);
 
 /**
  * Module-level storage for the current OAuth session.
@@ -143,8 +159,8 @@ export function generateAuthorizationUrl(loginUrl?: string): string {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
-  // Store state → codeVerifier for later verification in handleCallback
-  pendingStates.set(state, codeVerifier);
+  // Store state → { codeVerifier, createdAt } for later verification in handleCallback
+  pendingStates.set(state, { codeVerifier, createdAt: Date.now() });
 
   const authUrl = new URL(`${loginUrl ?? config.loginUrl}/services/oauth2/authorize`);
   authUrl.searchParams.set('response_type', 'code');
@@ -163,11 +179,19 @@ export function generateAuthorizationUrl(loginUrl?: string): string {
  * Exchanges authorization code for tokens and stores the session.
  */
 export async function handleCallback(code: string, state: string, loginUrl?: string): Promise<OAuthSession> {
-  // Validate state (one-time use)
-  const codeVerifier = pendingStates.get(state);
-  if (!codeVerifier) {
+  // Validate state (one-time use, must not be expired)
+  const pending = pendingStates.get(state);
+  if (!pending) {
     throw new OAuthError('Invalid or expired state parameter');
   }
+
+  const now = Date.now();
+  if (now - pending.createdAt > PENDING_STATE_TTL) {
+    pendingStates.delete(state);
+    throw new OAuthError('Invalid or expired state parameter');
+  }
+
+  const { codeVerifier } = pending;
   pendingStates.delete(state);
 
   // Exchange code for tokens
