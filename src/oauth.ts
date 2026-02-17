@@ -309,7 +309,7 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
 
     return { ...currentSession };
   } catch (err) {
-    clearSession();
+    // clearSession already called in error path above, just re-throw
     throw err;
   }
 }
