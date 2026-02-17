@@ -300,31 +300,36 @@ describe('OAuth Service', () => {
     });
 
     it('returns false when session is expired', async () => {
-      const authUrl = generateAuthorizationUrl();
-      const state = new URL(authUrl).searchParams.get('state')!;
+      vi.useFakeTimers();
+      try {
+        const authUrl = generateAuthorizationUrl();
+        const state = new URL(authUrl).searchParams.get('state')!;
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          access_token: 'token',
-          instance_url: 'https://test.salesforce.com',
-          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
-          token_type: 'Bearer',
-          expires_in: 1, // expires in 1 second
-        }),
-      });
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'token',
+            instance_url: 'https://test.salesforce.com',
+            id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+            token_type: 'Bearer',
+            expires_in: 1, // expires in 1 second
+          }),
+        });
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ Name: 'Test Org' }),
-      });
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ Name: 'Test Org' }),
+        });
 
-      await handleCallback('code', state);
+        await handleCallback('code', state);
 
-      // Wait for expiration + 5-minute buffer
-      await new Promise((r) => setTimeout(r, 2000));
+        // Advance time past expiration + 5-minute buffer
+        vi.advanceTimersByTime(2000);
 
-      expect(isAuthenticated()).toBe(false);
+        expect(isAuthenticated()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('applies 5-minute buffer for expiration', async () => {
