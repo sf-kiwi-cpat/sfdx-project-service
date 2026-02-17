@@ -26,7 +26,7 @@ interface TokenResponse {
   instance_url: string;
   id: string; // format: https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z
   token_type: string;
-  expires_in: number;
+  expires_in?: number;
 }
 
 /**
@@ -219,7 +219,7 @@ export async function handleCallback(code: string, state: string, loginUrl?: str
     refreshToken: tokenResponse.refresh_token ?? null,
     instanceUrl: tokenResponse.instance_url,
     issuedAt: Date.now(),
-    expiresAt: tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : null,
+    expiresAt: tokenResponse.expires_in !== undefined ? Date.now() + tokenResponse.expires_in * 1000 : null,
     userId,
     orgId,
     orgName,
@@ -303,7 +303,7 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
 
     currentSession.accessToken = tokenResponse.access_token;
     currentSession.issuedAt = Date.now();
-    currentSession.expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : null;
+    currentSession.expiresAt = tokenResponse.expires_in !== undefined ? Date.now() + tokenResponse.expires_in * 1000 : null;
 
     logger.info('Access token refreshed');
 
