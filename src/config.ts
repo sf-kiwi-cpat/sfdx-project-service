@@ -52,12 +52,12 @@ const ALLOWED_LOGIN_DOMAINS = [
   'login.salesforce.com',
   'test.salesforce.com',
   'sandbox.salesforce.com',
-  'localhost', // for local development
 ];
 
 /**
  * Validate that a login URL is from a trusted Salesforce domain.
- * Returns true if the URL hostname is in the allowed list, false otherwise.
+ * Returns true if the URL hostname is in the allowed list and uses HTTPS (except localhost).
+ * Returns false otherwise.
  */
 export function isValidLoginUrl(loginUrl: string | undefined): boolean {
   if (!loginUrl) return true; // undefined/empty is valid (uses config default)
@@ -65,9 +65,22 @@ export function isValidLoginUrl(loginUrl: string | undefined): boolean {
   try {
     const url = new URL(loginUrl);
     const hostname = url.hostname.toLowerCase();
+    const protocol = url.protocol.toLowerCase();
 
-    // Check if hostname matches any allowed domain or is localhost with a port
-    return ALLOWED_LOGIN_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+    // Localhost is allowed only for local development (http or https)
+    if (hostname === 'localhost') {
+      return true;
+    }
+
+    // Non-localhost must use HTTPS
+    if (protocol !== 'https:') {
+      return false;
+    }
+
+    // Check if hostname matches any allowed domain or is a subdomain
+    return ALLOWED_LOGIN_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+    );
   } catch {
     return false; // invalid URL
   }
