@@ -2,7 +2,6 @@
 name: review-code
 description: "Launch comprehensive code review using both code-review and quality-assurance agents in parallel"
 model: inherit
-color: blue
 ---
 
 ## Purpose
