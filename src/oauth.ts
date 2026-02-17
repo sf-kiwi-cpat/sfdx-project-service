@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { getOAuthConfig, isOAuthConfigured, isValidLoginUrl } from './config.js';
+import { getOAuthConfig, isOAuthConfigured, isValidLoginUrl, SF_API_VERSION } from './config.js';
 import { logger } from './logger.js';
 import { OAuthError } from './errors.js';
 
@@ -88,11 +88,63 @@ function parseIdUrl(idUrl: string): { orgId: string; userId: string } {
 }
 
 /**
+ * Validate that a token response from Salesforce has required fields.
+ * For token exchange (authorization code grant): requires access_token, instance_url, id, token_type
+ * For token refresh (refresh_token grant): requires only access_token, token_type (refreshes don't return id/instance_url)
+ * Throws OAuthError if validation fails.
+ */
+function validateTokenResponse(data: unknown): asserts data is TokenResponse {
+  if (!data || typeof data !== 'object') {
+    throw new OAuthError('Invalid token response: expected an object');
+  }
+
+  const response = data as Record<string, unknown>;
+
+  // Fields required in all token responses
+  const requiredFields: Array<{ name: string; type: string }> = [
+    { name: 'access_token', type: 'string' },
+    { name: 'token_type', type: 'string' },
+  ];
+
+  for (const { name, type } of requiredFields) {
+    if (!(name in response)) {
+      throw new OAuthError(`Invalid token response: missing required field '${name}'`);
+    }
+    if (typeof response[name] !== type) {
+      throw new OAuthError(`Invalid token response: field '${name}' must be a ${type}`);
+    }
+  }
+
+  // Fields required only for token exchange (authorization code flow)
+  const exchangeRequiredFields: Array<{ name: string; type: string }> = [
+    { name: 'instance_url', type: 'string' },
+    { name: 'id', type: 'string' },
+  ];
+
+  // If both exchange-required fields are present, validate them (token exchange flow)
+  // If neither are present, skip validation (token refresh flow)
+  const hasInstanceUrl = 'instance_url' in response;
+  const hasId = 'id' in response;
+
+  if (hasInstanceUrl || hasId) {
+    // At least one exchange field present, so validate all exchange fields
+    for (const { name, type } of exchangeRequiredFields) {
+      if (!(name in response)) {
+        throw new OAuthError(`Invalid token response: missing required field '${name}'`);
+      }
+      if (typeof response[name] !== type) {
+        throw new OAuthError(`Invalid token response: field '${name}' must be a ${type}`);
+      }
+    }
+  }
+}
+
+/**
  * Fetch organization name via Salesforce REST API (non-fatal if fails).
  */
 async function fetchOrgName(accessToken: string, instanceUrl: string, orgId: string): Promise<string | null> {
   try {
-    const url = `${instanceUrl}/services/data/v62.0/sobjects/Organization/${orgId}`;
+    const url = `${instanceUrl}/services/data/v${SF_API_VERSION}/sobjects/Organization/${orgId}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -143,7 +195,9 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string, loginUr
     throw new OAuthError(`Token exchange failed (HTTP ${response.status})`);
   }
 
-  return (await response.json()) as TokenResponse;
+  const data = await response.json();
+  validateTokenResponse(data);
+  return data;
 }
 
 /**
@@ -275,44 +329,41 @@ export async function refreshAccessToken(): Promise<OAuthSession> {
     throw new OAuthError('No refresh token available');
   }
 
-  try {
-    const config = getOAuthConfig();
-    const tokenUrl = `${currentSession.instanceUrl}/services/oauth2/token`;
+  const config = getOAuthConfig();
+  const tokenUrl = `${currentSession.instanceUrl}/services/oauth2/token`;
 
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: currentSession.refreshToken,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    });
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: currentSession.refreshToken,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+  });
 
-    const response = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.warn({ status: response.status }, 'Token refresh failed');
-      logger.debug({ status: response.status, error: errorText }, 'Token refresh error details');
-      clearSession();
-      throw new OAuthError(`Token refresh failed (HTTP ${response.status})`);
-    }
-
-    const tokenResponse = (await response.json()) as TokenResponse;
-
-    currentSession.accessToken = tokenResponse.access_token;
-    currentSession.issuedAt = Date.now();
-    currentSession.expiresAt = tokenResponse.expires_in !== undefined ? Date.now() + tokenResponse.expires_in * 1000 : null;
-
-    logger.info('Access token refreshed');
-
-    return { ...currentSession };
-  } catch (err) {
-    // clearSession already called in error path above, just re-throw
-    throw err;
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger.warn({ status: response.status }, 'Token refresh failed');
+    logger.debug({ status: response.status, error: errorText }, 'Token refresh error details');
+    clearSession();
+    throw new OAuthError(`Token refresh failed (HTTP ${response.status})`);
   }
+
+  const data = await response.json();
+  validateTokenResponse(data);
+  const tokenResponse = data;
+
+  currentSession.accessToken = tokenResponse.access_token;
+  currentSession.issuedAt = Date.now();
+  currentSession.expiresAt = tokenResponse.expires_in !== undefined ? Date.now() + tokenResponse.expires_in * 1000 : null;
+
+  logger.info('Access token refreshed');
+
+  return { ...currentSession };
 }
 
 /**

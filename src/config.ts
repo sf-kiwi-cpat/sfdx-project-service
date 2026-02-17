@@ -45,6 +45,12 @@ export function isOAuthConfigured(): boolean {
 }
 
 /**
+ * Salesforce API version used for REST API calls and source metadata.
+ * Format: '62.0' (no 'v' prefix - add 'v' at URL construction sites)
+ */
+export const SF_API_VERSION = '62.0';
+
+/**
  * Allowed Salesforce login domains for OAuth loginUrl parameter.
  * Restricts to known Salesforce instances to prevent credential exfiltration.
  */

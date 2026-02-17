@@ -14,6 +14,24 @@ import {
 } from './oauth.js';
 import { isOAuthConfigured } from './config.js';
 
+/**
+ * Express middleware that rejects requests with 409 if the write lock is held.
+ * Applies to write operations (POST, PUT, DELETE) that should not run while
+ * the agent is active.
+ */
+function requireWriteUnlocked(writeLock: WriteLock) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (writeLock.isHeld()) {
+      logger.warn({ path: req.path }, 'Write rejected: agent lock active');
+      res.status(409).contentType(PROBLEM_JSON).json(
+        problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
+      );
+      return;
+    }
+    next();
+  };
+}
+
 export function createRouter(writeLock: WriteLock): express.Router {
   const router = express.Router();
 
@@ -36,6 +54,12 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
+  /**
+   * OAuth callback endpoint. Returns HTTP 200 for all outcomes (success and error).
+   * This is intentional for browser-based OAuth flows to provide a consistent user
+   * experience. Error details are shown in the rendered HTML page rather than using
+   * RFC 9457 problem details format.
+   */
   router.get('/oauth/callback', async (req: Request, res: Response, _next: NextFunction) => {
     try {
       const error = req.query.error as string | undefined;
@@ -95,16 +119,8 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   // --- Project init ---
-  router.post('/project/init', async (req: Request, res: Response, next: NextFunction) => {
+  router.post('/project/init', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Init rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-        );
-        return;
-      }
-
       const { accessToken, instanceUrl } = req.body as InitInput;
       if (!accessToken || !instanceUrl) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -160,16 +176,8 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   // --- Put file (write) ---
-  router.put('/project/file', async (req: Request, res: Response, next: NextFunction) => {
+  router.put('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Write rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-        );
-        return;
-      }
-
       const pathParam = req.query.path as string;
       if (!pathParam) {
         res.status(400).contentType(PROBLEM_JSON).json(
@@ -194,16 +202,8 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   // --- Delete file ---
-  router.delete('/project/file', async (req: Request, res: Response, next: NextFunction) => {
+  router.delete('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (writeLock.isHeld()) {
-        logger.warn({ path: req.path }, 'Delete rejected: agent lock active');
-        res.status(409).contentType(PROBLEM_JSON).json(
-          problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-        );
-        return;
-      }
-
       const pathParam = req.query.path as string;
       if (!pathParam) {
         res.status(400).contentType(PROBLEM_JSON).json(

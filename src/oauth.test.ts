@@ -538,4 +538,178 @@ describe('OAuth Service', () => {
       await expect(handleCallback('code', state)).rejects.toThrow();
     });
   });
+
+  describe('validateTokenResponse', () => {
+    let mockFetch: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockFetch = vi.fn();
+      global.fetch = mockFetch as unknown as typeof fetch;
+    });
+
+    it('accepts a valid token response', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      const session = await handleCallback('code', state);
+      expect(session.accessToken).toBe('token');
+    });
+
+    it('rejects response missing access_token', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: missing required field 'access_token'"
+      );
+    });
+
+    it('rejects response missing instance_url', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: missing required field 'instance_url'"
+      );
+    });
+
+    it('rejects response missing id', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          instance_url: 'https://test.salesforce.com',
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: missing required field 'id'"
+      );
+    });
+
+    it('rejects response missing token_type', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: missing required field 'token_type'"
+      );
+    });
+
+    it('rejects response with wrong type for access_token', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 123, // wrong type
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+        }),
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        "Invalid token response: field 'access_token' must be a string"
+      );
+    });
+
+    it('rejects non-object token response', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => 'not an object',
+      });
+
+      await expect(handleCallback('code', state)).rejects.toThrow(
+        'Invalid token response: expected an object'
+      );
+    });
+
+    it('validates token response in refreshAccessToken', async () => {
+      const authUrl = generateAuthorizationUrl();
+      const state = new URL(authUrl).searchParams.get('state')!;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'token',
+          refresh_token: 'refresh-token',
+          instance_url: 'https://test.salesforce.com',
+          id: 'https://login.salesforce.com/id/00Dxx0000000000/005xx000000000Z',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Name: 'Test Org' }),
+      });
+
+      await handleCallback('code', state);
+
+      // Refresh with invalid response - missing token_type
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-token',
+          // missing token_type
+        }),
+      });
+
+      await expect(refreshAccessToken()).rejects.toThrow(
+        "Invalid token response: missing required field 'token_type'"
+      );
+    });
+  });
 });
