@@ -43,16 +43,7 @@ export function createRouter(writeLock: WriteLock): express.Router {
 
       if (error) {
         const errorMsg = `OAuth Error: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`;
-        res.status(200).type('text/html').send(`
-          <html>
-            <head><title>Authentication Failed</title></head>
-            <body>
-              <h1>Authentication Failed</h1>
-              <p>${escapeHtml(errorMsg)}</p>
-              <p>You can close this tab.</p>
-            </body>
-          </html>
-        `);
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', errorMsg));
         return;
       }
 
@@ -60,30 +51,12 @@ export function createRouter(writeLock: WriteLock): express.Router {
       const state = req.query.state as string | undefined;
 
       if (!code || !state) {
-        res.status(200).type('text/html').send(`
-          <html>
-            <head><title>Authentication Failed</title></head>
-            <body>
-              <h1>Authentication Failed</h1>
-              <p>Missing code or state parameter.</p>
-              <p>You can close this tab.</p>
-            </body>
-          </html>
-        `);
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Missing code or state parameter.'));
         return;
       }
 
       if (writeLock.isHeld()) {
-        res.status(200).type('text/html').send(`
-          <html>
-            <head><title>Authentication Failed</title></head>
-            <body>
-              <h1>Authentication Failed</h1>
-              <p>Server is busy. Please try again later.</p>
-              <p>You can close this tab.</p>
-            </body>
-          </html>
-        `);
+        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Server is busy. Please try again later.'));
         return;
       }
 
@@ -94,27 +67,10 @@ export function createRouter(writeLock: WriteLock): express.Router {
       await scaffoldProject();
       await connectOrg({ accessToken: session.accessToken, instanceUrl: session.instanceUrl });
 
-      res.status(200).type('text/html').send(`
-        <html>
-          <head><title>Authentication Successful</title></head>
-          <body>
-            <h1>Authentication successful</h1>
-            <p>You can close this tab.</p>
-          </body>
-        </html>
-      `);
+      res.status(200).type('text/html').send(renderCallbackPage('Authentication Successful', 'Authentication successful', 'You can close this tab.'));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      res.status(200).type('text/html').send(`
-        <html>
-          <head><title>Authentication Failed</title></head>
-          <body>
-            <h1>Authentication Failed</h1>
-            <p>${escapeHtml(message)}</p>
-            <p>You can close this tab.</p>
-          </body>
-        </html>
-      `);
+      res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', message));
     }
   });
 
@@ -344,4 +300,20 @@ function escapeHtml(text: string): string {
     "'": '&#039;',
   };
   return text.replace(/[&<>"']/g, (char) => map[char] || char);
+}
+
+/**
+ * Render OAuth callback response page (success or failure).
+ */
+function renderCallbackPage(title: string, heading: string, message: string): string {
+  return `
+    <html>
+      <head><title>${escapeHtml(title)}</title></head>
+      <body>
+        <h1>${escapeHtml(heading)}</h1>
+        <p>${escapeHtml(message)}</p>
+        <p>You can close this tab.</p>
+      </body>
+    </html>
+  `;
 }
