@@ -7,9 +7,7 @@ import {
   clearSession,
   refreshAccessToken,
   resetOAuthState,
-  type OAuthSession,
 } from './oauth.js';
-import { createHash } from 'node:crypto';
 
 const originalFetch = global.fetch;
 
@@ -60,12 +58,13 @@ describe('OAuth Service', () => {
       const state2 = new URL(url2).searchParams.get('state');
 
       expect(state1).not.toBe(state2);
+      expect(state1).toBeDefined();
+      expect(state2).toBeDefined();
     });
 
     it('generates a valid PKCE code challenge (base64url-encoded SHA-256)', () => {
       const url = generateAuthorizationUrl();
       const codeChallenge = new URL(url).searchParams.get('code_challenge');
-      const state = new URL(url).searchParams.get('state');
 
       // Code challenge should be base64url (no padding)
       expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -87,7 +86,7 @@ describe('OAuth Service', () => {
 
     beforeEach(() => {
       mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
     });
 
     it('rejects an unknown state', async () => {
@@ -239,7 +238,7 @@ describe('OAuth Service', () => {
       const state = new URL(authUrl).searchParams.get('state')!;
 
       const mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -268,7 +267,7 @@ describe('OAuth Service', () => {
 
     beforeEach(() => {
       mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
     });
 
     it('returns false when no session', () => {
@@ -332,8 +331,6 @@ describe('OAuth Service', () => {
       const authUrl = generateAuthorizationUrl();
       const state = new URL(authUrl).searchParams.get('state')!;
 
-      const expiresAt = Date.now() + 4 * 60 * 1000; // expires in 4 minutes
-
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -363,7 +360,7 @@ describe('OAuth Service', () => {
       const state = new URL(authUrl).searchParams.get('state')!;
 
       const mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -393,7 +390,7 @@ describe('OAuth Service', () => {
 
     beforeEach(() => {
       mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
     });
 
     it('updates the stored session with new access token', async () => {
@@ -498,7 +495,7 @@ describe('OAuth Service', () => {
       const state = new URL(authUrl).searchParams.get('state')!;
 
       const mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
 
       mockFetch.mockResolvedValueOnce({
         ok: true,

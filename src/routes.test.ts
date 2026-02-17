@@ -455,7 +455,7 @@ describe('SF Project Service API', () => {
 
     beforeEach(() => {
       mockFetch = vi.fn();
-      global.fetch = mockFetch as any;
+      global.fetch = mockFetch as unknown as typeof fetch;
       oauthModule.resetOAuthState();
       process.env.SF_CLIENT_ID = 'test-client-id';
       process.env.SF_CLIENT_SECRET = 'test-client-secret';

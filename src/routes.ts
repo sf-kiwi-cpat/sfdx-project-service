@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { problemDetail, PROBLEM_JSON, OAuthError } from './errors.js';
+import { problemDetail, PROBLEM_JSON } from './errors.js';
 import { buildTree, readFile, writeFile, deleteFile } from './files.js';
 import { logger } from './logger.js';
 import { scaffoldProject, connectOrg, type InitInput } from './project.js';
