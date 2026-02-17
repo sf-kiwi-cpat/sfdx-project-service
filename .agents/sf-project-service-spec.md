@@ -88,6 +88,10 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 | `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
 | `DELETE /project/file?path=...` | Delete a file |
 | `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
+| `GET /oauth/authorize` | Get the Salesforce OAuth authorization URL |
+| `GET /oauth/callback` | OAuth callback — Salesforce redirects here after login |
+| `GET /oauth/status` | Check authentication status |
+| `POST /oauth/disconnect` | Clear the OAuth session (logout) |
 
 ### Project Initialization
 
@@ -119,11 +123,38 @@ These operations are valuable but can wait. In the near term, the agent can hand
 
 The steel thread is complete when all endpoints in the API surface above are functional and can be **explored, tested, and demoed using curl** (or a similar HTTP client). No UI is required. A teammate will build the App Studio UI against these endpoints as a separate effort.
 
+For OAuth specifically: the flow is end-to-end testable (authorize → browser login → callback → status shows authenticated) and no sensitive data (tokens, client secret) is logged.
+
 ## Authentication
 
-**Org auth (connecting to Salesforce):** The Project Service receives an OAuth access token and instance URL via `POST /project/init` and registers them with `@salesforce/core`. The VaaS infrastructure handles the actual OAuth flow with the user; the Project Service is just a consumer of the resulting token.
+**Org auth (connecting to Salesforce):** The Project Service supports two flows for connecting to a Salesforce org:
+
+1. **Direct token flow** (for programmatic callers): The Project Service receives an OAuth access token and instance URL via `POST /project/init` and registers them with `@salesforce/core`. The VaaS infrastructure handles the actual OAuth flow with the user; the Project Service is just a consumer of the resulting token.
+
+2. **Interactive OAuth flow** (for manual testing and UI): Users can authenticate via `GET /oauth/authorize` → browser login → `GET /oauth/callback`. The OAuth flow implements Authorization Code with PKCE (RFC 7636) for security. After successful authentication, the service automatically calls `connectOrg()` to register credentials with `@salesforce/core`. The session is stored in-memory (lost on restart).
+
+   - `GET /oauth/authorize` — Returns the authorization URL for the user to open in a browser
+   - `GET /oauth/callback` — Salesforce redirects here after login with an authorization code
+   - `GET /oauth/status` — Check if currently authenticated and get org/user details
+   - `POST /oauth/disconnect` — Clear the OAuth session (logout)
 
 **Endpoint auth (securing the API):** Not required for the steel thread. The container is a single-user environment behind the VaaS infrastructure, which serves as the trust boundary. Endpoint-level auth can be added later if the deployment model changes.
+
+## Configuration
+
+Environment variables control OAuth and deployment settings:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `SF_CLIENT_ID` | (none) | Connected App consumer key (required for OAuth) |
+| `SF_CLIENT_SECRET` | (none) | Connected App consumer secret (required for OAuth) |
+| `SF_CALLBACK_URL` | `http://localhost:{PORT}/oauth/callback` | OAuth callback URL |
+| `SF_LOGIN_URL` | `https://login.salesforce.com` | Salesforce login URL (use `https://test.salesforce.com` for sandbox) |
+| `SF_SCOPES` | `api refresh_token` | OAuth scopes to request |
+| `PORT` | `3000` | Server port |
+| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for EFS mount) |
+
+To enable OAuth, set `SF_CLIENT_ID` and `SF_CLIENT_SECRET` from a Connected App in your Salesforce org (Setup → App Manager → New Connected App → Enable OAuth Settings).
 
 ## Implementation Guidelines
 
