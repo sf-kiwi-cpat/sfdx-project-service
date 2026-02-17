@@ -42,7 +42,7 @@ const pendingStates = new Map<string, PendingState>();
 // Clean up expired pending states every 60 seconds (10-minute TTL)
 const PENDING_STATE_TTL = 10 * 60 * 1000; // 10 minutes
 const CLEANUP_INTERVAL = 60 * 1000; // 60 seconds
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [state, { createdAt }] of pendingStates.entries()) {
     if (now - createdAt > PENDING_STATE_TTL) {
@@ -50,6 +50,7 @@ setInterval(() => {
     }
   }
 }, CLEANUP_INTERVAL);
+cleanupTimer.unref();
 
 /**
  * Module-level storage for the current OAuth session.
