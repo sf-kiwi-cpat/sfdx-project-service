@@ -52,6 +52,12 @@ describe('files', () => {
       expect(longPath.length).toBeGreaterThan(1024);
       expect(() => resolveProjectPath(longPath)).toThrow('exceeds maximum allowed length');
     });
+
+    it('rejects path of exactly MAX_PATH_LENGTH characters', () => {
+      const exactPath = 'a'.repeat(1024);
+      expect(exactPath.length).toBe(1024);
+      expect(() => resolveProjectPath(exactPath)).toThrow('exceeds maximum allowed length');
+    });
   });
 
   describe('buildTree', () => {

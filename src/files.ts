@@ -22,7 +22,12 @@ export interface TreeNode {
  * Rejects paths that escape the project root (path traversal).
  */
 export function resolveProjectPath(queryPath: string): { absolute: string; relative: string } {
-  if (queryPath.length > MAX_PATH_LENGTH) {
+  // Defense-in-depth guard: reject clearly oversized input (UTF-16 code units) before
+  // reaching any fs call. MAX_PATH_LENGTH is intentionally conservative relative to
+  // PATH_MAX (4096 bytes) because the absolute path includes the project root prefix.
+  // The ENAMETOOLONG handler in errorToProblem() is a safety net for cases this guard
+  // doesn't catch (e.g., short queryPath + long project root, or NAME_MAX per-segment limit).
+  if (queryPath.length >= MAX_PATH_LENGTH) {
     throw new PathTooLongError(queryPath.length);
   }
   const projectPath = path.resolve(getProjectPath());

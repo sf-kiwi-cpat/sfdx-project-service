@@ -36,12 +36,13 @@ describe('errorToProblem', () => {
     expect(problem.detail).toContain('exceeds maximum allowed length');
   });
 
-  it('maps ENOENT to 404 File Not Found', () => {
+  it('maps ENOENT to 404 File Not Found without leaking path', () => {
     const err = new Error('ENOENT') as NodeJS.ErrnoException;
     err.code = 'ENOENT';
     err.path = '/tmp/foo.cls';
     const problem = errorToProblem(err);
-    expect(problem).toMatchObject({ status: 404, title: 'File Not Found' });
+    expect(problem).toMatchObject({ status: 404, title: 'File Not Found', detail: 'File not found' });
+    expect(problem.detail).not.toContain('/tmp/');
   });
 
   it('maps ENAMETOOLONG to 400 Bad Request without leaking path', () => {
@@ -64,6 +65,6 @@ describe('errorToProblem', () => {
 
   it('maps unknown errors to 500 Internal Server Error', () => {
     const problem = errorToProblem(new Error('Something went wrong'));
-    expect(problem).toMatchObject({ status: 500, title: 'Internal Server Error' });
+    expect(problem).toMatchObject({ status: 500, title: 'Internal Server Error', detail: 'Something went wrong' });
   });
 });

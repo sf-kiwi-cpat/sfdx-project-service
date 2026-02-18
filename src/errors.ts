@@ -92,13 +92,14 @@ export function errorToProblem(err: unknown): ProblemDetail {
 
   const nodeErr = err as NodeJS.ErrnoException;
   if (nodeErr?.code === 'ENOENT') {
-    return problemDetail(404, 'File Not Found', `No file exists at path '${nodeErr.path ?? 'unknown'}'`);
+    return problemDetail(404, 'File Not Found', 'File not found');
   }
   if (nodeErr?.code === 'ENAMETOOLONG') {
     return problemDetail(400, 'Bad Request', 'Path is too long');
   }
 
-  // Never forward err.message for ErrnoException — it may contain absolute paths
+  // Forward err.message only for plain Errors (not ErrnoException).
+  // ErrnoException messages may contain absolute paths and are suppressed above.
   if (err instanceof Error && (err as NodeJS.ErrnoException).code === undefined) {
     return problemDetail(500, 'Internal Server Error', err.message);
   }
