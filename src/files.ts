@@ -1,7 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getProjectPath } from './config.js';
-import { FileNotFoundError, NotAFileError, PathTraversalError, RestrictedPathError } from './errors.js';
+import {
+  FileNotFoundError,
+  MAX_PATH_LENGTH,
+  NotAFileError,
+  PathTooLongError,
+  PathTraversalError,
+  RestrictedPathError,
+} from './errors.js';
 
 export interface TreeNode {
   name: string;
@@ -15,6 +22,14 @@ export interface TreeNode {
  * Rejects paths that escape the project root (path traversal).
  */
 export function resolveProjectPath(queryPath: string): { absolute: string; relative: string } {
+  // Defense-in-depth guard: reject clearly oversized input (UTF-16 code units) before
+  // reaching any fs call. MAX_PATH_LENGTH is intentionally conservative relative to
+  // PATH_MAX (4096 bytes) because the absolute path includes the project root prefix.
+  // The ENAMETOOLONG handler in errorToProblem() is a safety net for cases this guard
+  // doesn't catch (e.g., short queryPath + long project root, or NAME_MAX per-segment limit).
+  if (queryPath.length >= MAX_PATH_LENGTH) {
+    throw new PathTooLongError(queryPath.length);
+  }
   const projectPath = path.resolve(getProjectPath());
   const absolute = path.resolve(projectPath, path.normalize(queryPath));
   const relative = path.relative(projectPath, absolute);

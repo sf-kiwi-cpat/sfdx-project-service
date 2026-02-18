@@ -129,7 +129,9 @@ describe('SF Project Service API', () => {
       const res = await request(app).get('/project/tree').expect(404);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body).toMatchObject({ status: 404 });
+      expect(res.body).toMatchObject({ status: 404, title: 'File Not Found' });
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
   });
 
@@ -181,6 +183,19 @@ describe('SF Project Service API', () => {
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toBe('Access to this path is restricted');
+    });
+
+    it('returns 400 with RFC 9457 for path exceeding MAX_PATH_LENGTH', async () => {
+      const res = await request(app)
+        .get('/project/file')
+        .query({ path: 'a'.repeat(1024) })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('exceeds maximum allowed length');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
 
     it('returns 400 for nested restricted path force-app/.git/config', async () => {
@@ -250,6 +265,21 @@ describe('SF Project Service API', () => {
       expect(res.body.detail).toContain('Path escapes project root');
     });
 
+    it('returns 400 with RFC 9457 for path exceeding MAX_PATH_LENGTH', async () => {
+      const res = await request(app)
+        .put('/project/file')
+        .query({ path: 'a'.repeat(1024) })
+        .set('Content-Type', 'text/plain')
+        .send('content')
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('exceeds maximum allowed length');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
+    });
+
     it('returns 400 for restricted path .sf/auth.json', async () => {
       const res = await request(app)
         .put('/project/file')
@@ -316,6 +346,19 @@ describe('SF Project Service API', () => {
 
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Path escapes project root');
+    });
+
+    it('returns 400 with RFC 9457 for path exceeding MAX_PATH_LENGTH', async () => {
+      const res = await request(app)
+        .delete('/project/file')
+        .query({ path: 'a'.repeat(1024) })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(res.body.detail).toContain('exceeds maximum allowed length');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
 
     it('returns 400 for restricted path .sf/auth.json', async () => {
