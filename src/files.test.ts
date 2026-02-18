@@ -46,6 +46,12 @@ describe('files', () => {
       expect(() => resolveProjectPath('force-app/.sf/evil.json')).toThrow('Access to this path is restricted');
       expect(() => resolveProjectPath('force-app/main/.eslintrc')).toThrow('Access to this path is restricted');
     });
+
+    it('rejects paths longer than MAX_PATH_LENGTH', () => {
+      const longPath = 'a/'.repeat(600) + 'file.cls';
+      expect(longPath.length).toBeGreaterThan(1024);
+      expect(() => resolveProjectPath(longPath)).toThrow('exceeds maximum allowed length');
+    });
   });
 
   describe('buildTree', () => {

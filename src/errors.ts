@@ -16,6 +16,9 @@ export function problemDetail(status: number, title: string, detail: string): Pr
 
 export const PROBLEM_JSON = 'application/problem+json';
 
+/** Maximum allowed path length (characters). Paths longer than this are rejected before fs calls. */
+export const MAX_PATH_LENGTH = 1024;
+
 /** Thrown when a path resolves into .sf/, .git/, node_modules/, or dotfiles. */
 export class RestrictedPathError extends Error {
   constructor() {
@@ -56,6 +59,14 @@ export class OAuthError extends Error {
   }
 }
 
+/** Thrown when the path length exceeds MAX_PATH_LENGTH. */
+export class PathTooLongError extends Error {
+  constructor(length: number) {
+    super(`Path length ${length} exceeds maximum allowed length of ${MAX_PATH_LENGTH}`);
+    this.name = 'PathTooLongError';
+  }
+}
+
 /**
  * Map thrown errors to HTTP problem details.
  */
@@ -75,11 +86,21 @@ export function errorToProblem(err: unknown): ProblemDetail {
   if (err instanceof OAuthError) {
     return problemDetail(400, 'OAuth Error', err.message);
   }
+  if (err instanceof PathTooLongError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
 
   const nodeErr = err as NodeJS.ErrnoException;
   if (nodeErr?.code === 'ENOENT') {
     return problemDetail(404, 'File Not Found', `No file exists at path '${nodeErr.path ?? 'unknown'}'`);
   }
+  if (nodeErr?.code === 'ENAMETOOLONG') {
+    return problemDetail(400, 'Bad Request', 'Path is too long');
+  }
 
-  return problemDetail(500, 'Internal Server Error', err instanceof Error ? err.message : String(err));
+  // Never forward err.message for ErrnoException — it may contain absolute paths
+  if (err instanceof Error && (err as NodeJS.ErrnoException).code === undefined) {
+    return problemDetail(500, 'Internal Server Error', err.message);
+  }
+  return problemDetail(500, 'Internal Server Error', 'Internal server error');
 }

@@ -3,6 +3,7 @@ import {
   errorToProblem,
   FileNotFoundError,
   NotAFileError,
+  PathTooLongError,
   PathTraversalError,
   RestrictedPathError,
 } from './errors.js';
@@ -29,12 +30,36 @@ describe('errorToProblem', () => {
     expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
   });
 
+  it('maps PathTooLongError to 400 Bad Request', () => {
+    const problem = errorToProblem(new PathTooLongError(2000));
+    expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
+    expect(problem.detail).toContain('exceeds maximum allowed length');
+  });
+
   it('maps ENOENT to 404 File Not Found', () => {
     const err = new Error('ENOENT') as NodeJS.ErrnoException;
     err.code = 'ENOENT';
     err.path = '/tmp/foo.cls';
     const problem = errorToProblem(err);
     expect(problem).toMatchObject({ status: 404, title: 'File Not Found' });
+  });
+
+  it('maps ENAMETOOLONG to 400 Bad Request without leaking path', () => {
+    const err = new Error("ENAMETOOLONG: name too long, stat '/tmp/sf-qa-project/a/.../file.cls'") as NodeJS.ErrnoException;
+    err.code = 'ENAMETOOLONG';
+    err.path = '/tmp/sf-qa-project/a/.../file.cls';
+    const problem = errorToProblem(err);
+    expect(problem).toMatchObject({ status: 400, title: 'Bad Request', detail: 'Path is too long' });
+    expect(problem.detail).not.toContain('/tmp/');
+  });
+
+  it('does not leak path in detail for unrecognized ErrnoException', () => {
+    const err = new Error("EPERM: operation not permitted, stat '/etc/passwd'") as NodeJS.ErrnoException;
+    err.code = 'EPERM';
+    err.path = '/etc/passwd';
+    const problem = errorToProblem(err);
+    expect(problem).toMatchObject({ status: 500, title: 'Internal Server Error', detail: 'Internal server error' });
+    expect(problem.detail).not.toContain('/etc/passwd');
   });
 
   it('maps unknown errors to 500 Internal Server Error', () => {
