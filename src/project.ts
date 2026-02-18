@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { AuthInfo } from '@salesforce/core';
+import { AuthInfo, StateAggregator } from '@salesforce/core';
 import { getProjectPath, SF_API_VERSION } from './config.js';
+
+/** Mutex to serialize connectOrg calls — HOME mutation must not race across concurrent requests. */
+let connectMutex: Promise<void> = Promise.resolve();
 
 const SFDX_PROJECT_JSON = {
   packageDirectories: [{ path: 'force-app', default: true }],
@@ -36,17 +39,26 @@ export async function scaffoldProject(): Promise<void> {
 /**
  * Connect the org by registering OAuth credentials with AuthInfo.
  * Uses project's .sf directory for config so auth persists on EFS.
+ * Serialized via mutex because @salesforce/core uses os.homedir() (reads HOME)
+ * and mutating HOME concurrently would race.
  */
 export async function connectOrg(input: InitInput): Promise<void> {
+  const result = connectMutex.then(() => _connectOrg(input));
+  connectMutex = result.catch(() => {});
+  return result;
+}
+
+async function _connectOrg(input: InitInput): Promise<void> {
   const projectPath = getProjectPath();
   const sfHome = path.join(projectPath, '.sf');
   await fs.mkdir(sfHome, { recursive: true });
 
-  // Point SF config to project dir so auth persists with the project on EFS
-  const priorHome = process.env.SF_HOME;
-  process.env.SF_HOME = sfHome;
+  // @salesforce/core uses os.homedir() for Global.DIR, not SF_HOME
+  const priorHome = process.env.HOME;
+  process.env.HOME = sfHome;
 
   try {
+    StateAggregator.clearInstance();
     const instanceUrl = input.instanceUrl.replace(/\/$/, '');
 
     const authInfo = await AuthInfo.create({
@@ -60,9 +72,9 @@ export async function connectOrg(input: InitInput): Promise<void> {
     await authInfo.setAsDefault({ org: true });
   } finally {
     if (priorHome !== undefined) {
-      process.env.SF_HOME = priorHome;
+      process.env.HOME = priorHome;
     } else {
-      delete process.env.SF_HOME;
+      delete process.env.HOME;
     }
   }
 }
