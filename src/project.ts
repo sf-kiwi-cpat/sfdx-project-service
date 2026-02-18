@@ -38,9 +38,15 @@ export async function scaffoldProject(): Promise<void> {
 
 /**
  * Connect the org by registering OAuth credentials with AuthInfo.
- * Uses project's .sf directory for config so auth persists on EFS.
- * Serialized via mutex because @salesforce/core uses os.homedir() (reads HOME)
+ * Uses project's .sf directory as a synthetic HOME so @salesforce/core writes
+ * auth files to .sf/.sfdx/<username>.json (project-scoped, not ~/.sfdx/).
+ * Serialized via connectMutex because @salesforce/core uses os.homedir() (reads HOME)
  * and mutating HOME concurrently would race.
+ *
+ * NOTE: The mutex serializes connectOrg calls against each other, but HOME is a
+ * process-global — other concurrent request handlers can observe the mutated value
+ * during the awaits inside _connectOrg. Safe for the current codebase because only
+ * connectOrg reaches @salesforce/core. See #11 for the long-term fix.
  */
 export async function connectOrg(input: InitInput): Promise<void> {
   const result = connectMutex.then(() => _connectOrg(input));
@@ -58,6 +64,10 @@ async function _connectOrg(input: InitInput): Promise<void> {
   process.env.HOME = sfHome;
 
   try {
+    // HOME must be set before clearInstance(): its default arg resolves Global.DIR
+    // (= os.homedir() + '/.sfdx') at call time, evicting the correct project-scoped
+    // cache key. clearInstance() (not clearInstanceAsync()) is safe here because
+    // connectMutex ensures no concurrent getInstance() calls are in flight.
     StateAggregator.clearInstance();
     const instanceUrl = input.instanceUrl.replace(/\/$/, '');
 
