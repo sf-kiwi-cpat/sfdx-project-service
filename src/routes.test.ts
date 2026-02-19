@@ -14,6 +14,9 @@ vi.mock('@salesforce/core', () => ({
       setAsDefault: vi.fn().mockResolvedValue(undefined),
     }),
   },
+  StateAggregator: {
+    clearInstance: vi.fn(),
+  },
 }));
 
 // Store original fetch for restoration

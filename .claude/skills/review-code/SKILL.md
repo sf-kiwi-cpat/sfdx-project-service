@@ -6,7 +6,7 @@ model: inherit
 
 ## Purpose
 
-This skill orchestrates a comprehensive code review by launching both the `code-review` (static analysis) and `quality-assurance` (behavioral testing) agents in parallel. Both agents work on the **current branch** without creating topic branches. The skill then merges their findings into a single unified report and commits it.
+This skill orchestrates a comprehensive code review by launching both the `code-review` (static analysis) and `quality-assurance` (behavioral testing) agents in parallel. Both agents work on the **current branch** without creating topic branches. The skill then merges their findings into a single unified report.
 
 ## Usage
 
@@ -41,7 +41,6 @@ This skill orchestrates a comprehensive code review by launching both the `code-
 6. **Launch agents in parallel**: Starts both `code-review` and `quality-assurance` agents on the current branch
 7. **Merge findings**: Reads draft files (`.agents/.code-review-draft.md`, `.agents/.qa-draft.md`), merges findings, deduplicates
 8. **Write unified report**: Creates `.agents/review-N.md` with all findings, test results, and implementation notes
-9. **Commit report**: Commits the final report to the current branch
 
 ## Process
 
@@ -248,21 +247,9 @@ For example:
    rm -f .agents/.code-review-draft.md .agents/.qa-draft.md
    ```
 
-### Step 7: Commit Report to Current Branch
+### Step 7: Report Results to User
 
-```bash
-git add .agents/review-N.md
-git commit -m "Add review (Round N)
-
-Comprehensive review of $(git rev-parse --short HEAD):
-- Code quality analysis (code-review agent)
-- Behavioral testing and security verification (QA agent)
-- Unified findings with implementation notes"
-```
-
-### Step 8: Report Results to User
-
-After both agents complete and report is committed:
+After both agents complete:
 
 ```markdown
 ## Code Review Complete
@@ -286,8 +273,6 @@ Both agents have completed their reviews and findings have been merged into a si
 
 [If no findings:]
 All prior issues addressed. Code quality and behavior are good. No new issues found.
-
-The report has been committed to branch `<branch_name>`.
 ```
 
 ## Agent Coordination
@@ -296,7 +281,7 @@ The report has been committed to branch `<branch_name>`.
 Both agents work on the **current branch**—no topic branches, no branch switching:
 - Code-review writes to `.agents/.code-review-draft.md`
 - QA writes to `.agents/.qa-draft.md`
-- Skill merges both drafts into `.agents/review-N.md` and commits to current branch
+- Skill merges both drafts into `.agents/review-N.md` (local only — intentionally gitignored)
 
 ### Parallel Execution
 Both agents run simultaneously for efficiency. No conflicts because:
