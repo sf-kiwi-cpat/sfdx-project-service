@@ -37,7 +37,7 @@ export async function scaffoldProject(): Promise<void> {
 }
 
 /**
- * Connect the org by registering OAuth credentials with AuthInfo.
+ * Connect the org by registering credentials with AuthInfo.
  * Uses project's .sf directory as a synthetic HOME so @salesforce/core writes
  * auth files to .sf/.sfdx/<username>.json (project-scoped, not ~/.sfdx/).
  * Serialized via connectMutex because @salesforce/core uses os.homedir() (reads HOME)
@@ -71,6 +71,11 @@ async function _connectOrg(input: InitInput): Promise<void> {
     StateAggregator.clearInstance();
     const instanceUrl = input.instanceUrl.replace(/\/$/, '');
 
+    // IMPORTANT: Do not pass `username` here. Without it, AuthInfo.create() calls
+    // retrieveUserInfo() to fetch the real org username, which is required for
+    // authInfo.save() to actually persist to disk. In @salesforce/core v8, save()
+    // silently no-ops when the username is an opaque access token — passing the
+    // access token as username would cause auth to stop persisting with no error.
     const authInfo = await AuthInfo.create({
       accessTokenOptions: {
         accessToken: input.accessToken,

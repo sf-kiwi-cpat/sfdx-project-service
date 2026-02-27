@@ -51,14 +51,6 @@ export class NotAFileError extends Error {
   }
 }
 
-/** Thrown when OAuth operations fail. */
-export class OAuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'OAuthError';
-  }
-}
-
 /** Thrown when the path length exceeds MAX_PATH_LENGTH. */
 export class PathTooLongError extends Error {
   constructor(length: number) {
@@ -82,9 +74,6 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof NotAFileError) {
     return problemDetail(400, 'Bad Request', err.message);
-  }
-  if (err instanceof OAuthError) {
-    return problemDetail(400, 'OAuth Error', err.message);
   }
   if (err instanceof PathTooLongError) {
     return problemDetail(400, 'Bad Request', err.message);

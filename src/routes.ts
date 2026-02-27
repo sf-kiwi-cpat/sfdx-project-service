@@ -1,3 +1,37 @@
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     ProblemDetail:
+ *       type: object
+ *       description: RFC 9457 Problem Details
+ *       properties:
+ *         status:
+ *           type: integer
+ *         title:
+ *           type: string
+ *         detail:
+ *           type: string
+ *         type:
+ *           type: string
+ *         instance:
+ *           type: string
+ *       required: [status, title, detail]
+ *     TreeNode:
+ *       type: object
+ *       description: Recursive file-tree node
+ *       properties:
+ *         name:
+ *           type: string
+ *         type:
+ *           type: string
+ *           enum: [file, directory]
+ *         children:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/TreeNode'
+ *       required: [name, type]
+ */
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from './errors.js';
 import { buildTree, readFile, writeFile, deleteFile } from './files.js';
@@ -5,14 +39,6 @@ import { logger } from './logger.js';
 import { scaffoldProject, connectOrg, type InitInput } from './project.js';
 import { createProjectWatcher } from './events.js';
 import { WriteLock } from './lock.js';
-import {
-  generateAuthorizationUrl,
-  handleCallback,
-  getSession,
-  isAuthenticated,
-  clearSession,
-} from './oauth.js';
-import { isOAuthConfigured } from './config.js';
 
 /**
  * Express middleware that rejects requests with 409 if the write lock is held.
@@ -35,90 +61,52 @@ function requireWriteUnlocked(writeLock: WriteLock) {
 export function createRouter(writeLock: WriteLock): express.Router {
   const router = express.Router();
 
-  // --- OAuth endpoints ---
-  router.get('/oauth/authorize', (req: Request, res: Response, next: NextFunction) => {
-    try {
-      if (!isOAuthConfigured()) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'OAuth Not Configured', 'SF_CLIENT_ID and SF_CLIENT_SECRET are required')
-        );
-        return;
-      }
-
-      const loginUrl = req.query.loginUrl as string | undefined;
-      const authorizationUrl = generateAuthorizationUrl(loginUrl);
-
-      res.status(200).json({ authorizationUrl });
-    } catch (err) {
-      next(err);
-    }
-  });
-
   /**
-   * OAuth callback endpoint. Returns HTTP 200 for all outcomes (success and error).
-   * This is intentional for browser-based OAuth flows to provide a consistent user
-   * experience. Error details are shown in the rendered HTML page rather than using
-   * RFC 9457 problem details format.
+   * @openapi
+   * /project/init:
+   *   post:
+   *     summary: Initialize a Salesforce project
+   *     description: Scaffolds a new SFDX project and connects it to the given org.
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [accessToken, instanceUrl]
+   *             properties:
+   *               accessToken:
+   *                 type: string
+   *                 description: OAuth access token for the Salesforce org
+   *               instanceUrl:
+   *                 type: string
+   *                 format: uri
+   *                 description: Salesforce instance URL
+   *     responses:
+   *       '201':
+   *         description: Project scaffolded and org connected
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 ok:
+   *                   type: boolean
+   *                 message:
+   *                   type: string
+   *       '400':
+   *         description: Missing or invalid parameters
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '409':
+   *         description: Write lock is held
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
    */
-  router.get('/oauth/callback', async (req: Request, res: Response, _next: NextFunction) => {
-    try {
-      const error = req.query.error as string | undefined;
-      const errorDescription = req.query.error_description as string | undefined;
-
-      if (error) {
-        const errorMsg = `OAuth Error: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`;
-        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', errorMsg));
-        return;
-      }
-
-      const code = req.query.code as string | undefined;
-      const state = req.query.state as string | undefined;
-
-      if (!code || !state) {
-        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Missing code or state parameter.'));
-        return;
-      }
-
-      if (writeLock.isHeld()) {
-        res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', 'Server is busy. Please try again later.'));
-        return;
-      }
-
-      const loginUrl = req.query.loginUrl as string | undefined;
-      const session = await handleCallback(code, state, loginUrl);
-
-      // Auto-connect org after successful OAuth
-      await scaffoldProject();
-      await connectOrg({ accessToken: session.accessToken, instanceUrl: session.instanceUrl });
-
-      res.status(200).type('text/html').send(renderCallbackPage('Authentication Successful', 'Authentication successful', 'You can close this tab.'));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(200).type('text/html').send(renderCallbackPage('Authentication Failed', 'Authentication Failed', message));
-    }
-  });
-
-  router.get('/oauth/status', (_req: Request, res: Response) => {
-    const session = getSession();
-    const auth = isAuthenticated();
-
-    res.status(200).json({
-      authenticated: auth,
-      ...(auth && session ? {
-        instanceUrl: session.instanceUrl,
-        orgId: session.orgId,
-        orgName: session.orgName,
-        userId: session.userId,
-      } : {}),
-    });
-  });
-
-  router.post('/oauth/disconnect', (_req: Request, res: Response) => {
-    clearSession();
-    res.status(204).send();
-  });
-
-  // --- Project init ---
   router.post('/project/init', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { accessToken, instanceUrl } = req.body as InitInput;
@@ -147,7 +135,26 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
-  // --- Project tree ---
+  /**
+   * @openapi
+   * /project/tree:
+   *   get:
+   *     summary: Get the project file tree
+   *     description: Returns a recursive tree structure of the project files.
+   *     responses:
+   *       '200':
+   *         description: File tree
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/TreeNode'
+   *       '404':
+   *         description: Project not found
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.get('/project/tree', async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const tree = await buildTree();
@@ -157,7 +164,39 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
-  // --- Get file ---
+  /**
+   * @openapi
+   * /project/file:
+   *   get:
+   *     summary: Read a project file
+   *     description: Returns the content of a file at the given path as plain text.
+   *     parameters:
+   *       - in: query
+   *         name: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Relative path to the file within the project
+   *     responses:
+   *       '200':
+   *         description: File content
+   *         content:
+   *           text/plain:
+   *             schema:
+   *               type: string
+   *       '400':
+   *         description: Missing or invalid path
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '404':
+   *         description: File not found
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.get('/project/file', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const pathParam = req.query.path as string;
@@ -175,7 +214,55 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
-  // --- Put file (write) ---
+  /**
+   * @openapi
+   * /project/file:
+   *   put:
+   *     summary: Write a project file
+   *     description: Creates or overwrites a file at the given path. Accepts text/plain body or JSON with a content field.
+   *     parameters:
+   *       - in: query
+   *         name: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Relative path to the file within the project
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         text/plain:
+   *           schema:
+   *             type: string
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [content]
+   *             properties:
+   *               content:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: File written
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 ok:
+   *                   type: boolean
+   *       '400':
+   *         description: Missing or invalid path or body
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '409':
+   *         description: Write lock is held
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.put('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const pathParam = req.query.path as string;
@@ -201,7 +288,48 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
-  // --- Delete file ---
+  /**
+   * @openapi
+   * /project/file:
+   *   delete:
+   *     summary: Delete a project file
+   *     description: Deletes the file at the given path.
+   *     parameters:
+   *       - in: query
+   *         name: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Relative path to the file within the project
+   *     responses:
+   *       '200':
+   *         description: File deleted
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 ok:
+   *                   type: boolean
+   *       '400':
+   *         description: Missing or invalid path
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '404':
+   *         description: File not found
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '409':
+   *         description: Write lock is held
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.delete('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const pathParam = req.query.path as string;
@@ -219,7 +347,20 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
-  // --- SSE events ---
+  /**
+   * @openapi
+   * /project/events:
+   *   get:
+   *     summary: Subscribe to project file events
+   *     description: Opens a Server-Sent Events stream that emits file-change events.
+   *     responses:
+   *       '200':
+   *         description: SSE event stream
+   *         content:
+   *           text/event-stream:
+   *             schema:
+   *               type: string
+   */
   router.get('/project/events', (req: Request, res: Response, _next: NextFunction) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -237,7 +378,29 @@ export function createRouter(writeLock: WriteLock): express.Router {
     logger.info({ path: req.path }, 'SSE client connected');
   });
 
-  // --- Internal lock API ---
+  /**
+   * @openapi
+   * /internal/lock:
+   *   post:
+   *     summary: Acquire the write lock
+   *     description: Acquires an exclusive write lock. Returns a lockId used to renew or release.
+   *     responses:
+   *       '200':
+   *         description: Lock acquired
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 lockId:
+   *                   type: string
+   *       '409':
+   *         description: Lock already held
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.post('/internal/lock', (_req: Request, res: Response) => {
     const lockId = writeLock.acquire();
     if (lockId) {
@@ -249,6 +412,45 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
+  /**
+   * @openapi
+   * /internal/lock:
+   *   patch:
+   *     summary: Renew the write lock
+   *     description: Extends the TTL of an existing write lock.
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [lockId]
+   *             properties:
+   *               lockId:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: Lock renewed
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 ok:
+   *                   type: boolean
+   *       '400':
+   *         description: Missing lockId
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '404':
+   *         description: Lock not found
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.patch('/internal/lock', (req: Request, res: Response) => {
     const lockId = req.body?.lockId as string;
     if (!lockId) {
@@ -267,6 +469,45 @@ export function createRouter(writeLock: WriteLock): express.Router {
     }
   });
 
+  /**
+   * @openapi
+   * /internal/lock:
+   *   delete:
+   *     summary: Release the write lock
+   *     description: Releases an existing write lock.
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [lockId]
+   *             properties:
+   *               lockId:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: Lock released
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 ok:
+   *                   type: boolean
+   *       '400':
+   *         description: Missing lockId
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   *       '404':
+   *         description: Lock not found
+   *         content:
+   *           application/problem+json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProblemDetail'
+   */
   router.delete('/internal/lock', (req: Request, res: Response) => {
     const lockId = req.body?.lockId as string;
     if (!lockId) {
@@ -286,34 +527,4 @@ export function createRouter(writeLock: WriteLock): express.Router {
   });
 
   return router;
-}
-
-/**
- * Escape HTML special characters to prevent XSS in error messages.
- */
-function escapeHtml(text: string): string {
-  const map: { [key: string]: string } = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  };
-  return text.replace(/[&<>"']/g, (char) => map[char] || char);
-}
-
-/**
- * Render OAuth callback response page (success or failure).
- */
-function renderCallbackPage(title: string, heading: string, message: string): string {
-  return `
-    <html>
-      <head><title>${escapeHtml(title)}</title></head>
-      <body>
-        <h1>${escapeHtml(heading)}</h1>
-        <p>${escapeHtml(message)}</p>
-        <p>You can close this tab.</p>
-      </body>
-    </html>
-  `;
 }
