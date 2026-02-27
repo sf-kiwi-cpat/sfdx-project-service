@@ -63,6 +63,10 @@ export async function connectOrg(input: InitInput): Promise<void> {
   const authDir = path.join(projectPath, '.sf', Global.SFDX_STATE_FOLDER);
   await fs.mkdir(authDir, { recursive: true });
 
+  // clearInstance() must be called after ensureGlobalDirOverride(): its default
+  // arg resolves Global.DIR at call time to determine which cache entry to evict.
+  // Without this, @salesforce/core reuses a cached StateAggregator pointing at the
+  // old path, defeating project-scoped auth isolation. See #12.
   StateAggregator.clearInstance();
   const instanceUrl = input.instanceUrl.replace(/\/$/, '');
 
