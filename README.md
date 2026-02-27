@@ -31,11 +31,6 @@ The service listens on port 3000 (configurable via `PORT` env var). Set `PROJECT
 | `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
 | `DELETE /project/file?path=...` | Delete a file |
 | `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
-| `GET /oauth/authorize` | Get the Salesforce OAuth authorization URL |
-| `GET /oauth/callback` | OAuth callback — Salesforce redirects here after login |
-| `GET /oauth/status` | Check authentication status |
-| `POST /oauth/disconnect` | Clear the OAuth session (logout) |
-
 ### Internal Lock API (for Agent Service)
 
 | Endpoint | Description |
@@ -45,39 +40,6 @@ The service listens on port 3000 (configurable via `PORT` env var). Set `PROJECT
 | `DELETE /internal/lock` | Release the lock (body: `{ lockId }`) |
 
 When the lock is held, write operations (PUT, DELETE) return `409 Conflict` with an RFC 9457 problem detail.
-
-## OAuth Authentication
-
-To authenticate interactively with a Salesforce org:
-
-1. Create a Connected App in your Salesforce org:
-   - Setup → App Manager → New Connected App
-   - Enable OAuth Settings
-   - Set Callback URL: `http://localhost:3000/oauth/callback`
-   - Select scopes: `api`, `refresh_token`
-   - Save and copy Consumer Key and Consumer Secret
-
-2. Start the server with OAuth credentials:
-   ```bash
-   SF_CLIENT_ID=your_consumer_key SF_CLIENT_SECRET=your_consumer_secret npm start
-   ```
-
-3. Get the authorization URL:
-   ```bash
-   curl http://localhost:3000/oauth/authorize
-   ```
-
-4. Open the returned `authorizationUrl` in your browser and log in
-
-5. After login, Salesforce redirects back to the service. Check status:
-   ```bash
-   curl http://localhost:3000/oauth/status
-   ```
-
-6. For sandbox orgs, pass the sandbox login URL:
-   ```bash
-   curl "http://localhost:3000/oauth/authorize?loginUrl=https://test.salesforce.com"
-   ```
 
 ## Example: curl
 
@@ -103,15 +65,6 @@ curl -X DELETE "http://localhost:3000/project/file?path=force-app/main/default/c
 
 # SSE events (streaming)
 curl -N http://localhost:3000/project/events
-
-# OAuth: Get authorization URL
-curl http://localhost:3000/oauth/authorize
-
-# OAuth: Check authentication status
-curl http://localhost:3000/oauth/status
-
-# OAuth: Disconnect (logout)
-curl -X POST http://localhost:3000/oauth/disconnect
 ```
 
 ## Development

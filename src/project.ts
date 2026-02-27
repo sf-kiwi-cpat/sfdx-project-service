@@ -37,7 +37,7 @@ export async function scaffoldProject(): Promise<void> {
 }
 
 /**
- * Connect the org by registering OAuth credentials with AuthInfo.
+ * Connect the org by registering credentials with AuthInfo.
  * Uses project's .sf directory as a synthetic HOME so @salesforce/core writes
  * auth files to .sf/.sfdx/<username>.json (project-scoped, not ~/.sfdx/).
  * Serialized via connectMutex because @salesforce/core uses os.homedir() (reads HOME)
