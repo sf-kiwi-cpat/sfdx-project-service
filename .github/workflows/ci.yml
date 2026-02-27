@@ -22,10 +22,11 @@ jobs:
       - run: npm run lint
       - run: npm run test:unit -- --coverage
       - name: Comment coverage on PR
-        if: always()
+        if: success()
         uses: davelosert/vitest-coverage-report-action@v2
         with:
           json-summary-path: coverage/coverage-summary.json
+          file-coverage-mode: none
 
   integration-tests:
     name: Integration Tests
