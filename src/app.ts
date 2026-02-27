@@ -1,5 +1,7 @@
 import express from 'express';
 import { pinoHttp } from 'pino-http';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
 import { logger } from './logger.js';
 import { createRouter } from './routes.js';
 import { WriteLock } from './lock.js';
@@ -29,6 +31,21 @@ export function createApp(): express.Application {
 
   app.use(express.json());
   app.use(express.text({ type: ['text/plain', 'application/octet-stream'] }));
+
+  const swaggerSpec = swaggerJsdoc({
+    definition: {
+      openapi: '3.0.0',
+      info: {
+        title: 'SF Project Service',
+        version: '1.0.0',
+        description: 'REST API wrapping an SFDX project for remote IDE-like operations',
+      },
+    },
+    apis: ['./src/routes.ts', './dist/routes.js'],
+  });
+
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/openapi.json', (_req, res) => res.json(swaggerSpec));
 
   app.use(createRouter(writeLock));
 
