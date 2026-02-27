@@ -7,6 +7,7 @@ npm install   # install dependencies (required in new worktrees)
 npm test      # run tests (vitest)
 npm run test:unit          # unit tests only (3 files)
 npm run test:integration   # integration tests only (4 files)
+npm run test:coverage      # all tests + coverage report
 npm run lint  # lint with eslint
 npm run dev   # start dev server with watch mode
 ```
@@ -15,8 +16,8 @@ npm run dev   # start dev server with watch mode
 
 Hooks run automatically after `npm install` (via `prepare` script).
 
-- **pre-commit**: lint-staged (eslint --fix on staged .ts) + unit tests
-- **pre-push**: build + full test suite (unit + integration)
+- **pre-commit**: lint-staged (prettier + eslint --fix on staged .ts) + unit tests
+- **pre-push**: build + unit tests with coverage (90% threshold) + full test suite
 
 Do not skip hooks with `--no-verify`. Only autonomous agents use this repo,
 so the friction is intentional.
