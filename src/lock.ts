@@ -81,10 +81,13 @@ export class WriteLock {
   private scheduleExpiry(): void {
     this.clearTimer();
     const remaining = this.state!.expiresAt - Date.now();
-    this.expiryTimer = setTimeout(() => {
-      this.expiryTimer = null;
-      this.state = null;
-    }, Math.max(0, remaining));
+    this.expiryTimer = setTimeout(
+      () => {
+        this.expiryTimer = null;
+        this.state = null;
+      },
+      Math.max(0, remaining)
+    );
   }
 
   private clearTimer(): void {

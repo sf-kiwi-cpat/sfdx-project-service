@@ -5,9 +5,25 @@
 ```bash
 npm install   # install dependencies (required in new worktrees)
 npm test      # run tests (vitest)
+npm run test:unit          # unit tests only (3 files)
+npm run test:integration   # integration tests only (4 files)
+npm run test:coverage      # all tests + coverage report
 npm run lint  # lint with eslint
 npm run dev   # start dev server with watch mode
 ```
+
+## Git Hooks (husky)
+
+Hooks run automatically after `npm install` (via `prepare` script).
+
+- **pre-commit**: lint-staged (prettier + eslint --fix on staged .ts) + unit tests
+- **pre-push**: build + all tests with coverage (90% threshold; 85% for branches)
+
+Do not skip hooks with `--no-verify`. Only autonomous agents use this repo,
+so the friction is intentional.
+
+Coverage thresholds are in `vitest.config.ts`. Coverage must run against
+the full test suite (not unit-only) — integration tests provide most coverage.
 
 ## Docker
 

@@ -146,8 +146,12 @@ describe('SF Project Service API', () => {
       const res = await request(app).get('/project/tree').expect(200);
 
       const names = res.body.children.map((c: { name: string }) => c.name);
-      const dirs = res.body.children.filter((c: { type: string }) => c.type === 'directory').map((c: { name: string }) => c.name);
-      const files = res.body.children.filter((c: { type: string }) => c.type === 'file').map((c: { name: string }) => c.name);
+      const dirs = res.body.children
+        .filter((c: { type: string }) => c.type === 'directory')
+        .map((c: { name: string }) => c.name);
+      const files = res.body.children
+        .filter((c: { type: string }) => c.type === 'file')
+        .map((c: { name: string }) => c.name);
 
       // All dirs come before all files
       const lastDirIdx = names.lastIndexOf(dirs[dirs.length - 1]);
@@ -155,9 +159,17 @@ describe('SF Project Service API', () => {
       expect(lastDirIdx).toBeLessThan(firstFileIdx);
 
       // Dirs are alphabetical case-insensitive
-      expect(dirs).toEqual([...dirs].sort((a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })));
+      expect(dirs).toEqual(
+        [...dirs].sort((a: string, b: string) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base' })
+        )
+      );
       // Files are alphabetical case-insensitive
-      expect(files).toEqual([...files].sort((a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })));
+      expect(files).toEqual(
+        [...files].sort((a: string, b: string) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base' })
+        )
+      );
     });
 
     it('returns 200 while lock is held', async () => {
@@ -324,7 +336,10 @@ describe('SF Project Service API', () => {
 
     it('returns 400 for restricted path force-app/node_modules/pkg.js', async () => {
       await fs.mkdir(path.join(tmpDir, 'force-app', 'node_modules'), { recursive: true });
-      await fs.writeFile(path.join(tmpDir, 'force-app', 'node_modules', 'pkg.js'), 'module.exports = {}');
+      await fs.writeFile(
+        path.join(tmpDir, 'force-app', 'node_modules', 'pkg.js'),
+        'module.exports = {}'
+      );
 
       const res = await request(app)
         .get('/project/file')
@@ -361,7 +376,9 @@ describe('SF Project Service API', () => {
         .send('class Bar {}')
         .expect(200);
 
-      const stat = await fs.stat(path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Bar.cls'));
+      const stat = await fs.stat(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Bar.cls')
+      );
       expect(stat.isFile()).toBe(true);
     });
 
@@ -417,8 +434,13 @@ describe('SF Project Service API', () => {
     });
 
     it('overwrites existing file', async () => {
-      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), { recursive: true });
-      await fs.writeFile(path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'), 'class Foo {}');
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default', 'classes'), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'classes', 'Foo.cls'),
+        'class Foo {}'
+      );
 
       await request(app)
         .put('/project/file')
@@ -556,9 +578,7 @@ describe('SF Project Service API', () => {
     });
 
     it('returns 400 when path param is missing', async () => {
-      const res = await request(app)
-        .delete('/project/file')
-        .expect(400);
+      const res = await request(app).delete('/project/file').expect(400);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(400);
@@ -674,7 +694,11 @@ describe('SF Project Service API', () => {
             const lines = chunk.toString().split('\n');
             for (const line of lines) {
               if (line.startsWith('data: ')) {
-                try { events.push(JSON.parse(line.slice(6))); } catch { /* ignore */ }
+                try {
+                  events.push(JSON.parse(line.slice(6)));
+                } catch {
+                  /* ignore */
+                }
               }
             }
           });
@@ -798,10 +822,7 @@ describe('SF Project Service API', () => {
     });
 
     it('PATCH /internal/lock with missing lockId returns 400', async () => {
-      const res = await request(app)
-        .patch('/internal/lock')
-        .send({})
-        .expect(400);
+      const res = await request(app).patch('/internal/lock').send({}).expect(400);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(400);
@@ -820,10 +841,7 @@ describe('SF Project Service API', () => {
     });
 
     it('DELETE /internal/lock with missing lockId returns 400', async () => {
-      const res = await request(app)
-        .delete('/internal/lock')
-        .send({})
-        .expect(400);
+      const res = await request(app).delete('/internal/lock').send({}).expect(400);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(400);

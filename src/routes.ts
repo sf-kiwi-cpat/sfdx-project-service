@@ -49,9 +49,16 @@ function requireWriteUnlocked(writeLock: WriteLock) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (writeLock.isHeld()) {
       logger.warn({ path: req.path }, 'Write rejected: agent lock active');
-      res.status(409).contentType(PROBLEM_JSON).json(
-        problemDetail(409, 'Agent Active', 'Write operations are locked while the agent is active. Please wait for the agent to complete.')
-      );
+      res
+        .status(409)
+        .contentType(PROBLEM_JSON)
+        .json(
+          problemDetail(
+            409,
+            'Agent Active',
+            'Write operations are locked while the agent is active. Please wait for the agent to complete.'
+          )
+        );
       return;
     }
     next();
@@ -107,33 +114,39 @@ export function createRouter(writeLock: WriteLock): express.Router {
    *             schema:
    *               $ref: '#/components/schemas/ProblemDetail'
    */
-  router.post('/project/init', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { accessToken, instanceUrl } = req.body as InitInput;
-      if (!accessToken || !instanceUrl) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'accessToken and instanceUrl are required')
-        );
-        return;
-      }
-
+  router.post(
+    '/project/init',
+    requireWriteUnlocked(writeLock),
+    async (req: Request, res: Response, next: NextFunction) => {
       try {
-        new URL(instanceUrl);
-      } catch {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'instanceUrl must be a valid URL')
-        );
-        return;
+        const { accessToken, instanceUrl } = req.body as InitInput;
+        if (!accessToken || !instanceUrl) {
+          res
+            .status(400)
+            .contentType(PROBLEM_JSON)
+            .json(problemDetail(400, 'Bad Request', 'accessToken and instanceUrl are required'));
+          return;
+        }
+
+        try {
+          new URL(instanceUrl);
+        } catch {
+          res
+            .status(400)
+            .contentType(PROBLEM_JSON)
+            .json(problemDetail(400, 'Bad Request', 'instanceUrl must be a valid URL'));
+          return;
+        }
+
+        await scaffoldProject();
+        await connectOrg({ accessToken, instanceUrl });
+
+        res.status(201).json({ ok: true, message: 'Project scaffolded and org connected' });
+      } catch (err) {
+        next(err);
       }
-
-      await scaffoldProject();
-      await connectOrg({ accessToken, instanceUrl });
-
-      res.status(201).json({ ok: true, message: 'Project scaffolded and org connected' });
-    } catch (err) {
-      next(err);
     }
-  });
+  );
 
   /**
    * @openapi
@@ -201,9 +214,10 @@ export function createRouter(writeLock: WriteLock): express.Router {
     try {
       const pathParam = req.query.path as string;
       if (!pathParam) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'path query parameter is required')
-        );
+        res
+          .status(400)
+          .contentType(PROBLEM_JSON)
+          .json(problemDetail(400, 'Bad Request', 'path query parameter is required'));
         return;
       }
 
@@ -263,30 +277,42 @@ export function createRouter(writeLock: WriteLock): express.Router {
    *             schema:
    *               $ref: '#/components/schemas/ProblemDetail'
    */
-  router.put('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const pathParam = req.query.path as string;
-      if (!pathParam) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'path query parameter is required')
-        );
-        return;
-      }
+  router.put(
+    '/project/file',
+    requireWriteUnlocked(writeLock),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const pathParam = req.query.path as string;
+        if (!pathParam) {
+          res
+            .status(400)
+            .contentType(PROBLEM_JSON)
+            .json(problemDetail(400, 'Bad Request', 'path query parameter is required'));
+          return;
+        }
 
-      const content = typeof req.body === 'string' ? req.body : req.body?.content;
-      if (content === undefined || content === null) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'Request body must be text/plain, application/json with content field, or application/octet-stream')
-        );
-        return;
-      }
+        const content = typeof req.body === 'string' ? req.body : req.body?.content;
+        if (content === undefined || content === null) {
+          res
+            .status(400)
+            .contentType(PROBLEM_JSON)
+            .json(
+              problemDetail(
+                400,
+                'Bad Request',
+                'Request body must be text/plain, application/json with content field, or application/octet-stream'
+              )
+            );
+          return;
+        }
 
-      await writeFile(pathParam, String(content));
-      res.status(200).json({ ok: true });
-    } catch (err) {
-      next(err);
+        await writeFile(pathParam, String(content));
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
     }
-  });
+  );
 
   /**
    * @openapi
@@ -330,22 +356,27 @@ export function createRouter(writeLock: WriteLock): express.Router {
    *             schema:
    *               $ref: '#/components/schemas/ProblemDetail'
    */
-  router.delete('/project/file', requireWriteUnlocked(writeLock), async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const pathParam = req.query.path as string;
-      if (!pathParam) {
-        res.status(400).contentType(PROBLEM_JSON).json(
-          problemDetail(400, 'Bad Request', 'path query parameter is required')
-        );
-        return;
-      }
+  router.delete(
+    '/project/file',
+    requireWriteUnlocked(writeLock),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const pathParam = req.query.path as string;
+        if (!pathParam) {
+          res
+            .status(400)
+            .contentType(PROBLEM_JSON)
+            .json(problemDetail(400, 'Bad Request', 'path query parameter is required'));
+          return;
+        }
 
-      await deleteFile(pathParam);
-      res.status(200).json({ ok: true });
-    } catch (err) {
-      next(err);
+        await deleteFile(pathParam);
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
     }
-  });
+  );
 
   /**
    * @openapi
@@ -406,9 +437,10 @@ export function createRouter(writeLock: WriteLock): express.Router {
     if (lockId) {
       res.status(200).json({ lockId });
     } else {
-      res.status(409).contentType(PROBLEM_JSON).json(
-        problemDetail(409, 'Lock Held', 'Write lock is already held by another process')
-      );
+      res
+        .status(409)
+        .contentType(PROBLEM_JSON)
+        .json(problemDetail(409, 'Lock Held', 'Write lock is already held by another process'));
     }
   });
 
@@ -454,18 +486,20 @@ export function createRouter(writeLock: WriteLock): express.Router {
   router.patch('/internal/lock', (req: Request, res: Response) => {
     const lockId = req.body?.lockId as string;
     if (!lockId) {
-      res.status(400).contentType(PROBLEM_JSON).json(
-        problemDetail(400, 'Bad Request', 'lockId is required in request body')
-      );
+      res
+        .status(400)
+        .contentType(PROBLEM_JSON)
+        .json(problemDetail(400, 'Bad Request', 'lockId is required in request body'));
       return;
     }
     const renewed = writeLock.renew(lockId);
     if (renewed) {
       res.status(200).json({ ok: true });
     } else {
-      res.status(404).contentType(PROBLEM_JSON).json(
-        problemDetail(404, 'Lock Not Found', 'No matching lock found to renew')
-      );
+      res
+        .status(404)
+        .contentType(PROBLEM_JSON)
+        .json(problemDetail(404, 'Lock Not Found', 'No matching lock found to renew'));
     }
   });
 
@@ -511,18 +545,20 @@ export function createRouter(writeLock: WriteLock): express.Router {
   router.delete('/internal/lock', (req: Request, res: Response) => {
     const lockId = req.body?.lockId as string;
     if (!lockId) {
-      res.status(400).contentType(PROBLEM_JSON).json(
-        problemDetail(400, 'Bad Request', 'lockId is required in request body')
-      );
+      res
+        .status(400)
+        .contentType(PROBLEM_JSON)
+        .json(problemDetail(400, 'Bad Request', 'lockId is required in request body'));
       return;
     }
     const released = writeLock.release(lockId);
     if (released) {
       res.status(200).json({ ok: true });
     } else {
-      res.status(404).contentType(PROBLEM_JSON).json(
-        problemDetail(404, 'Lock Not Found', 'No matching lock found to release')
-      );
+      res
+        .status(404)
+        .contentType(PROBLEM_JSON)
+        .json(problemDetail(404, 'Lock Not Found', 'No matching lock found to release'));
     }
   });
 

@@ -84,10 +84,7 @@ describe('connectOrg', () => {
       instanceUrl: 'https://test.salesforce.com',
     });
 
-    expect(callOrder).toEqual([
-      'StateAggregator.clearInstance',
-      'AuthInfo.create',
-    ]);
+    expect(callOrder).toEqual(['StateAggregator.clearInstance', 'AuthInfo.create']);
   });
 
   it('handles concurrent connectOrg calls without a mutex', async () => {

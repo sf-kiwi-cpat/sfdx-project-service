@@ -51,22 +51,25 @@ export function createApp(): express.Application {
 
   // Catch-all for unknown routes — return RFC 9457 JSON, not Express's default HTML
   app.use((req: express.Request, res: express.Response) => {
-    res.status(404).contentType(PROBLEM_JSON).json(
-      problemDetail(404, 'Not Found', `Cannot ${req.method} ${req.path}`)
-    );
+    res
+      .status(404)
+      .contentType(PROBLEM_JSON)
+      .json(problemDetail(404, 'Not Found', `Cannot ${req.method} ${req.path}`));
   });
 
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (res.headersSent) return;
+  app.use(
+    (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      if (res.headersSent) return;
 
-    const problem = errorToProblem(err);
-    if (problem.status >= 500) {
-      const stack = err instanceof Error ? err.stack : undefined;
-      logger.error({ err, stack }, 'Unhandled error');
+      const problem = errorToProblem(err);
+      if (problem.status >= 500) {
+        const stack = err instanceof Error ? err.stack : undefined;
+        logger.error({ err, stack }, 'Unhandled error');
+      }
+
+      res.status(problem.status).contentType(PROBLEM_JSON).json(problem);
     }
-
-    res.status(problem.status).contentType(PROBLEM_JSON).json(problem);
-  });
+  );
 
   return app;
 }

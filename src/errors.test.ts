@@ -11,7 +11,11 @@ import {
 describe('errorToProblem', () => {
   it('maps RestrictedPathError to 400 Bad Request', () => {
     const problem = errorToProblem(new RestrictedPathError());
-    expect(problem).toMatchObject({ status: 400, title: 'Bad Request', detail: 'Access to this path is restricted' });
+    expect(problem).toMatchObject({
+      status: 400,
+      title: 'Bad Request',
+      detail: 'Access to this path is restricted',
+    });
   });
 
   it('maps PathTraversalError to 400 Bad Request', () => {
@@ -41,30 +45,50 @@ describe('errorToProblem', () => {
     err.code = 'ENOENT';
     err.path = '/tmp/foo.cls';
     const problem = errorToProblem(err);
-    expect(problem).toMatchObject({ status: 404, title: 'File Not Found', detail: 'File not found' });
+    expect(problem).toMatchObject({
+      status: 404,
+      title: 'File Not Found',
+      detail: 'File not found',
+    });
     expect(problem.detail).not.toContain('/tmp/');
   });
 
   it('maps ENAMETOOLONG to 400 Bad Request without leaking path', () => {
-    const err = new Error("ENAMETOOLONG: name too long, stat '/tmp/sf-qa-project/a/.../file.cls'") as NodeJS.ErrnoException;
+    const err = new Error(
+      "ENAMETOOLONG: name too long, stat '/tmp/sf-qa-project/a/.../file.cls'"
+    ) as NodeJS.ErrnoException;
     err.code = 'ENAMETOOLONG';
     err.path = '/tmp/sf-qa-project/a/.../file.cls';
     const problem = errorToProblem(err);
-    expect(problem).toMatchObject({ status: 400, title: 'Bad Request', detail: 'Path is too long' });
+    expect(problem).toMatchObject({
+      status: 400,
+      title: 'Bad Request',
+      detail: 'Path is too long',
+    });
     expect(problem.detail).not.toContain('/tmp/');
   });
 
   it('does not leak path in detail for unrecognized ErrnoException', () => {
-    const err = new Error("EPERM: operation not permitted, stat '/etc/passwd'") as NodeJS.ErrnoException;
+    const err = new Error(
+      "EPERM: operation not permitted, stat '/etc/passwd'"
+    ) as NodeJS.ErrnoException;
     err.code = 'EPERM';
     err.path = '/etc/passwd';
     const problem = errorToProblem(err);
-    expect(problem).toMatchObject({ status: 500, title: 'Internal Server Error', detail: 'Internal server error' });
+    expect(problem).toMatchObject({
+      status: 500,
+      title: 'Internal Server Error',
+      detail: 'Internal server error',
+    });
     expect(problem.detail).not.toContain('/etc/passwd');
   });
 
   it('maps unknown errors to 500 Internal Server Error', () => {
     const problem = errorToProblem(new Error('Something went wrong'));
-    expect(problem).toMatchObject({ status: 500, title: 'Internal Server Error', detail: 'Something went wrong' });
+    expect(problem).toMatchObject({
+      status: 500,
+      title: 'Internal Server Error',
+      detail: 'Something went wrong',
+    });
   });
 });
