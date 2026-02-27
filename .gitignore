@@ -41,8 +41,11 @@ Thumbs.db
 force-app/
 sfdx-project.json
 
-# Claude Code (local settings)
+# Claude Code (local/personal files — keep .claude/settings.json, rules/, agents/, skills/ committed)
 .claude/settings.local.json
+.claude/worktrees/
+.claude/.local/
+.claude/projects/
 
 # Project-specific
 .cache/
