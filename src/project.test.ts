@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { getProjectPath } from './config.js';
 
 // Track global call order across mocks to assert relative ordering.
 const callOrder: string[] = [];
