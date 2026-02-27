@@ -22,6 +22,9 @@ Hooks run automatically after `npm install` (via `prepare` script).
 Do not skip hooks with `--no-verify`. Only autonomous agents use this repo,
 so the friction is intentional.
 
+Coverage thresholds are in `vitest.config.ts`. Coverage must run against
+the full test suite (not unit-only) — integration tests provide most coverage.
+
 ## Worktrees
 
 Git worktrees share source files but **not** `node_modules`. Run `npm install`
