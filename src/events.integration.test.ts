@@ -27,7 +27,10 @@ describe('createProjectWatcher', () => {
 
     // Wait for watcher to be ready
     await new Promise((r) => setTimeout(r, 100));
-    await fs.writeFile(path.join(tmpDir, 'force-app', 'main', 'default', 'Foo.cls'), 'class Foo {}');
+    await fs.writeFile(
+      path.join(tmpDir, 'force-app', 'main', 'default', 'Foo.cls'),
+      'class Foo {}'
+    );
 
     await new Promise((r) => setTimeout(r, 200));
     watcher.close();
@@ -50,7 +53,9 @@ describe('createProjectWatcher', () => {
     await new Promise((r) => setTimeout(r, 150));
     watcher.close();
 
-    expect(events.some((e) => e.type === 'change' && e.path === 'force-app/main/default/Bar.cls')).toBe(true);
+    expect(
+      events.some((e) => e.type === 'change' && e.path === 'force-app/main/default/Bar.cls')
+    ).toBe(true);
   });
 
   it('emits unlink event when file is deleted', async () => {
@@ -66,7 +71,9 @@ describe('createProjectWatcher', () => {
     await new Promise((r) => setTimeout(r, 150));
     watcher.close();
 
-    expect(events.some((e) => e.type === 'unlink' && e.path === 'force-app/main/default/Baz.cls')).toBe(true);
+    expect(
+      events.some((e) => e.type === 'unlink' && e.path === 'force-app/main/default/Baz.cls')
+    ).toBe(true);
   });
 
   it('does not emit events for ignored paths (.git, .sf, node_modules)', async () => {
@@ -86,7 +93,11 @@ describe('createProjectWatcher', () => {
     await new Promise((r) => setTimeout(r, 150));
     watcher.close();
 
-    expect(events.filter((e) => e.path.includes('.git') || e.path.includes('.sf') || e.path.includes('node_modules'))).toHaveLength(0);
+    expect(
+      events.filter(
+        (e) => e.path.includes('.git') || e.path.includes('.sf') || e.path.includes('node_modules')
+      )
+    ).toHaveLength(0);
   });
 
   it('can be closed cleanly', async () => {

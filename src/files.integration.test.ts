@@ -32,19 +32,29 @@ describe('files', () => {
     });
 
     it('rejects restricted paths (.sf, .git, node_modules, dotfiles)', () => {
-      expect(() => resolveProjectPath('.sf/auth.json')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('.sf/auth.json')).toThrow(
+        'Access to this path is restricted'
+      );
       expect(() => resolveProjectPath('.git/config')).toThrow('Access to this path is restricted');
-      expect(() => resolveProjectPath('node_modules/pkg/index.js')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('node_modules/pkg/index.js')).toThrow(
+        'Access to this path is restricted'
+      );
       expect(() => resolveProjectPath('.env')).toThrow('Access to this path is restricted');
     });
 
     it('rejects nested restricted paths at any depth', () => {
-      expect(() => resolveProjectPath('force-app/.git/config')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('force-app/.git/config')).toThrow(
+        'Access to this path is restricted'
+      );
       expect(() => resolveProjectPath('force-app/node_modules/pkg/index.js')).toThrow(
         'Access to this path is restricted'
       );
-      expect(() => resolveProjectPath('force-app/.sf/evil.json')).toThrow('Access to this path is restricted');
-      expect(() => resolveProjectPath('force-app/main/.eslintrc')).toThrow('Access to this path is restricted');
+      expect(() => resolveProjectPath('force-app/.sf/evil.json')).toThrow(
+        'Access to this path is restricted'
+      );
+      expect(() => resolveProjectPath('force-app/main/.eslintrc')).toThrow(
+        'Access to this path is restricted'
+      );
     });
 
     it('rejects paths longer than MAX_PATH_LENGTH', () => {
@@ -70,7 +80,10 @@ describe('files', () => {
 
     it('returns tree with files and directories', async () => {
       await fs.mkdir(path.join(tmpDir, 'force-app', 'main', 'default'), { recursive: true });
-      await fs.writeFile(path.join(tmpDir, 'force-app', 'main', 'default', 'Foo.cls'), 'class Foo {}');
+      await fs.writeFile(
+        path.join(tmpDir, 'force-app', 'main', 'default', 'Foo.cls'),
+        'class Foo {}'
+      );
       await fs.writeFile(path.join(tmpDir, 'sfdx-project.json'), '{}');
 
       const tree = await buildTree();
