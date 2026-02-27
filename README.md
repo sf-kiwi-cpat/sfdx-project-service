@@ -71,6 +71,16 @@ curl -X DELETE "http://localhost:3000/project/file?path=force-app/main/default/c
 curl -N http://localhost:3000/project/events
 ```
 
+## Docker
+
+```bash
+npm run build
+docker build -t sf-project-service .
+docker run -p 3000:3000 sf-project-service
+```
+
+The image expects `dist/` and `node_modules/` to be pre-built on the host (no `npm install` inside the container).
+
 ## Development
 
 ```bash
