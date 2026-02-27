@@ -21,6 +21,10 @@ npm start
 
 The service listens on port 3000 (configurable via `PORT` env var). Set `PROJECT_ROOT` to the SFDX project directory (defaults to cwd).
 
+## API Documentation
+
+Interactive API docs (Swagger UI) are available at [`/docs`](http://localhost:3000/docs) when the server is running. The raw OpenAPI 3.0 spec is served at [`/openapi.json`](http://localhost:3000/openapi.json).
+
 ## API (Steel Thread)
 
 | Endpoint | Description |
