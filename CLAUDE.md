@@ -17,7 +17,7 @@ npm run dev   # start dev server with watch mode
 Hooks run automatically after `npm install` (via `prepare` script).
 
 - **pre-commit**: lint-staged (prettier + eslint --fix on staged .ts) + unit tests
-- **pre-push**: build + all tests with coverage (90% threshold)
+- **pre-push**: build + all tests with coverage (90% threshold; 85% for branches)
 
 Do not skip hooks with `--no-verify`. Only autonomous agents use this repo,
 so the friction is intentional.
