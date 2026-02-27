@@ -9,6 +9,13 @@ npm run lint  # lint with eslint
 npm run dev   # start dev server with watch mode
 ```
 
+## Docker
+
+```bash
+npm run build && docker build -t sf-project-service .   # build image (needs dist/ and node_modules/ on host)
+docker run -p 3000:3000 sf-project-service               # run container
+```
+
 ## Architecture
 
 - ESM project (`"type": "module"`), Node.js >= 20, TypeScript strict mode
@@ -27,3 +34,8 @@ Claude Code sessions — it detects a missing `node_modules` directory and runs
 > **Gotcha:** `WorktreeCreate` hooks _replace_ the default git worktree creation
 > (designed for non-git VCS). Do not use them for post-creation setup like
 > `npm install` — use `SessionStart` instead.
+
+## Gotchas
+
+- Deleting a GitHub Actions workflow file does **not** remove its required status
+  check from branch protection. Clean up via: `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -X PATCH --input <(echo '{"strict":true,"contexts":[]}')`
