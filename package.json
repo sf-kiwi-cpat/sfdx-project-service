@@ -15,10 +15,11 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
+    "test:coverage": "vitest run --coverage",
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.ts": "eslint --fix"
+    "*.ts": ["prettier --write", "eslint --fix"]
   },
   "engines": {
     "node": ">=20"
