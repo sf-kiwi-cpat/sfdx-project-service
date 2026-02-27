@@ -252,6 +252,8 @@ describe('SF Project Service API', () => {
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Path escapes project root');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
 
     it('returns 400 on path traversal with force-app/../../etc/passwd', async () => {
@@ -263,6 +265,8 @@ describe('SF Project Service API', () => {
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Path escapes project root');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
 
     it('returns 400 on absolute path /etc/passwd', async () => {
@@ -286,6 +290,8 @@ describe('SF Project Service API', () => {
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 400, title: 'Bad Request' });
       expect(res.body.detail).toContain('Not a file');
+      expect(res.body.detail).not.toMatch(/^\//);
+      expect(res.body.detail).not.toContain(tmpDir);
     });
 
     it('returns 200 while lock is held (reads not blocked)', async () => {
