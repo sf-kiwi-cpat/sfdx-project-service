@@ -13,6 +13,9 @@ vi.mock('@salesforce/core', () => ({
       setAsDefault: vi.fn().mockResolvedValue(undefined),
     }),
   },
+  Global: {
+    SFDX_STATE_FOLDER: '.sfdx',
+  },
   StateAggregator: {
     clearInstance: vi.fn(),
   },

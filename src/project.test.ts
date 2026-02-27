@@ -11,14 +11,14 @@ vi.mock('@salesforce/core', () => ({
   AuthInfo: {
     create: vi.fn().mockImplementation(async () => {
       callOrder.push('AuthInfo.create');
-      const projectPath = getProjectPath();
-      const expectedSfHome = path.join(projectPath, '.sf');
-      expect(process.env.HOME).toBe(expectedSfHome);
       return {
         save: vi.fn().mockResolvedValue(undefined),
         setAsDefault: vi.fn().mockResolvedValue(undefined),
       };
     }),
+  },
+  Global: {
+    SFDX_STATE_FOLDER: '.sfdx',
   },
   StateAggregator: {
     clearInstance: vi.fn().mockImplementation(() => {
@@ -31,9 +31,10 @@ describe('connectOrg', () => {
   let tmpDir: string;
   let originalProjectRoot: string | undefined;
   let originalHome: string | undefined;
-  // Dynamic imports so vi.resetModules() gives each test a fresh connectMutex.
+  // Dynamic imports so vi.resetModules() gives each test a fresh module state.
   let connectOrg: typeof import('./project.js').connectOrg;
   let AuthInfo: typeof import('@salesforce/core').AuthInfo;
+  let Global: typeof import('@salesforce/core').Global;
   let StateAggregator: typeof import('@salesforce/core').StateAggregator;
 
   beforeEach(async () => {
@@ -42,6 +43,7 @@ describe('connectOrg', () => {
     const coreMod = await import('@salesforce/core');
     connectOrg = projectMod.connectOrg;
     AuthInfo = coreMod.AuthInfo;
+    Global = coreMod.Global;
     StateAggregator = coreMod.StateAggregator;
 
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-project-'));
@@ -63,18 +65,18 @@ describe('connectOrg', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  // We can't verify that auth files actually land in .sf/.sfdx/ because
-  // @salesforce/core is fully mocked — AuthInfo.create and save are stubs.
-  // A real integration test would need a live org and un-mocked core, which
-  // is out of scope for this unit-test suite.
-  it('sets HOME to project .sf so auth files land in project-scoped directory', async () => {
+  it('overrides Global.DIR to project-scoped auth directory without mutating HOME', async () => {
     await connectOrg({
       accessToken: 'test-token',
       instanceUrl: 'https://test.salesforce.com',
     });
 
     expect(AuthInfo.create).toHaveBeenCalledTimes(1);
-    expect(process.env.HOME).toBe(originalHome ?? undefined);
+    // HOME must not be mutated
+    expect(process.env.HOME).toBe(originalHome);
+    // Global.DIR should resolve to project-scoped path
+    const expectedDir = path.join(tmpDir, '.sf', '.sfdx');
+    expect(Global.DIR).toBe(expectedDir);
   });
 
   it('calls clearInstance() before AuthInfo.create()', async () => {
@@ -89,49 +91,18 @@ describe('connectOrg', () => {
     ]);
   });
 
-  it('serializes concurrent connectOrg calls via mutex', async () => {
-    // Track HOME observations at each AuthInfo.create entry to prove
-    // call-2 doesn't start while call-1 is still in progress.
-    const homeAtEntry: string[] = [];
-    let resolveFirst: () => void;
-    const firstCallGate = new Promise<void>((r) => {
-      resolveFirst = r;
-    });
-
-    let callCount = 0;
-    vi.mocked(AuthInfo.create).mockImplementation(async () => {
-      homeAtEntry.push(process.env.HOME ?? '');
-      callCount++;
-      if (callCount === 1) {
-        // Stall the first call — if serialization is broken the second
-        // call would enter while we're waiting here.
-        await firstCallGate;
-      }
-      return {
-        save: vi.fn().mockResolvedValue(undefined),
-        setAsDefault: vi.fn().mockResolvedValue(undefined),
-      };
-    });
-
-    const p1 = connectOrg({
-      accessToken: 'token-1',
-      instanceUrl: 'https://org1.salesforce.com',
-    });
-    const p2 = connectOrg({
-      accessToken: 'token-2',
-      instanceUrl: 'https://org2.salesforce.com',
-    });
-
-    // Give the event loop a chance — if mutex is broken, call-2 would
-    // have entered AuthInfo.create by now.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(homeAtEntry).toHaveLength(1); // only call-1 has entered
-
-    resolveFirst!();
-    await Promise.all([p1, p2]);
+  it('handles concurrent connectOrg calls without a mutex', async () => {
+    await Promise.all([
+      connectOrg({
+        accessToken: 'token-1',
+        instanceUrl: 'https://org1.salesforce.com',
+      }),
+      connectOrg({
+        accessToken: 'token-2',
+        instanceUrl: 'https://org2.salesforce.com',
+      }),
+    ]);
 
     expect(AuthInfo.create).toHaveBeenCalledTimes(2);
-    // call-2 entered only after call-1 completed
-    expect(homeAtEntry).toHaveLength(2);
   });
 });
