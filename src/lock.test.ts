@@ -75,4 +75,31 @@ describe('WriteLock', () => {
     vi.advanceTimersByTime(1_001);
     expect(lock.isHeld()).toBe(false);
   });
+
+  it('getLockId returns lock ID when held', () => {
+    const lock = new WriteLock(10_000);
+    const id = lock.acquire()!;
+    expect(lock.getLockId()).toBe(id);
+  });
+
+  it('getLockId returns null when not held', () => {
+    const lock = new WriteLock(10_000);
+    expect(lock.getLockId()).toBeNull();
+  });
+
+  it('isHeld returns false via inline expiry when Date.now() >= expiresAt', () => {
+    const lock = new WriteLock(5_000);
+    lock.acquire();
+    expect(lock.isHeld()).toBe(true);
+
+    // Advance Date.now() past expiry WITHOUT firing timer callbacks
+    vi.setSystemTime(Date.now() + 6_000);
+
+    expect(lock.isHeld()).toBe(false);
+  });
+
+  it('renew returns false when no lock is held', () => {
+    const lock = new WriteLock(10_000);
+    expect(lock.renew('any-id')).toBe(false);
+  });
 });
