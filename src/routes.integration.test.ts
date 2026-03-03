@@ -95,6 +95,23 @@ describe('SF Project Service API', () => {
 
       expect(res.body).toMatchObject({ status: 409, title: 'Agent Active' });
     });
+
+    it('returns 500 with RFC 9457 when an unexpected error occurs', async () => {
+      const { AuthInfo } = await import('@salesforce/core');
+      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('unexpected'));
+
+      const res = await request(app)
+        .post('/project/init')
+        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
+        .expect(500);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        status: 500,
+        title: 'Internal Server Error',
+        detail: 'unexpected',
+      });
+    });
   });
 
   describe('GET /project/tree', () => {
