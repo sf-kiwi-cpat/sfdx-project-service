@@ -52,6 +52,9 @@ describe('SF Project Service API', () => {
       const config = JSON.parse(projectJson);
       expect(config.packageDirectories).toBeDefined();
       expect(config.sourceApiVersion).toBeDefined();
+
+      const gitignore = await fs.readFile(path.join(tmpDir, '.gitignore'), 'utf-8');
+      expect(gitignore).toContain('.sf/');
     });
 
     it('returns 400 when accessToken is missing', async () => {

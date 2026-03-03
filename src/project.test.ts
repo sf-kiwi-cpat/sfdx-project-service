@@ -26,6 +26,52 @@ vi.mock('@salesforce/core', () => ({
   },
 }));
 
+describe('scaffoldProject', () => {
+  let tmpDir: string;
+  let originalProjectRoot: string | undefined;
+  let scaffoldProject: typeof import('./project.js').scaffoldProject;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const projectMod = await import('./project.js');
+    scaffoldProject = projectMod.scaffoldProject;
+
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-project-'));
+    originalProjectRoot = process.env.PROJECT_ROOT;
+    process.env.PROJECT_ROOT = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.PROJECT_ROOT = originalProjectRoot;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates .gitignore on first call', async () => {
+    await scaffoldProject();
+
+    const content = await fs.readFile(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(content).toBeTruthy();
+  });
+
+  it('does not overwrite existing .gitignore', async () => {
+    const custom = '# custom gitignore\n';
+    await fs.writeFile(path.join(tmpDir, '.gitignore'), custom, 'utf-8');
+
+    await scaffoldProject();
+
+    const content = await fs.readFile(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(content).toBe(custom);
+  });
+
+  it('.gitignore contains critical entries', async () => {
+    await scaffoldProject();
+
+    const content = await fs.readFile(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(content).toContain('.sf/');
+    expect(content).toContain('.sfdx/');
+  });
+});
+
 describe('connectOrg', () => {
   let tmpDir: string;
   let originalProjectRoot: string | undefined;

@@ -10,6 +10,40 @@ const SFDX_PROJECT_JSON = {
   sourceApiVersion: SF_API_VERSION,
 };
 
+const GITIGNORE = `# Salesforce credentials and local state
+.sf/
+.sfdx/
+.localdevserver/
+
+# Deployment artifacts
+deploy-options.json
+
+# LWC generated config
+**/lwc/jsconfig.json
+
+# Test coverage and analysis
+coverage/
+sca-results.csv
+sfca_results.json
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+`;
+
 export interface InitInput {
   accessToken: string;
   instanceUrl: string;
@@ -30,6 +64,14 @@ export async function scaffoldProject(): Promise<void> {
     // Project already exists - don't overwrite
   } catch {
     await fs.writeFile(configPath, JSON.stringify(SFDX_PROJECT_JSON, null, 2), 'utf-8');
+  }
+
+  const gitignorePath = path.join(projectPath, '.gitignore');
+  try {
+    await fs.access(gitignorePath);
+    // .gitignore already exists - don't overwrite
+  } catch {
+    await fs.writeFile(gitignorePath, GITIGNORE, 'utf-8');
   }
 }
 
