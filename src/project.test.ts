@@ -42,7 +42,11 @@ describe('scaffoldProject', () => {
   });
 
   afterEach(async () => {
-    process.env.PROJECT_ROOT = originalProjectRoot;
+    if (originalProjectRoot !== undefined) {
+      process.env.PROJECT_ROOT = originalProjectRoot;
+    } else {
+      delete process.env.PROJECT_ROOT;
+    }
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 

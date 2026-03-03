@@ -50,7 +50,7 @@ export interface InitInput {
 }
 
 /**
- * Scaffold the SFDX project: create directory structure and sfdx-project.json.
+ * Scaffold the SFDX project: create directory structure, sfdx-project.json, and .gitignore.
  */
 export async function scaffoldProject(): Promise<void> {
   const projectPath = getProjectPath();
