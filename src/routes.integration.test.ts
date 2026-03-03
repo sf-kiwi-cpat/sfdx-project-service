@@ -625,6 +625,19 @@ describe('SF Project Service API', () => {
   });
 
   describe('GET /project/events', () => {
+    /** Poll until `predicate` returns true, or throw after `timeoutMs`. */
+    async function waitFor(
+      predicate: () => boolean,
+      timeoutMs = 2000,
+      intervalMs = 50
+    ): Promise<void> {
+      const deadline = Date.now() + timeoutMs;
+      while (!predicate()) {
+        if (Date.now() >= deadline) throw new Error('waitFor timed out');
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+    }
+
     it('returns SSE stream with correct headers', async () => {
       const server = app.listen(0);
       const port = (server.address() as { port: number }).port;
@@ -681,14 +694,14 @@ describe('SF Project Service API', () => {
         .send('class Test {}')
         .expect(200);
 
-      await new Promise((r) => setTimeout(r, 200));
+      await waitFor(() => events.some((e) => e.type === 'add' && e.path.includes('Test.cls')));
 
       await request(app)
         .delete('/project/file')
         .query({ path: 'force-app/main/default/Test.cls' })
         .expect(200);
 
-      await new Promise((r) => setTimeout(r, 200));
+      await waitFor(() => events.some((e) => e.type === 'unlink' && e.path.includes('Test.cls')));
 
       (client as http.IncomingMessage).destroy();
       server.close();
@@ -734,7 +747,9 @@ describe('SF Project Service API', () => {
         .send('v2')
         .expect(200);
 
-      await new Promise((r) => setTimeout(r, 200));
+      await waitFor(() =>
+        events.some((e) => e.type === 'change' && e.path.includes('Existing.cls'))
+      );
 
       client.destroy();
       server.close();
