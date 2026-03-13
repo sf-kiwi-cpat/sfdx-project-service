@@ -82,13 +82,17 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 
 | Endpoint | Description |
 | :--- | :--- |
+| `GET /templates` | List available project templates |
+| `POST /projects` | Create a project from a template (body: `{ "template": "..." }`) |
+| `GET /projects/:id/tree` | Get the file tree for a specific project |
+| `POST /projects/:id/deploy` | Deploy metadata from a project to a Salesforce org (body: `{ "accessToken": "...", "instanceUrl": "..." }`) |
 | `POST /project/init` | Scaffold the SFDX project and connect the org |
 | `GET /project/tree` | Return the full directory/file tree for the file explorer |
 | `GET /project/file?path=...` | Read the full contents of a specific file |
 | `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
 | `DELETE /project/file?path=...` | Delete a file |
 | `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
-| `POST /project/deploy` | Deploy metadata to a Salesforce org (hardcoded MVP) |
+
 ### Project Initialization
 
 `POST /project/init` does two things:
@@ -99,24 +103,41 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 Input: an OAuth **access token** and **instance URL** for the target Salesforce org. The VaaS infrastructure is responsible for obtaining these through the user's login flow; the Project Service simply receives and registers them.
 Output: 201 Created with confirmation that the project is scaffolded and the org is connected.
 
+### Template System
+
+Templates are pre-built SFDX projects distributed as `.zip` files in the `templates/` directory at the package root. Each zip contains a valid SFDX project structure: `sfdx-project.json` and a `force-app/` directory tree with metadata.
+
+**Current templates:**
+- `hello-world-1` — Custom Object (`Hello_World__c`) with custom fields (`Description__c`, `Priority__c`)
+- `hello-world-2` — React app bundled as a StaticResource
+
+**How it works:**
+
+- `GET /templates` reads the `templates/` directory, finds all `.zip` files, and returns `[{ id, name }]` for each. The `id` is the filename without the `.zip` extension. The `name` is derived from the `id` by replacing hyphens with spaces and title-casing.
+- `POST /projects` accepts `{ "template": "<template-id>" }` in the request body. It validates the template exists, generates a UUID for the new project, creates a directory under `PROJECTS_ROOT`, and unzips the template into it. Returns `{ "id": "<uuid>" }` with status 201.
+- `GET /projects/:id/tree` returns the recursive file tree for a specific project, using the same `buildTree()` logic as `GET /project/tree` but scoped to the project's directory.
+
+Projects are identified by UUID and stored as subdirectories of `PROJECTS_ROOT`. The project ID is validated as a UUID pattern to prevent path traversal. A `ProjectNotFoundError` (404) is returned if the project directory does not exist.
+
 ### Filesystem Events (SSE)
 
 The `GET /project/events` endpoint is a Server-Sent Events stream that pushes real-time filesystem change notifications to the client. Under the hood, a `chokidar` watcher monitors the SFDX project directory. Because both services run in the same container, `inotify` reliably detects all changes — including those made by the agent.
 
 This lets the UI reactively update the file explorer and refresh open files without polling.
 
-### Metadata Deployment (MVP)
+### Metadata Deployment
 
-`POST /project/deploy` deploys metadata to a Salesforce org using `@salesforce/source-deploy-retrieve` (SDR) as a TypeScript library. The current implementation is a hardcoded MVP that proves the deployment pipeline end-to-end.
+`POST /projects/:id/deploy` deploys metadata from a project to a Salesforce org using `@salesforce/source-deploy-retrieve` (SDR) as a TypeScript library.
 
 **How it works:**
 
-1. **Connection** — built from `SF_ACCESS_TOKEN` and `SF_INSTANCE_URL` environment variables via `@salesforce/core`'s `AuthInfo` and `Connection`. This is independent of `POST /project/init`'s org connection.
-2. **Metadata** — defined in-memory using SDR's `VirtualTreeContainer`. No filesystem reads. The hardcoded payload is a `Hello_World__c` custom object with `Description__c` (Text) and `Priority__c` (Picklist) fields.
-3. **Deploy** — SDR's `ComponentSet.fromSource()` resolves the virtual components, then `deploy()` pushes them to the Metadata API via SOAP. The endpoint blocks while `pollStatus()` polls for completion.
-4. **Result mapping** — SDR's `DeployResult` is mapped to the service's own response shape. SDR types are not leaked through the API.
+1. **Credentials** — provided per-request in the body as `{ "accessToken": "...", "instanceUrl": "..." }`. The service is stateless with respect to credentials; no tokens are stored at rest. A `Connection` is built from `@salesforce/core`'s `AuthInfo` for each request.
+2. **Project validation** — the project ID from the URL path is validated as a UUID and checked against the filesystem. Returns 404 if the project does not exist.
+3. **Metadata** — read from disk using SDR's `ComponentSet.fromSource()`, pointed at the project's `force-app/` directory. This supports any valid SFDX project structure, including CustomObjects, CustomFields, StaticResources, Apex classes, and any other metadata type SDR can resolve.
+4. **Deploy** — SDR's `deploy()` pushes the resolved components to the Metadata API via SOAP. The endpoint blocks while `pollStatus()` polls for completion.
+5. **Result mapping** — SDR's `DeployResult` is mapped to the service's own response shape. SDR types are not leaked through the API.
 
-**Input:** none (no request body required).
+**Input:** `{ "accessToken": "...", "instanceUrl": "..." }` in the request body.
 
 **Output (200):**
 ```json
@@ -133,10 +154,16 @@ This lets the UI reactively update the file explorer and refresh open files with
 }
 ```
 
-**Error (502):** All deployment failures (SDR errors, connection errors, metadata validation failures) return `502 Bad Gateway` with an RFC 9457 problem detail. 502 is used because the service is proxying to Salesforce's Metadata API — the upstream is the source of the failure.
+**Error responses:**
+- `400 Bad Request` — missing `accessToken` or `instanceUrl` in the request body
+- `404 Project Not Found` — project ID does not exist
+- `502 Bad Gateway` — deployment failed (SDR errors, connection errors, metadata validation failures). 502 is used because the service is proxying to Salesforce's Metadata API — the upstream is the source of the failure.
+
+All errors follow RFC 9457 (Problem Details for HTTP APIs).
 
 **Design choices:**
 - No write lock integration — deploy writes to the org, not the filesystem
+- Per-request credentials — stateless, no credentials at rest, supports deploying to any org
 - Synchronous — blocks while SDR polls; fine for small payloads, will need async job pattern for template-scale deploys
 - The acceptance test suite (`deploy.acceptance.test.ts`) is the canonical specification for this endpoint's contract
 
@@ -149,6 +176,23 @@ These operations are valuable but can wait. In the near term, the agent can hand
 - Rename / move file
 - Create directory (if not handled by auto-creating parents on write)
 
+## Demo UI
+
+An ephemeral Vite+React demo UI lives in the `ui/` directory. It demonstrates the end-to-end flow from template selection through deployment, and serves as both a prototype and a testing tool for the API.
+
+**Features:**
+- **OAuth PKCE login** — authenticates directly with Salesforce using the browser-based OAuth 2.0 PKCE flow. The access token and instance URL are held in the browser only.
+- **Template selection** — displays available templates as cards via `GET /templates`
+- **Project creation** — creates a new project from a selected template via `POST /projects`
+- **File tree view** — shows the project's file structure via `GET /projects/:id/tree`
+- **Deploy** — deploys the project to the authenticated Salesforce org via `POST /projects/:id/deploy`, passing credentials from the PKCE flow
+
+**Tech stack:** React 18, React Router, Vite, TypeScript.
+
+**Development:** The UI runs its own Vite dev server (`cd ui && npm run dev`) with a proxy that forwards `/templates` and `/projects` requests to the API on port 3000.
+
+**Production:** `cd ui && npm run build` outputs static files to `ui/dist/`. The Express server automatically serves these as static files when the directory exists.
+
 ## Definition of Done (Steel Thread)
 
 The steel thread is complete when all endpoints in the API surface above are functional and can be **explored, tested, and demoed using curl** (or a similar HTTP client). No UI is required. A teammate will build the App Studio UI against these endpoints as a separate effort.
@@ -156,7 +200,7 @@ The steel thread is complete when all endpoints in the API surface above are fun
 
 ## Authentication
 
-**Org auth (connecting to Salesforce):** The Project Service receives an OAuth access token and instance URL via `POST /project/init` and registers them with `@salesforce/core`. The VaaS infrastructure handles the actual OAuth flow with the user upstream via Service Mesh; the Project Service is just a consumer of the resulting token.
+**Org auth (connecting to Salesforce):** The Project Service receives an OAuth access token and instance URL via `POST /project/init` and registers them with `@salesforce/core`. The VaaS infrastructure handles the actual OAuth flow with the user upstream via Service Mesh; the Project Service is just a consumer of the resulting token. For the template-based flow (`POST /projects/:id/deploy`), credentials are passed per-request in the body — no server-side token storage.
 
 **Endpoint auth (securing the API):** Not required for the steel thread. The container is a single-user environment behind the VaaS infrastructure, which serves as the trust boundary. Endpoint-level auth can be added later if the deployment model changes.
 
@@ -167,7 +211,9 @@ Environment variables control deployment settings:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Server port |
-| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for EFS mount) |
+| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for EFS mount, used by `/project/*` endpoints) |
+| `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects (each project gets a UUID subdirectory) |
+| `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
 
 ## Implementation Guidelines
 
