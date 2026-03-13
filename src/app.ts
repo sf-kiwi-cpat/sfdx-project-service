@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'node:path';
+import fs from 'node:fs';
 import { pinoHttp } from 'pino-http';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
@@ -48,6 +50,14 @@ export function createApp(): express.Application {
   app.get('/openapi.json', (_req, res) => res.json(swaggerSpec));
 
   app.use(createRouter(writeLock));
+
+  // Serve the demo UI static files in production (built Vite output).
+  // Only static assets are served; SPA client-side routes (e.g. /home, /project/123)
+  // are handled by the UI's own router when the user navigates from index.html.
+  const uiDistPath = path.resolve(import.meta.dirname, '..', 'ui', 'dist');
+  if (fs.existsSync(uiDistPath)) {
+    app.use(express.static(uiDistPath));
+  }
 
   // Catch-all for unknown routes — return RFC 9457 JSON, not Express's default HTML
   app.use((req: express.Request, res: express.Response) => {

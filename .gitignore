@@ -51,3 +51,5 @@ sfdx-project.json
 .cache/
 temp/
 tmp/
+projects/
+ui/dist/

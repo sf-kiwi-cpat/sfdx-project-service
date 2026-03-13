@@ -1,0 +1,57 @@
+/* ------------------------------------------------------------------ */
+/* Global reset & base styles                                         */
+/* ------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --sf-blue: #0176d3;
+  --sf-dark: #032d60;
+  --sf-light: #e8f4fd;
+  --sf-white: #ffffff;
+  --sf-gray-100: #f4f6f9;
+  --sf-gray-200: #e5e5e5;
+  --sf-gray-500: #706e6b;
+  --sf-gray-700: #3e3e3c;
+  --sf-success: #2e844a;
+  --sf-error: #c23934;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+html,
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  color: var(--sf-gray-700);
+  background: var(--sf-gray-100);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input {
+  font-family: inherit;
+}
+
+a {
+  color: var(--sf-blue);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}

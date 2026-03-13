@@ -1,0 +1,60 @@
+.template-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--sf-white);
+  border: 1px solid var(--sf-gray-200);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  text-align: left;
+  transition:
+    box-shadow 0.15s,
+    border-color 0.15s;
+  position: relative;
+}
+
+.template-card:hover:not(:disabled) {
+  border-color: var(--sf-blue);
+  box-shadow: 0 2px 12px rgba(1, 118, 211, 0.12);
+}
+
+.template-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.template-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.template-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sf-dark);
+}
+
+/* simple spinner */
+.template-card-spinner {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--sf-gray-200);
+  border-top-color: var(--sf-blue);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}

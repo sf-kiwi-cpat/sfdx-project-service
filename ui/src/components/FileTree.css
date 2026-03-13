@@ -1,0 +1,59 @@
+.filetree-node {
+  font-size: 14px;
+}
+
+.filetree-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  border-radius: 4px;
+  transition: background 0.1s;
+  color: var(--sf-gray-700);
+}
+
+.filetree-label:hover {
+  background: var(--sf-light);
+}
+
+.filetree-label--dir {
+  font-weight: 600;
+  color: var(--sf-dark);
+}
+
+.filetree-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.filetree-arrow--open {
+  transform: rotate(90deg);
+}
+
+.filetree-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sf-gray-200);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.filetree-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filetree-children {
+  /* children are indented via padding on each node */
+}
