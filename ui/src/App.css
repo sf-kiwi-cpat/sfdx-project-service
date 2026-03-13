@@ -11,26 +11,46 @@
 }
 
 :root {
-  --sf-blue: #0176d3;
-  --sf-dark: #032d60;
-  --sf-light: #e8f4fd;
-  --sf-white: #ffffff;
-  --sf-gray-100: #f4f6f9;
-  --sf-gray-200: #e5e5e5;
-  --sf-gray-500: #706e6b;
-  --sf-gray-700: #3e3e3c;
-  --sf-success: #2e844a;
-  --sf-error: #c23934;
+  /* Backgrounds */
+  --bg: #0d0d0d;
+  --bg-elevated: #141414;
+  --bg-card: #1a1a1a;
+  --bg-input: #1e1e1e;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.22);
+
+  /* Text */
+  --text-primary: #e8e8e8;
+  --text-secondary: #888888;
+  --text-muted: #505050;
+
+  /* Accent — green (matches the screenshot's "interactive demo" label) */
+  --accent-green: #4ade80;
+  --accent-green-bg: rgba(74, 222, 128, 0.1);
+  --accent-green-border: rgba(74, 222, 128, 0.25);
+
+  /* Status */
+  --success: #4ade80;
+  --success-bg: rgba(74, 222, 128, 0.1);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.1);
+  --error-border: rgba(248, 113, 113, 0.3);
+
+  /* Misc */
   --radius: 8px;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --radius-lg: 14px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border);
 }
 
 html,
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
-  color: var(--sf-gray-700);
-  background: var(--sf-gray-100);
+  color: var(--text-primary);
+  background: var(--bg);
   min-height: 100vh;
 }
 
@@ -48,7 +68,7 @@ input {
 }
 
 a {
-  color: var(--sf-blue);
+  color: var(--accent-green);
   text-decoration: none;
 }
 

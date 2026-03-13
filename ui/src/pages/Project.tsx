@@ -16,6 +16,7 @@ export default function Project() {
 
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
+  const [deployError, setDeployError] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -33,13 +34,11 @@ export default function Project() {
     try {
       setDeploying(true);
       setDeployResult(null);
+      setDeployError('');
       const result = await deployProject(id, creds.accessToken, creds.instanceUrl);
       setDeployResult(result);
     } catch (err) {
-      setDeployResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Deploy failed',
-      });
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed');
     } finally {
       setDeploying(false);
     }
@@ -52,9 +51,12 @@ export default function Project() {
         <div className="project-header-inner">
           <div className="project-header-left">
             <button className="project-back" onClick={() => navigate('/home')}>
-              &larr; Home
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Home
             </button>
-            <span className="project-id">Project: {id}</span>
+            <span className="project-id">{id}</span>
           </div>
           <button
             className="project-deploy-btn"
@@ -68,13 +70,12 @@ export default function Project() {
 
       {/* Deploy result banner */}
       {deployResult && (
-        <div
-          className={`project-banner ${deployResult.success ? 'project-banner--success' : 'project-banner--error'}`}
-        >
-          {deployResult.success
-            ? deployResult.message ?? 'Deployment succeeded!'
-            : deployResult.message ?? 'Deployment failed.'}
+        <div className="project-banner project-banner--success">
+          Deployment succeeded — {deployResult.numberComponentsDeployed} component(s) deployed.
         </div>
+      )}
+      {deployError && (
+        <div className="project-banner project-banner--error">{deployError}</div>
       )}
 
       {/* Content */}

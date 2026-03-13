@@ -1,37 +1,38 @@
 .filetree-node {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .filetree-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   border: none;
   background: transparent;
   width: 100%;
   text-align: left;
-  border-radius: 4px;
+  border-radius: 5px;
   transition: background 0.1s;
-  color: var(--sf-gray-700);
+  color: var(--text-secondary);
 }
 
 .filetree-label:hover {
-  background: var(--sf-light);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .filetree-label--dir {
-  font-weight: 600;
-  color: var(--sf-dark);
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .filetree-arrow {
   display: inline-block;
-  font-size: 10px;
+  font-size: 9px;
   transition: transform 0.15s;
   width: 14px;
   text-align: center;
   flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .filetree-arrow--open {
@@ -40,11 +41,11 @@
 
 .filetree-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--sf-gray-200);
-  margin: 0 4px;
+  background: var(--text-muted);
+  margin: 0 4.5px;
   flex-shrink: 0;
 }
 

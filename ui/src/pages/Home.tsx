@@ -6,6 +6,26 @@ import TemplateCard from '../components/TemplateCard';
 import type { Template } from '../types';
 import './Home.css';
 
+function LogoDots() {
+  return (
+    <div className="app-logo-icon" aria-hidden="true">
+      {Array.from({ length: 9 }).map((_, i) => (
+        <div key={i} className="app-logo-dot" />
+      ))}
+    </div>
+  );
+}
+
+function HeroIcon() {
+  return (
+    <div className="hero-icon" aria-hidden="true">
+      {Array.from({ length: 9 }).map((_, i) => (
+        <div key={i} className="hero-icon-dot" />
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -38,33 +58,43 @@ export default function Home() {
 
   return (
     <div className="home-page">
-      {/* Header */}
-      <header className="home-header">
-        <div className="home-header-inner">
-          <h1 className="home-title">SF Project Service</h1>
-          <button className="home-logout" onClick={handleLogout}>
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="app-logo">
+            <LogoDots />
+            App Studio
+          </div>
+          <button className="btn-ghost" onClick={handleLogout}>
             Log out
           </button>
         </div>
       </header>
 
       <main className="home-main">
-        {/* Chat placeholder */}
-        <section className="home-chat">
+        <section className="home-hero">
+          <HeroIcon />
           <div className="home-chat-box">
             <input
               className="home-chat-input"
               type="text"
-              placeholder="Ask me anything about your project..."
+              placeholder="Ask me to build features, fix bugs, or work on your project..."
               disabled
             />
-            <span className="home-chat-badge">Coming soon</span>
+            <div className="home-chat-actions">
+              <button className="home-chat-add" disabled aria-label="Attach">
+                +
+              </button>
+              <button className="home-chat-send" disabled aria-label="Send">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 12V2M7 2L2 7M7 2L12 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* Templates */}
         <section className="home-templates">
-          <h2 className="home-section-title">Start from a template</h2>
+          <p className="home-section-title">Start from a template</p>
 
           {loading && <p className="home-status">Loading templates...</p>}
           {error && <p className="home-status home-status--error">{error}</p>}

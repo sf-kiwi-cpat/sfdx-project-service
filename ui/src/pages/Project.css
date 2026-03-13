@@ -2,23 +2,27 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
 }
 
 /* ---- Header ---- */
 
 .project-header {
-  background: var(--sf-dark);
-  color: var(--sf-white);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
   padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .project-header-inner {
-  max-width: 960px;
+  max-width: 900px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  height: 52px;
 }
 
 .project-header-left {
@@ -29,67 +33,72 @@
 
 .project-back {
   background: transparent;
-  color: var(--sf-white);
+  color: var(--text-secondary);
   border: none;
-  font-size: 14px;
+  font-size: 13px;
   padding: 4px 0;
-  opacity: 0.8;
-  transition: opacity 0.15s;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .project-back:hover {
-  opacity: 1;
+  color: var(--text-primary);
 }
 
 .project-id {
-  font-size: 14px;
-  font-weight: 600;
-  opacity: 0.9;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
 }
 
 .project-deploy-btn {
-  background: var(--sf-blue);
-  color: var(--sf-white);
+  background: var(--accent-green);
+  color: #000;
   border: none;
   border-radius: var(--radius);
-  padding: 8px 20px;
-  font-size: 14px;
+  padding: 7px 18px;
+  font-size: 13px;
   font-weight: 600;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
 }
 
 .project-deploy-btn:hover:not(:disabled) {
-  background: #0161b0;
+  opacity: 0.88;
 }
 
 .project-deploy-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 /* ---- Banner ---- */
 
 .project-banner {
-  padding: 12px 24px;
-  font-size: 14px;
+  padding: 11px 24px;
+  font-size: 13px;
   font-weight: 500;
   text-align: center;
 }
 
 .project-banner--success {
-  background: #e6f6ec;
-  color: var(--sf-success);
+  background: var(--success-bg);
+  color: var(--success);
+  border-bottom: 1px solid rgba(74, 222, 128, 0.2);
 }
 
 .project-banner--error {
-  background: #fef1f1;
-  color: var(--sf-error);
+  background: var(--error-bg);
+  color: var(--error);
+  border-bottom: 1px solid var(--error-border);
 }
 
 /* ---- Main ---- */
 
 .project-main {
-  max-width: 960px;
+  max-width: 900px;
   width: 100%;
   margin: 0 auto;
   padding: 32px 24px;
@@ -97,10 +106,10 @@
 }
 
 .project-status {
-  color: var(--sf-gray-500);
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 .project-status--error {
-  color: var(--sf-error);
+  color: var(--error);
 }
