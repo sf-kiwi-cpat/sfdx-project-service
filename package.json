@@ -19,13 +19,17 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.ts": ["prettier --write", "eslint --fix"]
+    "*.ts": [
+      "prettier --write",
+      "eslint --fix"
+    ]
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@salesforce/core": "^8.26.0",
+    "@salesforce/source-deploy-retrieve": "^12.31.21",
     "chokidar": "^4.0.0",
     "express": "^4.21.0",
     "pino": "^9.4.0",

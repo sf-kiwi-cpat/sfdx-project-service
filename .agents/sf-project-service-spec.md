@@ -88,6 +88,7 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 | `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
 | `DELETE /project/file?path=...` | Delete a file |
 | `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
+| `POST /project/deploy` | Deploy metadata to a Salesforce org (hardcoded MVP) |
 ### Project Initialization
 
 `POST /project/init` does two things:
@@ -104,11 +105,45 @@ The `GET /project/events` endpoint is a Server-Sent Events stream that pushes re
 
 This lets the UI reactively update the file explorer and refresh open files without polling.
 
+### Metadata Deployment (MVP)
+
+`POST /project/deploy` deploys metadata to a Salesforce org using `@salesforce/source-deploy-retrieve` (SDR) as a TypeScript library. The current implementation is a hardcoded MVP that proves the deployment pipeline end-to-end.
+
+**How it works:**
+
+1. **Connection** — built from `SF_ACCESS_TOKEN` and `SF_INSTANCE_URL` environment variables via `@salesforce/core`'s `AuthInfo` and `Connection`. This is independent of `POST /project/init`'s org connection.
+2. **Metadata** — defined in-memory using SDR's `VirtualTreeContainer`. No filesystem reads. The hardcoded payload is a `Hello_World__c` custom object with `Description__c` (Text) and `Priority__c` (Picklist) fields.
+3. **Deploy** — SDR's `ComponentSet.fromSource()` resolves the virtual components, then `deploy()` pushes them to the Metadata API via SOAP. The endpoint blocks while `pollStatus()` polls for completion.
+4. **Result mapping** — SDR's `DeployResult` is mapped to the service's own response shape. SDR types are not leaked through the API.
+
+**Input:** none (no request body required).
+
+**Output (200):**
+```json
+{
+  "ok": true,
+  "status": "Succeeded",
+  "numberComponentsDeployed": 3,
+  "numberComponentsTotal": 3,
+  "components": [
+    { "fullName": "Hello_World__c", "type": "CustomObject", "state": "Created" },
+    { "fullName": "Hello_World__c.Description__c", "type": "CustomField", "state": "Created" },
+    { "fullName": "Hello_World__c.Priority__c", "type": "CustomField", "state": "Created" }
+  ]
+}
+```
+
+**Error (502):** All deployment failures (SDR errors, connection errors, metadata validation failures) return `502 Bad Gateway` with an RFC 9457 problem detail. 502 is used because the service is proxying to Salesforce's Metadata API — the upstream is the source of the failure.
+
+**Design choices:**
+- No write lock integration — deploy writes to the org, not the filesystem
+- Synchronous — blocks while SDR polls; fine for small payloads, will need async job pattern for template-scale deploys
+- The acceptance test suite (`deploy.acceptance.test.ts`) is the canonical specification for this endpoint's contract
+
 ### Deferred (Post-Steel Thread)
 
 These operations are valuable but can wait. In the near term, the agent can handle them via its own toolchain.
 
-- Deploy to org
 - Retrieve from org
 - Run tests
 - Rename / move file
