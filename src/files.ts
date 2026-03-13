@@ -21,7 +21,10 @@ export interface TreeNode {
  * Resolve a query path to an absolute path within the project.
  * Rejects paths that escape the project root (path traversal).
  */
-export function resolveProjectPath(queryPath: string): { absolute: string; relative: string } {
+export function resolveProjectPath(
+  queryPath: string,
+  projectRoot?: string
+): { absolute: string; relative: string } {
   // Defense-in-depth guard: reject clearly oversized input (UTF-16 code units) before
   // reaching any fs call. MAX_PATH_LENGTH is intentionally conservative relative to
   // PATH_MAX (4096 bytes) because the absolute path includes the project root prefix.
@@ -30,7 +33,7 @@ export function resolveProjectPath(queryPath: string): { absolute: string; relat
   if (queryPath.length >= MAX_PATH_LENGTH) {
     throw new PathTooLongError(queryPath.length);
   }
-  const projectPath = path.resolve(getProjectPath());
+  const projectPath = projectRoot ?? path.resolve(getProjectPath());
   const absolute = path.resolve(projectPath, path.normalize(queryPath));
   const relative = path.relative(projectPath, absolute);
 
@@ -62,11 +65,11 @@ function isRestrictedPath(relative: string): boolean {
  * Build a directory tree for the file explorer. Root is the project path.
  * Excludes .git, .sf, node_modules, and dotfiles (matches watcher ignores).
  */
-export async function buildTree(rootPath?: string): Promise<TreeNode> {
-  const projectPath = getProjectPath();
-  const basePath = rootPath ?? projectPath;
+export async function buildTree(rootPath?: string, projectRoot?: string): Promise<TreeNode> {
+  const baseProjectPath = projectRoot ?? getProjectPath();
+  const basePath = rootPath ?? baseProjectPath;
   const name = path.basename(basePath) || 'project';
-  const relativePath = path.relative(projectPath, basePath) || '.';
+  const relativePath = path.relative(baseProjectPath, basePath) || '.';
 
   const stat = await fs.stat(basePath);
   if (!stat.isDirectory()) {
@@ -80,10 +83,10 @@ export async function buildTree(rootPath?: string): Promise<TreeNode> {
     if (shouldIgnoreEntry(entry.name)) continue;
 
     const fullPath = path.join(basePath, entry.name);
-    const childRelative = path.relative(projectPath, fullPath);
+    const childRelative = path.relative(baseProjectPath, fullPath);
 
     if (entry.isDirectory()) {
-      children.push(await buildTree(fullPath));
+      children.push(await buildTree(fullPath, baseProjectPath));
     } else {
       children.push({ name: entry.name, path: childRelative, type: 'file' });
     }
@@ -101,8 +104,8 @@ export async function buildTree(rootPath?: string): Promise<TreeNode> {
 /**
  * Read file contents. Throws if not a file or doesn't exist.
  */
-export async function readFile(queryPath: string): Promise<string> {
-  const { absolute } = resolveProjectPath(queryPath);
+export async function readFile(queryPath: string, projectRoot?: string): Promise<string> {
+  const { absolute } = resolveProjectPath(queryPath, projectRoot);
   try {
     const stat = await fs.stat(absolute);
     if (!stat.isFile()) {
@@ -121,8 +124,12 @@ export async function readFile(queryPath: string): Promise<string> {
 /**
  * Write file contents. Auto-creates parent directories.
  */
-export async function writeFile(queryPath: string, content: string): Promise<void> {
-  const { absolute } = resolveProjectPath(queryPath);
+export async function writeFile(
+  queryPath: string,
+  content: string,
+  projectRoot?: string
+): Promise<void> {
+  const { absolute } = resolveProjectPath(queryPath, projectRoot);
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   await fs.writeFile(absolute, content, 'utf-8');
 }
@@ -130,8 +137,8 @@ export async function writeFile(queryPath: string, content: string): Promise<voi
 /**
  * Delete a file. Throws if not a file or doesn't exist.
  */
-export async function deleteFile(queryPath: string): Promise<void> {
-  const { absolute } = resolveProjectPath(queryPath);
+export async function deleteFile(queryPath: string, projectRoot?: string): Promise<void> {
+  const { absolute } = resolveProjectPath(queryPath, projectRoot);
   try {
     const stat = await fs.stat(absolute);
     if (!stat.isFile()) {

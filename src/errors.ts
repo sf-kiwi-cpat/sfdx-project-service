@@ -1,3 +1,5 @@
+import { TemplateNotFoundError, ProjectNotFoundError } from './projects.js';
+
 /**
  * RFC 9457 Problem Details for HTTP APIs
  * https://www.rfc-editor.org/rfc/rfc9457.html
@@ -63,6 +65,12 @@ export class PathTooLongError extends Error {
  * Map thrown errors to HTTP problem details.
  */
 export function errorToProblem(err: unknown): ProblemDetail {
+  if (err instanceof TemplateNotFoundError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof ProjectNotFoundError) {
+    return problemDetail(404, 'Project Not Found', err.message);
+  }
   if (err instanceof RestrictedPathError) {
     return problemDetail(400, 'Bad Request', err.message);
   }
