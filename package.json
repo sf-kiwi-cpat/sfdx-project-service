@@ -30,6 +30,7 @@
   "dependencies": {
     "@salesforce/core": "^8.26.0",
     "@salesforce/source-deploy-retrieve": "^12.31.21",
+    "adm-zip": "^0.5.16",
     "chokidar": "^4.0.0",
     "express": "^4.21.0",
     "pino": "^9.4.0",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
+    "@types/adm-zip": "^0.5.7",
     "@types/express": "^4.17.21",
     "@types/node": "^22.9.0",
     "@types/supertest": "^6.0.0",

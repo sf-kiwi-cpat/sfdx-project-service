@@ -16,6 +16,21 @@ export function getDefaultPackagePath(): string {
 }
 
 /**
+ * Root directory for created projects. Each project gets a UUID subdirectory.
+ */
+export function getProjectsRoot(): string {
+  return process.env.PROJECTS_ROOT ?? path.resolve(process.cwd(), 'projects');
+}
+
+/**
+ * Directory containing template ZIP files. Resolved relative to the package root
+ * (one level up from dist/ at runtime).
+ */
+export function getTemplatesDir(): string {
+  return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates');
+}
+
+/**
  * Salesforce API version used for REST API calls and source metadata.
  * Format: '62.0' (no 'v' prefix - add 'v' at URL construction sites)
  */

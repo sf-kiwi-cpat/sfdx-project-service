@@ -1,10 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
+import AdmZip from 'adm-zip';
+import { getProjectsRoot, getTemplatesDir } from './config.js';
 
 export class TemplateNotFoundError extends Error {
   constructor(templateId: string) {
@@ -21,24 +19,15 @@ export class ProjectNotFoundError extends Error {
 }
 
 /**
- * Root directory for created projects. Each project gets a UUID subdirectory.
- */
-function getProjectsRoot(): string {
-  return process.env.PROJECTS_ROOT ?? path.resolve(process.cwd(), 'projects');
-}
-
-/**
- * Directory containing template ZIP files.
- */
-function getTemplatesDir(): string {
-  return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates');
-}
-
-/**
  * Create a new project by unzipping a template into a UUID-named directory.
  * Returns the project ID (UUID).
  */
 export async function createProject(templateId: string): Promise<string> {
+  // Sanitize templateId — only allow alphanumeric, hyphens, underscores
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(templateId)) {
+    throw new TemplateNotFoundError(templateId);
+  }
+
   // Validate template exists
   const templatePath = path.join(getTemplatesDir(), `${templateId}.zip`);
   try {
@@ -52,8 +41,14 @@ export async function createProject(templateId: string): Promise<string> {
   const projectDir = path.join(getProjectsRoot(), projectId);
   await fs.mkdir(projectDir, { recursive: true });
 
-  // Unzip template into project directory
-  await execFileAsync('unzip', ['-o', templatePath, '-d', projectDir]);
+  // Extract template into project directory
+  try {
+    const zip = new AdmZip(templatePath);
+    zip.extractAllTo(projectDir, true);
+  } catch (err) {
+    await fs.rm(projectDir, { recursive: true, force: true });
+    throw err;
+  }
 
   return projectId;
 }

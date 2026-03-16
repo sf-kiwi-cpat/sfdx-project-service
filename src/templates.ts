@@ -1,17 +1,9 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
+import { getTemplatesDir } from './config.js';
 
 export interface Template {
   name: string;
   id: string;
-}
-
-/**
- * Directory containing template ZIP files. Resolved relative to the package root
- * (two levels up from src/ at runtime in dist/).
- */
-function getTemplatesDir(): string {
-  return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates');
 }
 
 /**
