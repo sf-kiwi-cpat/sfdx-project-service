@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
@@ -33,12 +34,17 @@ export async function buildConnection(credentials: OrgCredentials): Promise<Conn
 
 /**
  * Build a ComponentSet from the real metadata files on disk.
- * Replaces the old VirtualTreeContainer approach with hardcoded XML.
+ * Reads package directories from sfdx-project.json instead of hardcoding paths.
  */
 export function buildComponentSet(projectDir: string): ComponentSet {
-  return ComponentSet.fromSource({
-    fsPaths: [path.join(projectDir, 'force-app')],
-  });
+  const configPath = path.join(projectDir, 'sfdx-project.json');
+  const raw = fs.readFileSync(configPath, 'utf-8');
+  const config = JSON.parse(raw) as { packageDirectories: Array<{ path: string }> };
+  if (!config.packageDirectories?.length) {
+    throw new Error('sfdx-project.json must contain at least one packageDirectory');
+  }
+  const fsPaths = config.packageDirectories.map((d) => path.join(projectDir, d.path));
+  return ComponentSet.fromSource({ fsPaths });
 }
 
 export async function deployMetadata(
