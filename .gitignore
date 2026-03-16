@@ -52,4 +52,4 @@ sfdx-project.json
 temp/
 tmp/
 projects/
-ui/dist/
+ui/
