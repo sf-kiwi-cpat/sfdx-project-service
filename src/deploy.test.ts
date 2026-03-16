@@ -82,7 +82,7 @@ describe('deploy module', () => {
   describe('buildComponentSet', () => {
     it('reads package directories from sfdx-project.json', async () => {
       tmpProjectDir = await createTempProject([{ path: 'force-app' }]);
-      buildComponentSet(tmpProjectDir);
+      await buildComponentSet(tmpProjectDir);
 
       expect(mockFromSource).toHaveBeenCalledWith({
         fsPaths: [path.join(tmpProjectDir, 'force-app')],
@@ -91,7 +91,7 @@ describe('deploy module', () => {
 
     it('supports multiple package directories', async () => {
       tmpProjectDir = await createTempProject([{ path: 'force-app' }, { path: 'my-pkg' }]);
-      buildComponentSet(tmpProjectDir);
+      await buildComponentSet(tmpProjectDir);
 
       expect(mockFromSource).toHaveBeenCalledWith({
         fsPaths: [path.join(tmpProjectDir, 'force-app'), path.join(tmpProjectDir, 'my-pkg')],
@@ -101,7 +101,7 @@ describe('deploy module', () => {
     it('throws when packageDirectories is empty', async () => {
       tmpProjectDir = await createTempProject([]);
 
-      expect(() => buildComponentSet(tmpProjectDir!)).toThrow(
+      await expect(buildComponentSet(tmpProjectDir!)).rejects.toThrow(
         'sfdx-project.json must contain at least one packageDirectory'
       );
     });
@@ -109,7 +109,7 @@ describe('deploy module', () => {
     it('throws when sfdx-project.json is missing', async () => {
       tmpProjectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'deploy-test-'));
 
-      expect(() => buildComponentSet(tmpProjectDir!)).toThrow();
+      await expect(buildComponentSet(tmpProjectDir!)).rejects.toThrow();
     });
   });
 

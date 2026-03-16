@@ -41,7 +41,7 @@ import { scaffoldProject, connectOrg, type InitInput } from './project.js';
 import { createProjectWatcher } from './events.js';
 import { WriteLock } from './lock.js';
 import { listTemplates } from './templates.js';
-import { createProject, getProjectDir, ProjectNotFoundError } from './projects.js';
+import { createProject, getProjectDir } from './projects.js';
 
 /**
  * Express middleware that rejects requests with 409 if the write lock is held.
@@ -348,7 +348,7 @@ export function createRouter(writeLock: WriteLock): express.Router {
    *             schema:
    *               $ref: '#/components/schemas/ProblemDetail'
    */
-  router.post('/projects/:id/deploy', async (req: Request, res: Response) => {
+  router.post('/projects/:id/deploy', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { accessToken, instanceUrl } = req.body as Partial<OrgCredentials>;
 
@@ -370,19 +370,7 @@ export function createRouter(writeLock: WriteLock): express.Router {
       const result = await deployMetadata(projectDir, { accessToken, instanceUrl });
       res.status(200).json(result);
     } catch (err) {
-      if (err instanceof ProjectNotFoundError) {
-        res
-          .status(404)
-          .contentType(PROBLEM_JSON)
-          .json(problemDetail(404, 'Project Not Found', err.message));
-        return;
-      }
-      const detail = err instanceof Error ? err.message : 'Deployment failed';
-      logger.error({ err }, 'Deployment failed');
-      res
-        .status(502)
-        .contentType(PROBLEM_JSON)
-        .json(problemDetail(502, 'Deployment Failed', detail));
+      next(err);
     }
   });
 

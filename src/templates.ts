@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { getTemplatesDir } from './config.js';
+import { logger } from './logger.js';
 
 export interface Template {
   name: string;
@@ -13,7 +14,7 @@ export interface Template {
 export async function listTemplates(): Promise<Template[]> {
   const dir = getTemplatesDir();
   const entries = await fs.readdir(dir);
-  return entries
+  const templates = entries
     .filter((f) => f.endsWith('.zip'))
     .map((f) => ({
       id: f.replace(/\.zip$/, ''),
@@ -23,4 +24,6 @@ export async function listTemplates(): Promise<Template[]> {
         .replace(/\b\w/g, (c) => c.toUpperCase()),
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
+  logger.info({ count: templates.length }, 'Listed templates');
+  return templates;
 }
