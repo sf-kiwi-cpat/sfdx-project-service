@@ -3,7 +3,7 @@ import { pinoHttp } from 'pino-http';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { logger } from './logger.js';
-import { createRouter } from './routes.js';
+import { createRouter } from './routes/index.js';
 import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
 
 /**
@@ -38,7 +38,7 @@ export function createApp(): express.Application {
         description: 'REST API wrapping an SFDX project for remote IDE-like operations',
       },
     },
-    apis: ['./src/routes.ts', './dist/routes.js'],
+    apis: ['./src/routes/*.ts', './dist/routes/*.js'],
   });
 
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
