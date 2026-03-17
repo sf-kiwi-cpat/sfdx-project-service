@@ -1,5 +1,5 @@
 /**
- * ACCEPTANCE TESTS — Human-guarded artifact (SDLC 2026)
+ * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for POST /projects and GET /projects/:id/tree.
  * They are the source of truth for these endpoints' external behavior.
@@ -10,7 +10,7 @@ import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createApp } from './app.js';
+import { createApp } from '../src/app.js';
 
 describe('Projects API', () => {
   let app: ReturnType<typeof createApp>;

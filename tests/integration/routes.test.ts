@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createApp } from './app.js';
+import { createApp } from '../../src/app.js';
 
 describe('SF Project Service API', () => {
   let app: ReturnType<typeof createApp>;

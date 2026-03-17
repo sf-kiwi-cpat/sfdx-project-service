@@ -1,13 +1,13 @@
 /**
- * ACCEPTANCE TESTS — Human-guarded artifact (SDLC 2026)
+ * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for GET /templates.
- * They are the source of truth for the endpoint's external behavior.
+ * They are the source of truth for this endpoint's external behavior.
  * The AI implementation agent must NOT modify this file.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createApp } from './app.js';
+import { createApp } from '../src/app.js';
 
 describe('GET /templates', () => {
   let app: ReturnType<typeof createApp>;

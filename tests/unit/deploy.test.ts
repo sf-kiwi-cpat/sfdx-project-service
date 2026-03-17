@@ -29,7 +29,7 @@ import {
   buildConnection,
   buildComponentSet,
   type OrgCredentials,
-} from './deploy.js';
+} from '../../src/domain/deploy.js';
 
 const testCredentials: OrgCredentials = {
   accessToken: 'test-token',

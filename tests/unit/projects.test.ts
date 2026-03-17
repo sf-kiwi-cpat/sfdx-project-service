@@ -7,7 +7,7 @@ import {
   getProjectDir,
   TemplateNotFoundError,
   ProjectNotFoundError,
-} from './projects.js';
+} from '../../src/domain/projects.js';
 
 describe('createProject', () => {
   let tmpDir: string;

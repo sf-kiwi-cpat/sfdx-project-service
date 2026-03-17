@@ -7,7 +7,7 @@ import {
   PathTooLongError,
   PathTraversalError,
   RestrictedPathError,
-} from './errors.js';
+} from '../../src/errors.js';
 
 describe('errorToProblem', () => {
   it('maps RestrictedPathError to 400 Bad Request', () => {
