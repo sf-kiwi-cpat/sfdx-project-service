@@ -2,8 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
-import { getProjectsRoot, getTemplatesDir } from './config.js';
-import { logger } from './logger.js';
+import { getProjectsRoot, getTemplatesDir } from '../config.js';
+import { logger } from '../logger.js';
 
 export class TemplateNotFoundError extends Error {
   constructor(templateId: string) {

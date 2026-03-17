@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-import { buildTree } from '../files.js';
-import { createProject, getProjectDir } from '../projects.js';
+import { buildTree } from '../domain/files.js';
+import { createProject, getProjectDir } from '../domain/projects.js';
 
 export function createProjectsRouter(): express.Router {
   const router = express.Router();

@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-import { deployMetadata, type OrgCredentials } from '../deploy.js';
-import { getProjectDir } from '../projects.js';
+import { deployMetadata, type OrgCredentials } from '../domain/deploy.js';
+import { getProjectDir } from '../domain/projects.js';
 
 export function createDeployRouter(): express.Router {
   const router = express.Router();
