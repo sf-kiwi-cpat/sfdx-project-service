@@ -2,8 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
-import { DeploymentError } from './errors.js';
-import { logger } from './logger.js';
+import { DeploymentError } from '../errors.js';
+import { logger } from '../logger.js';
 
 export interface DeployComponentResult {
   fullName: string;

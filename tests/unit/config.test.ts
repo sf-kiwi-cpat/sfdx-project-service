@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { getProjectPath, getProjectsRoot, getTemplatesDir } from './config.js';
+import { getProjectPath, getProjectsRoot, getTemplatesDir } from '../../src/config.js';
 
 describe('config', () => {
   let originalProjectRoot: string | undefined;

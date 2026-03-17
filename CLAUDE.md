@@ -4,9 +4,10 @@
 
 ```bash
 npm install   # install dependencies (required in new worktrees)
-npm test      # run tests (vitest)
-npm run test:unit          # unit tests only (3 files)
-npm run test:integration   # integration tests only (4 files)
+npm test      # run all tests (spec + unit + integration)
+npm run test:spec          # spec tests only (human-guarded contracts)
+npm run test:unit          # unit tests only
+npm run test:integration   # integration tests only
 npm run test:coverage      # all tests + coverage report
 npm run lint  # lint with eslint
 npm run dev   # start dev server with watch mode
@@ -37,6 +38,45 @@ docker run -p 3000:3000 sf-project-service               # run container
 - ESM project (`"type": "module"`), Node.js >= 20, TypeScript strict mode
 - Express REST API wrapping an SFDX project
 - `.claude/settings.json` is team-shared (checked into git); `.claude/settings.local.json` is personal (gitignored)
+
+### Directory layout
+
+```
+src/                 # production code
+├── app.ts           # Express app factory, middleware
+├── config.ts        # env-backed configuration
+├── errors.ts        # error classes, RFC 9457 problem detail
+├── logger.ts        # pino logger
+├── index.ts         # entry point (excluded from coverage)
+├── routes/          # HTTP layer (request/response handling)
+└── domain/          # business logic (framework-agnostic)
+
+spec/                # human-guarded contract tests (source of truth)
+tests/unit/          # agent-mutable unit tests (quality tools)
+tests/integration/   # agent-mutable integration tests (quality tools)
+```
+
+## SDLC 2026 — Spec-Driven Development
+
+This project follows the SDLC 2026 process model where spec tests are the
+source of truth for system behavior.
+
+### The rules
+
+1. **`spec/` files are human-guarded.** They define the external contract.
+   A `PreToolUse` hook in `.claude/settings.json` blocks agent writes to
+   `spec/*.spec.ts`. Use `/spec` to create or modify them.
+
+2. **`tests/` files are agent-mutable.** Unit and integration tests are
+   quality tools. The implementation agent creates and modifies them freely.
+
+3. **Implementation agents must not modify spec tests.** If a spec test
+   seems wrong, stop and surface it to the human. Do not work around it.
+
+4. **The workflow is:** `/brief` → `/spec` → `/implement`
+   - `/brief` gathers context (GitHub issues, transcripts, local state)
+   - `/spec` translates intent into spec tests (human reviews and commits)
+   - `/implement` writes code to make spec tests pass (cannot touch spec/)
 
 ## Worktrees
 

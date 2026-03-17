@@ -1,8 +1,8 @@
 /**
- * ACCEPTANCE TESTS — Human-guarded artifact (SDLC 2026)
+ * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for POST /projects/:id/deploy.
- * They are the source of truth for the endpoint's external behavior.
+ * They are the source of truth for this endpoint's external behavior.
  * The AI implementation agent must NOT modify this file.
  *
  * SDR (source-deploy-retrieve) runs for REAL here — ComponentSet.fromSource()
@@ -30,7 +30,7 @@ vi.mock('@salesforce/core', () => ({
   StateAggregator: { clearInstance: vi.fn() },
 }));
 
-import { createApp } from './app.js';
+import { createApp } from '../src/app.js';
 
 const credentials = {
   accessToken: 'test-access-token',

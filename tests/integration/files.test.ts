@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { buildTree, readFile, writeFile, deleteFile, resolveProjectPath } from './files.js';
+import { buildTree, readFile, writeFile, deleteFile, resolveProjectPath } from '../../src/domain/files.js';
 
 describe('files', () => {
   let tmpDir: string;

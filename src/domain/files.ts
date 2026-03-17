@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getProjectPath } from './config.js';
+import { getProjectPath } from '../config.js';
 import {
   FileNotFoundError,
   MAX_PATH_LENGTH,
@@ -8,7 +8,7 @@ import {
   PathTooLongError,
   PathTraversalError,
   RestrictedPathError,
-} from './errors.js';
+} from '../errors.js';
 
 export interface TreeNode {
   name: string;

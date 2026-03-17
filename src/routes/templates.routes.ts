@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { listTemplates } from '../templates.js';
+import { listTemplates } from '../domain/templates.js';
 
 export function createTemplatesRouter(): express.Router {
   const router = express.Router();

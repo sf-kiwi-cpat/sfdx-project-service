@@ -1,4 +1,4 @@
-import { TemplateNotFoundError, ProjectNotFoundError } from './projects.js';
+import { TemplateNotFoundError, ProjectNotFoundError } from './domain/projects.js';
 
 /** Thrown when a Salesforce deployment fails. */
 export class DeploymentError extends Error {

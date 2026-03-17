@@ -9,6 +9,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const input=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); const file=input.tool_input?.file_path||''; if(file.includes('/spec/') && file.endsWith('.spec.ts')){console.error('BLOCKED: spec/ files are human-guarded contracts (SDLC 2026). Use /spec to create or modify them.');process.exit(1);}\""
+          }
+        ]
+      }
     ]
   }
 }

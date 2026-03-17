@@ -46,7 +46,7 @@ describe('logger', () => {
       },
     }));
 
-    await import('./logger.js');
+    await import('../../src/logger.js');
     return pinoArgs[0];
   }
 

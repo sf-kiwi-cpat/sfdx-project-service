@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-import { getTemplatesDir } from './config.js';
-import { logger } from './logger.js';
+import { getTemplatesDir } from '../config.js';
+import { logger } from '../logger.js';
 
 export interface Template {
   name: string;
