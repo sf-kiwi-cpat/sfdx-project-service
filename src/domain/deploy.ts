@@ -4,6 +4,11 @@ import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { DeploymentError } from '../errors.js';
 import { logger } from '../logger.js';
+import {
+  setDeploymentResult,
+  setDeploymentError,
+  type DeploymentResult,
+} from '../deployments.js';
 
 export interface DeployComponentResult {
   fullName: string;
@@ -22,6 +27,30 @@ export interface DeployResponse {
 export interface OrgCredentials {
   accessToken: string;
   instanceUrl: string;
+}
+
+/**
+ * Validate credentials format
+ */
+export function validateCredentials(
+  accessToken?: unknown,
+  instanceUrl?: unknown
+): { valid: false; error: string } | { valid: true } {
+  if (!accessToken || typeof accessToken !== 'string') {
+    return { valid: false, error: 'accessToken is required and must be a string' };
+  }
+  if (!instanceUrl || typeof instanceUrl !== 'string') {
+    return { valid: false, error: 'instanceUrl is required and must be a string' };
+  }
+
+  // Validate instanceUrl is a valid URL
+  try {
+    new URL(instanceUrl);
+  } catch {
+    return { valid: false, error: 'instanceUrl must be a valid URL' };
+  }
+
+  return { valid: true };
 }
 
 export async function buildConnection(credentials: OrgCredentials): Promise<Connection> {
@@ -103,5 +132,61 @@ export async function deployMetadata(
     const msg = err instanceof Error ? err.message : 'Deployment failed';
     logger.error({ err, projectDir }, 'Deployment failed');
     throw new DeploymentError(msg);
+  }
+}
+
+/**
+ * Start an async deployment and store the result when complete.
+ * This function runs the deployment in the background without blocking.
+ * Does not throw errors; stores all results (success and failure) in the deployment store.
+ */
+export async function deployMetadataAsync(
+  deploymentId: string,
+  projectDir: string,
+  credentials: OrgCredentials
+): Promise<void> {
+  try {
+    logger.info({ deploymentId, projectDir }, 'Starting async deployment');
+
+    const connection = await buildConnection(credentials);
+    const components = await buildComponentSet(projectDir);
+
+    const deploy = await components.deploy({
+      usernameOrConnection: connection,
+      apiOptions: {
+        rollbackOnError: true,
+        testLevel: 'NoTestRun',
+        rest: false,
+      },
+    });
+
+    const result = await deploy.pollStatus();
+
+    // Store result regardless of success or failure
+    const deploymentResult: DeploymentResult = {
+      deploymentId,
+      status: result.response.status,
+      numberComponentsDeployed: result.response.numberComponentsDeployed,
+      numberComponentsTotal: result.response.numberComponentsTotal,
+      components: result.getFileResponses().map((f) => ({
+        fullName: f.fullName,
+        type: f.type,
+        state: f.state,
+      })),
+    };
+
+    if (result.response.errorMessage) {
+      deploymentResult.errorMessage = result.response.errorMessage;
+    }
+
+    logger.info(
+      { deploymentId, status: result.response.status },
+      'Async deployment completed'
+    );
+    setDeploymentResult(deploymentId, deploymentResult);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Deployment failed';
+    logger.error({ deploymentId, err }, 'Async deployment failed');
+    setDeploymentError(deploymentId, msg);
   }
 }
