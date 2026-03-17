@@ -37,7 +37,6 @@ import { problemDetail, PROBLEM_JSON } from './errors.js';
 import { deployMetadata, type OrgCredentials } from './deploy.js';
 import { buildTree, readFile, writeFile, deleteFile } from './files.js';
 import { logger } from './logger.js';
-import { scaffoldProject, connectOrg, type InitInput } from './project.js';
 import { createProjectWatcher } from './events.js';
 import { WriteLock } from './lock.js';
 import { listTemplates } from './templates.js';
@@ -195,90 +194,10 @@ export function createRouter(writeLock: WriteLock): express.Router {
 
   /**
    * @openapi
-   * /project/init:
-   *   post:
-   *     summary: Initialize a Salesforce project
-   *     description: Scaffolds a new SFDX project and connects it to the given org.
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
-   *             required: [accessToken, instanceUrl]
-   *             properties:
-   *               accessToken:
-   *                 type: string
-   *                 description: OAuth access token for the Salesforce org
-   *               instanceUrl:
-   *                 type: string
-   *                 format: uri
-   *                 description: Salesforce instance URL
-   *     responses:
-   *       '201':
-   *         description: Project scaffolded and org connected
-   *         content:
-   *           application/json:
-   *             schema:
-   *               type: object
-   *               properties:
-   *                 ok:
-   *                   type: boolean
-   *                 message:
-   *                   type: string
-   *       '400':
-   *         description: Missing or invalid parameters
-   *         content:
-   *           application/problem+json:
-   *             schema:
-   *               $ref: '#/components/schemas/ProblemDetail'
-   *       '409':
-   *         description: Write lock is held
-   *         content:
-   *           application/problem+json:
-   *             schema:
-   *               $ref: '#/components/schemas/ProblemDetail'
-   */
-  router.post(
-    '/project/init',
-    requireWriteUnlocked(writeLock),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const { accessToken, instanceUrl } = req.body as InitInput;
-        if (!accessToken || !instanceUrl) {
-          res
-            .status(400)
-            .contentType(PROBLEM_JSON)
-            .json(problemDetail(400, 'Bad Request', 'accessToken and instanceUrl are required'));
-          return;
-        }
-
-        try {
-          new URL(instanceUrl);
-        } catch {
-          res
-            .status(400)
-            .contentType(PROBLEM_JSON)
-            .json(problemDetail(400, 'Bad Request', 'instanceUrl must be a valid URL'));
-          return;
-        }
-
-        await scaffoldProject();
-        await connectOrg({ accessToken, instanceUrl });
-
-        res.status(201).json({ ok: true, message: 'Project scaffolded and org connected' });
-      } catch (err) {
-        next(err);
-      }
-    }
-  );
-
-  /**
-   * @openapi
    * /projects/{id}/deploy:
    *   post:
    *     summary: Deploy project metadata to a Salesforce org
-   *     description: Reads metadata from the project's force-app directory and deploys it to the given Salesforce org using SDR.
+   *     description: Reads metadata paths from the project's sfdx-project.json and deploys to the given Salesforce org using SDR.
    *     parameters:
    *       - in: path
    *         name: id

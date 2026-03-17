@@ -26,11 +26,10 @@ npm run dev              # starts Vite dev server on port 5173, proxies API to :
 | `/projects/:id/tree` | GET | Get the file tree for a project |
 | `/projects/:id/deploy` | POST | Deploy project metadata to a Salesforce org (`{ "accessToken", "instanceUrl" }`) |
 
-### Single-Project Endpoints
+### Single-Project Endpoints (Legacy)
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/project/init` | POST | Scaffold SFDX project and connect org (`{ "accessToken", "instanceUrl" }`) |
 | `/project/tree` | GET | Return the full directory/file tree |
 | `/project/file?path=...` | GET | Read a file |
 | `/project/file?path=...` | PUT | Create or overwrite a file |
@@ -76,7 +75,7 @@ For production, build the UI (`cd ui && npm run build`) and the Express server s
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Server port |
-| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for `/project/*` endpoints) |
+| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for legacy `/project/*` endpoints) |
 | `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects |
 | `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
 

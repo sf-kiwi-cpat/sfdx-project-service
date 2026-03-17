@@ -86,22 +86,11 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 | `POST /projects` | Create a project from a template (body: `{ "template": "..." }`) |
 | `GET /projects/:id/tree` | Get the file tree for a specific project |
 | `POST /projects/:id/deploy` | Deploy metadata from a project to a Salesforce org (body: `{ "accessToken": "...", "instanceUrl": "..." }`) |
-| `POST /project/init` | Scaffold the SFDX project and connect the org |
 | `GET /project/tree` | Return the full directory/file tree for the file explorer |
 | `GET /project/file?path=...` | Read the full contents of a specific file |
 | `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
 | `DELETE /project/file?path=...` | Delete a file |
 | `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
-
-### Project Initialization
-
-`POST /project/init` does two things:
-
-1. **Scaffold the project** — creates the SFDX project directory structure and `sfdx-project.json`. This is essentially what `sf project generate` does: a `force-app/main/default/` directory tree and a small config file declaring the package directory, source API version, and login URL.
-2. **Connect the org** — registers the provided auth credentials (token or equivalent) with `@salesforce/core`'s `AuthInfo` so that subsequent sf operations (deploy, retrieve) target the correct org. The credentials are expected to come from the broader VaaS infrastructure (the user has already authenticated through the platform).
-
-Input: an OAuth **access token** and **instance URL** for the target Salesforce org. The VaaS infrastructure is responsible for obtaining these through the user's login flow; the Project Service simply receives and registers them.
-Output: 201 Created with confirmation that the project is scaffolded and the org is connected.
 
 ### Template System
 
@@ -133,7 +122,7 @@ This lets the UI reactively update the file explorer and refresh open files with
 
 1. **Credentials** — provided per-request in the body as `{ "accessToken": "...", "instanceUrl": "..." }`. The service is stateless with respect to credentials; no tokens are stored at rest. A `Connection` is built from `@salesforce/core`'s `AuthInfo` for each request.
 2. **Project validation** — the project ID from the URL path is validated as a UUID and checked against the filesystem. Returns 404 if the project does not exist.
-3. **Metadata** — read from disk using SDR's `ComponentSet.fromSource()`, pointed at the project's `force-app/` directory. This supports any valid SFDX project structure, including CustomObjects, CustomFields, StaticResources, Apex classes, and any other metadata type SDR can resolve.
+3. **Metadata** — read from disk using SDR's `ComponentSet.fromSource()`, pointed at the package directories declared in the project's `sfdx-project.json`. This supports any valid SFDX project structure, including CustomObjects, CustomFields, StaticResources, Apex classes, and any other metadata type SDR can resolve.
 4. **Deploy** — SDR's `deploy()` pushes the resolved components to the Metadata API via SOAP. The endpoint blocks while `pollStatus()` polls for completion.
 5. **Result mapping** — SDR's `DeployResult` is mapped to the service's own response shape. SDR types are not leaked through the API.
 
@@ -200,7 +189,7 @@ The steel thread is complete when all endpoints in the API surface above are fun
 
 ## Authentication
 
-**Org auth (connecting to Salesforce):** The Project Service receives an OAuth access token and instance URL via `POST /project/init` and registers them with `@salesforce/core`. The VaaS infrastructure handles the actual OAuth flow with the user upstream via Service Mesh; the Project Service is just a consumer of the resulting token. For the template-based flow (`POST /projects/:id/deploy`), credentials are passed per-request in the body — no server-side token storage.
+**Org auth (connecting to Salesforce):** Credentials (`accessToken` and `instanceUrl`) are passed per-request in the body of `POST /projects/:id/deploy`. The service is stateless with respect to credentials — no tokens are stored at rest. The VaaS infrastructure handles the actual OAuth flow with the user upstream; the Project Service is just a consumer of the resulting token.
 
 **Endpoint auth (securing the API):** Not required for the steel thread. The container is a single-user environment behind the VaaS infrastructure, which serves as the trust boundary. Endpoint-level auth can be added later if the deployment model changes.
 
@@ -211,7 +200,7 @@ Environment variables control deployment settings:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Server port |
-| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for EFS mount, used by `/project/*` endpoints) |
+| `PROJECT_ROOT` | `cwd()` | SFDX project directory (legacy `/project/*` endpoints) |
 | `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects (each project gets a UUID subdirectory) |
 | `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
 

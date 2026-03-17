@@ -9,13 +9,6 @@ export function getProjectPath(): string {
 }
 
 /**
- * Path to the default package directory (force-app/main/default).
- */
-export function getDefaultPackagePath(): string {
-  return path.join(getProjectPath(), 'force-app', 'main', 'default');
-}
-
-/**
  * Root directory for created projects. Each project gets a UUID subdirectory.
  */
 export function getProjectsRoot(): string {
@@ -29,9 +22,3 @@ export function getProjectsRoot(): string {
 export function getTemplatesDir(): string {
   return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates');
 }
-
-/**
- * Salesforce API version used for REST API calls and source metadata.
- * Format: '62.0' (no 'v' prefix - add 'v' at URL construction sites)
- */
-export const SF_API_VERSION = '62.0';

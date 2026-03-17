@@ -6,21 +6,6 @@ import path from 'node:path';
 import os from 'node:os';
 import { createApp } from './app.js';
 
-vi.mock('@salesforce/core', () => ({
-  AuthInfo: {
-    create: vi.fn().mockResolvedValue({
-      save: vi.fn().mockResolvedValue(undefined),
-      setAsDefault: vi.fn().mockResolvedValue(undefined),
-    }),
-  },
-  Global: {
-    SFDX_STATE_FOLDER: '.sfdx',
-  },
-  StateAggregator: {
-    clearInstance: vi.fn(),
-  },
-}));
-
 describe('SF Project Service API', () => {
   let tmpDir: string;
   let originalProjectRoot: string | undefined;
@@ -36,85 +21,6 @@ describe('SF Project Service API', () => {
   afterEach(async () => {
     process.env.PROJECT_ROOT = originalProjectRoot;
     await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
-  describe('POST /project/init', () => {
-    it('scaffolds project and connects org', async () => {
-      const res = await request(app)
-        .post('/project/init')
-        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
-        .expect(201);
-
-      expect(res.body.ok).toBe(true);
-      expect(res.body.message).toContain('Project scaffolded');
-
-      const projectJson = await fs.readFile(path.join(tmpDir, 'sfdx-project.json'), 'utf-8');
-      const config = JSON.parse(projectJson);
-      expect(config.packageDirectories).toBeDefined();
-      expect(config.sourceApiVersion).toBeDefined();
-
-      const gitignore = await fs.readFile(path.join(tmpDir, '.gitignore'), 'utf-8');
-      expect(gitignore).toContain('.sf/');
-    });
-
-    it('returns 400 when accessToken is missing', async () => {
-      const res = await request(app)
-        .post('/project/init')
-        .send({ instanceUrl: 'https://test.salesforce.com' })
-        .expect(400);
-
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(400);
-      expect(res.body.title).toBe('Bad Request');
-    });
-
-    it('returns 400 when instanceUrl is missing', async () => {
-      const res = await request(app)
-        .post('/project/init')
-        .send({ accessToken: 'test-token' })
-        .expect(400);
-
-      expect(res.body.status).toBe(400);
-    });
-
-    it('returns 400 when instanceUrl is not a valid URL', async () => {
-      const res = await request(app)
-        .post('/project/init')
-        .send({ accessToken: 'test-token', instanceUrl: 'not-a-url' })
-        .expect(400);
-
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(400);
-      expect(res.body.detail).toContain('valid URL');
-    });
-
-    it('returns 409 when lock is held', async () => {
-      await request(app).post('/internal/lock').expect(200);
-
-      const res = await request(app)
-        .post('/project/init')
-        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
-        .expect(409);
-
-      expect(res.body).toMatchObject({ status: 409, title: 'Agent Active' });
-    });
-
-    it('returns 500 with RFC 9457 when an unexpected error occurs', async () => {
-      const { AuthInfo } = await import('@salesforce/core');
-      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('unexpected'));
-
-      const res = await request(app)
-        .post('/project/init')
-        .send({ accessToken: 'test-token', instanceUrl: 'https://test.salesforce.com' })
-        .expect(500);
-
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body).toMatchObject({
-        status: 500,
-        title: 'Internal Server Error',
-        detail: 'unexpected',
-      });
-    });
   });
 
   describe('GET /project/tree', () => {
