@@ -92,6 +92,16 @@ describe('files', () => {
       expect(names).toContain('force-app');
       expect(names).toContain('sfdx-project.json');
     });
+
+    it('returns file node when root path is a file', async () => {
+      const filePath = path.join(tmpDir, 'sfdx-project.json');
+      await fs.writeFile(filePath, '{}');
+
+      const tree = await buildTree(filePath);
+      expect(tree.type).toBe('file');
+      expect(tree.name).toBe('sfdx-project.json');
+      expect(tree.children).toBeUndefined();
+    });
   });
 
   describe('readFile', () => {
@@ -106,8 +116,13 @@ describe('files', () => {
       expect(content).toBe('class Foo {}');
     });
 
-    it('throws when file does not exist', async () => {
+    it('throws FileNotFoundError when file does not exist', async () => {
       await expect(readFile('nonexistent.cls')).rejects.toThrow('No file exists at path');
+    });
+
+    it('throws NotAFileError when path is a directory', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main'), { recursive: true });
+      await expect(readFile('force-app/main')).rejects.toThrow('Not a file');
     });
   });
 
@@ -142,8 +157,13 @@ describe('files', () => {
       await expect(fs.access(path.join(tmpDir, filePath))).rejects.toThrow();
     });
 
-    it('throws when file does not exist', async () => {
+    it('throws FileNotFoundError when file does not exist', async () => {
       await expect(deleteFile('nonexistent.cls')).rejects.toThrow('No file exists at path');
+    });
+
+    it('throws NotAFileError when path is a directory', async () => {
+      await fs.mkdir(path.join(tmpDir, 'force-app', 'main'), { recursive: true });
+      await expect(deleteFile('force-app/main')).rejects.toThrow('Not a file');
     });
   });
 });

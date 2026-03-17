@@ -214,5 +214,13 @@ describe('deploy module', () => {
         })
       );
     });
+
+    it('wraps non-Error thrown values as DeploymentError', async () => {
+      mockConnectionCreate.mockRejectedValue('string-error');
+
+      await expect(deployMetadata(tmpProjectDir!, testCredentials)).rejects.toThrow(
+        'Deployment failed'
+      );
+    });
   });
 });

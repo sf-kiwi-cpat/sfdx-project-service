@@ -101,5 +101,19 @@ describe('createProject', () => {
       const result = await getProjectDir(fakeUuid);
       expect(result).toBe(dirPath);
     });
+
+    it('re-throws unexpected filesystem errors', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000003';
+      const dirPath = path.join(projectsRoot, fakeUuid);
+      // Create a directory then remove read permission to trigger EACCES
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.chmod(projectsRoot, 0o000);
+
+      try {
+        await expect(getProjectDir(fakeUuid)).rejects.toThrow();
+      } finally {
+        await fs.chmod(projectsRoot, 0o755);
+      }
+    });
   });
 });
