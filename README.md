@@ -1,23 +1,15 @@
 # SF Project Service
 
-REST API wrapping an SFDX project for remote IDE-like operations. Supports template-based project creation, file browsing, and metadata deployment to Salesforce orgs.
+REST API for template-based Salesforce project creation and metadata deployment. Supports creating projects from pre-built SFDX templates and deploying them to Salesforce orgs using SDR.
 
 ## Quick Start
 
 ```bash
-# API server
 npm install
 npm run dev              # starts Express on port 3000 with watch mode
-
-# Demo UI (separate terminal)
-cd ui
-npm install
-npm run dev              # starts Vite dev server on port 5173, proxies API to :3000
 ```
 
 ## API Endpoints
-
-### Template & Project Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
@@ -30,27 +22,13 @@ Interactive API docs (Swagger UI) are available at `/docs` when the server is ru
 
 ## Template System
 
-Templates are zipped SFDX projects stored in the `templates/` directory. Each `.zip` contains `sfdx-project.json` and a `force-app/` directory tree with metadata.
+Templates are zipped SFDX projects stored in the `templates/` directory. Each `.zip` contains `sfdx-project.json` and package directories with metadata.
 
 **Available templates:**
 - `hello-world-1` -- Custom Object with custom fields
 - `hello-world-2` -- React app as a StaticResource
 
 `POST /projects` unzips a template into a UUID-named directory under `PROJECTS_ROOT`. The returned project ID is used in subsequent `/projects/:id/*` calls.
-
-## Demo UI
-
-An ephemeral Vite+React app in `ui/` that demonstrates the full flow:
-
-1. **Login** -- OAuth PKCE flow authenticates directly with Salesforce
-2. **Template selection** -- pick a template from the available list
-3. **Project creation** -- creates a new project from the selected template
-4. **File tree** -- browse the project's file structure
-5. **Deploy** -- deploy the project metadata to your authenticated org
-
-In development, run `cd ui && npm run dev` alongside `npm run dev` for the API. The Vite dev server proxies API requests to port 3000.
-
-For production, build the UI (`cd ui && npm run build`) and the Express server serves the static files from `ui/dist/` automatically.
 
 ## Environment Variables
 
@@ -66,7 +44,7 @@ For production, build the UI (`cd ui && npm run build`) and the Express server s
 npm test                 # run all tests
 npm run test:unit        # unit tests only
 npm run test:integration # integration tests only
-npm run test:coverage    # all tests with coverage report (90% threshold)
+npm run test:coverage    # all tests with coverage report
 npm run lint             # eslint
 ```
 
@@ -85,7 +63,7 @@ All errors follow RFC 9457 (Problem Details) with `Content-Type: application/pro
 ```json
 {
   "status": 404,
-  "title": "File Not Found",
-  "detail": "No file exists at path 'force-app/main/default/classes/Foo.cls'"
+  "title": "Project Not Found",
+  "detail": "Project not found: 00000000-0000-0000-0000-000000000000"
 }
 ```

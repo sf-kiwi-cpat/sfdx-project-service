@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SF Project Service is a REST API that wraps an SFDX project, exposing filesystem and project operations to remote clients. It knows nothing about agents or AI. Its job is to let a client that doesn't have direct filesystem access (e.g. a web app, mobile app) do things a local IDE would do: browse files, read and write source, run tests, deploy to an org, etc.
+The SF Project Service is a REST API for template-based Salesforce project creation and metadata deployment. It lets clients create projects from pre-built SFDX templates, browse project files, and deploy metadata to Salesforce orgs.
 
 ## Relationship to Agent Service
 
@@ -11,21 +11,14 @@ The **Agent Service** is a separate REST API that wraps an AI Coding Assistant a
 The **SF Project Service** is the complement: it provides project and file operations but has no concept of agents or chat.
 
 Together, these two services compose the backend for [[App Studio (Program)|App Studio]] (FKA Easy Vibes). The App Studio UI is a lightweight IDE that:
-- Uses the **SF Project Service** for traditional IDE-like operations (file explorer, reading/writing files, running tests, deploying)
+- Uses the **SF Project Service** for project creation, file browsing, and deployment
 - Uses the **Agent Service** via a chat panel for vibe coding
-
-Both services share a filesystem — the SFDX project on an **EFS mount** — but have distinct responsibilities.
 
 ## Deployment Model
 
 For the steel thread (and likely MVP), the SF Project Service runs in the **same container** as the Agent Service. Both are separate Node.js processes sharing the same OS and EFS mount.
 
-This colocation simplifies the architecture:
-- Filesystem watchers (`inotify`) work because both processes share a kernel
-- No inter-container networking needed
-- Shared EFS mount is straightforward
-
-If the services need to scale independently in the future, they can be separated into distinct containers. That move would require revisiting the filesystem event mechanism (e.g. switching from `inotify` to polling or a shared event bus).
+If the services need to scale independently in the future, they can be separated into distinct containers.
 
 ## Repository
 
@@ -49,7 +42,7 @@ Once the program aligns on the role and ownership model for this monorepo, the P
 - **Framework:** Express
 - **Testing:** vitest
 - **Linting/Formatting:** ESLint + Prettier
-- **Key libraries:** `@salesforce/core`, `@salesforce/source-deploy-retrieve`, `chokidar`
+- **Key libraries:** `@salesforce/core`, `@salesforce/source-deploy-retrieve`, `adm-zip`
 
 Conventions align with those established in the `agentic-dx` repo to ease future consolidation.
 
@@ -81,7 +74,7 @@ Templates are pre-built SFDX projects distributed as `.zip` files in the `templa
 
 - `GET /templates` reads the `templates/` directory, finds all `.zip` files, and returns `[{ id, name }]` for each. The `id` is the filename without the `.zip` extension. The `name` is derived from the `id` by replacing hyphens with spaces and title-casing.
 - `POST /projects` accepts `{ "template": "<template-id>" }` in the request body. It validates the template exists, generates a UUID for the new project, creates a directory under `PROJECTS_ROOT`, and unzips the template into it. Returns `{ "id": "<uuid>" }` with status 201.
-- `GET /projects/:id/tree` returns the recursive file tree for a specific project, using the same `buildTree()` logic as `GET /project/tree` but scoped to the project's directory.
+- `GET /projects/:id/tree` returns the recursive file tree for a specific project, scoped to the project's directory.
 
 Projects are identified by UUID and stored as subdirectories of `PROJECTS_ROOT`. The project ID is validated as a UUID pattern to prevent path traversal. A `ProjectNotFoundError` (404) is returned if the project directory does not exist.
 
@@ -122,7 +115,6 @@ Projects are identified by UUID and stored as subdirectories of `PROJECTS_ROOT`.
 All errors follow RFC 9457 (Problem Details for HTTP APIs).
 
 **Design choices:**
-- No write lock integration — deploy writes to the org, not the filesystem
 - Per-request credentials — stateless, no credentials at rest, supports deploying to any org
 - Synchronous — blocks while SDR polls; fine for small payloads, will need async job pattern for template-scale deploys
 - The acceptance test suite (`deploy.acceptance.test.ts`) is the canonical specification for this endpoint's contract
@@ -138,20 +130,7 @@ These operations are valuable but can wait. In the near term, the agent can hand
 
 ## Demo UI
 
-An ephemeral Vite+React demo UI lives in the `ui/` directory. It demonstrates the end-to-end flow from template selection through deployment, and serves as both a prototype and a testing tool for the API.
-
-**Features:**
-- **OAuth PKCE login** — authenticates directly with Salesforce using the browser-based OAuth 2.0 PKCE flow. The access token and instance URL are held in the browser only.
-- **Template selection** — displays available templates as cards via `GET /templates`
-- **Project creation** — creates a new project from a selected template via `POST /projects`
-- **File tree view** — shows the project's file structure via `GET /projects/:id/tree`
-- **Deploy** — deploys the project to the authenticated Salesforce org via `POST /projects/:id/deploy`, passing credentials from the PKCE flow
-
-**Tech stack:** React 18, React Router, Vite, TypeScript.
-
-**Development:** The UI runs its own Vite dev server (`cd ui && npm run dev`) with a proxy that forwards `/templates` and `/projects` requests to the API on port 3000.
-
-**Production:** `cd ui && npm run build` outputs static files to `ui/dist/`. The Express server automatically serves these as static files when the directory exists.
+A local-only Vite+React demo UI lives in the `ui/` directory (gitignored). It is a development/testing tool for exercising the API locally — not deployed with the service.
 
 ## Definition of Done (Steel Thread)
 
@@ -197,8 +176,8 @@ Use `pino` (with `pino-http` for Express middleware). Logs are structured JSONL 
 **Levels:** `error`, `warn`, `info`, `debug`. Default to `info` in production.
 
 - `error` — something failed that shouldn't have (unhandled exception, filesystem error)
-- `warn` — something suspect but handled (e.g., write rejected because agent lock is active)
-- `info` — routine operations (request completed, project initialized, SSE client connected)
+- `warn` — something suspect but handled (e.g., invalid request parameters)
+- `info` — routine operations (request completed, project created, deployment succeeded)
 - `debug` — verbose detail useful during development only
 
 **Request log fields** (emitted automatically by `pino-http` middleware):
@@ -208,7 +187,7 @@ Use `pino` (with `pino-http` for Express middleware). Logs are structured JSONL 
 | `timestamp` | `2026-02-12T18:30:00.000Z` |
 | `level` | `info` |
 | `method` | `GET` |
-| `path` | `/project/file?path=force-app/main/default/classes/Foo.cls` |
+| `path` | `/projects/abc-123/deploy` |
 | `statusCode` | `200` |
 | `durationMs` | `12` |
 
