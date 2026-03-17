@@ -4,14 +4,12 @@ import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { logger } from './logger.js';
 import { createRouter } from './routes.js';
-import { WriteLock } from './lock.js';
 import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
 
 /**
  * Create and configure the Express app. Exported for testing.
  */
 export function createApp(): express.Application {
-  const writeLock = new WriteLock();
   const app = express();
 
   app.use(
@@ -30,7 +28,6 @@ export function createApp(): express.Application {
   );
 
   app.use(express.json());
-  app.use(express.text({ type: ['text/plain', 'application/octet-stream'] }));
 
   const swaggerSpec = swaggerJsdoc({
     definition: {
@@ -47,7 +44,7 @@ export function createApp(): express.Application {
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
   app.get('/openapi.json', (_req, res) => res.json(swaggerSpec));
 
-  app.use(createRouter(writeLock));
+  app.use(createRouter());
 
   // Catch-all for unknown routes — return RFC 9457 JSON, not Express's default HTML
   app.use((req: express.Request, res: express.Response) => {

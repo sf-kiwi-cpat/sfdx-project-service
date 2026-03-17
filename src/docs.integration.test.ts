@@ -19,10 +19,9 @@ describe('OpenAPI documentation', () => {
     expect(res.body.paths).toBeDefined();
 
     const paths = Object.keys(res.body.paths);
-    expect(paths).toContain('/project/init');
-    expect(paths).toContain('/project/tree');
-    expect(paths).toContain('/project/file');
-    expect(paths).toContain('/project/events');
-    expect(paths).toContain('/internal/lock');
+    expect(paths).toContain('/templates');
+    expect(paths).toContain('/projects');
+    expect(paths).toContain('/projects/{id}/tree');
+    expect(paths).toContain('/projects/{id}/deploy');
   });
 });

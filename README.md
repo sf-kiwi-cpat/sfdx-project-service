@@ -1,74 +1,51 @@
 # SF Project Service
 
-REST API wrapping an SFDX project for remote IDE-like operations. Exposes filesystem and project operations to clients that don't have direct filesystem access (e.g. web app, mobile app).
-
-## Tech Stack
-
-- **Runtime:** Node.js >= 20 (ESM)
-- **Language:** TypeScript
-- **Framework:** Express
-- **Testing:** vitest
-- **Linting/Formatting:** ESLint + Prettier
-- **Key libraries:** `@salesforce/core`, `chokidar`, `pino`
+REST API for template-based Salesforce project creation and metadata deployment. Supports creating projects from pre-built SFDX templates and deploying them to Salesforce orgs using SDR.
 
 ## Quick Start
 
 ```bash
 npm install
-npm run build
-npm start
+npm run dev              # starts Express on port 3000 with watch mode
 ```
 
-The service listens on port 3000 (configurable via `PORT` env var). Set `PROJECT_ROOT` to the SFDX project directory (defaults to cwd).
+## API Endpoints
 
-## API Documentation
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/templates` | GET | List available project templates |
+| `/projects` | POST | Create a project from a template (`{ "template": "hello-world-1" }`) |
+| `/projects/:id/tree` | GET | Get the file tree for a project |
+| `/projects/:id/deploy` | POST | Deploy project metadata to a Salesforce org (`{ "accessToken", "instanceUrl" }`) |
 
-Interactive API docs (Swagger UI) are available at [`/docs`](http://localhost:3000/docs) when the server is running. The raw OpenAPI 3.0 spec is served at [`/openapi.json`](http://localhost:3000/openapi.json).
+Interactive API docs (Swagger UI) are available at `/docs` when the server is running.
 
-## API (Steel Thread)
+## Template System
 
-| Endpoint | Description |
-| :--- | :--- |
-| `POST /project/init` | Scaffold the SFDX project and connect the org |
-| `GET /project/tree` | Return the full directory/file tree for the file explorer |
-| `GET /project/file?path=...` | Read the full contents of a specific file |
-| `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
-| `DELETE /project/file?path=...` | Delete a file |
-| `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
-### Internal Lock API (for Agent Service)
+Templates are zipped SFDX projects stored in the `templates/` directory. Each `.zip` contains `sfdx-project.json` and package directories with metadata.
 
-| Endpoint | Description |
-| :--- | :--- |
-| `POST /internal/lock` | Acquire the write lock (returns lock ID) |
-| `PATCH /internal/lock` | Renew the lock (body: `{ lockId }`) |
-| `DELETE /internal/lock` | Release the lock (body: `{ lockId }`) |
+**Available templates:**
+- `hello-world-1` -- Custom Object with custom fields
+- `hello-world-2` -- React app as a StaticResource
 
-When the lock is held, write operations (PUT, DELETE) return `409 Conflict` with an RFC 9457 problem detail.
+`POST /projects` unzips a template into a UUID-named directory under `PROJECTS_ROOT`. The returned project ID is used in subsequent `/projects/:id/*` calls.
 
-## Example: curl
+## Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | Server port |
+| `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects |
+| `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
+
+## Testing
 
 ```bash
-# Scaffold project and connect org
-curl -X POST http://localhost:3000/project/init \
-  -H "Content-Type: application/json" \
-  -d '{"accessToken":"YOUR_TOKEN","instanceUrl":"https://your-org.my.salesforce.com"}'
-
-# Get directory tree
-curl http://localhost:3000/project/tree
-
-# Read file
-curl "http://localhost:3000/project/file?path=force-app/main/default/classes/Foo.cls"
-
-# Write file
-curl -X PUT "http://localhost:3000/project/file?path=force-app/main/default/classes/Foo.cls" \
-  -H "Content-Type: text/plain" \
-  -d 'class Foo {}'
-
-# Delete file
-curl -X DELETE "http://localhost:3000/project/file?path=force-app/main/default/classes/Foo.cls"
-
-# SSE events (streaming)
-curl -N http://localhost:3000/project/events
+npm test                 # run all tests
+npm run test:unit        # unit tests only
+npm run test:integration # integration tests only
+npm run test:coverage    # all tests with coverage report
+npm run lint             # eslint
 ```
 
 ## Docker
@@ -79,25 +56,14 @@ docker build -t sf-project-service .
 docker run -p 3000:3000 sf-project-service
 ```
 
-The image expects `dist/` and `node_modules/` to be pre-built on the host (no `npm install` inside the container).
-
-## Development
-
-```bash
-npm run dev          # Watch mode
-npm test             # Run tests
-npm run lint         # ESLint
-npm run format       # Prettier
-```
-
 ## Error Responses
 
-All errors follow RFC 9457 (Problem Details for HTTP APIs) with `Content-Type: application/problem+json`:
+All errors follow RFC 9457 (Problem Details) with `Content-Type: application/problem+json`:
 
 ```json
 {
   "status": 404,
-  "title": "File Not Found",
-  "detail": "No file exists at path 'force-app/main/default/classes/Foo.cls'"
+  "title": "Project Not Found",
+  "detail": "Project not found: 00000000-0000-0000-0000-000000000000"
 }
 ```

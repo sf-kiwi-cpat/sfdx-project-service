@@ -1,0 +1,119 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {
+  createProject,
+  getProjectDir,
+  TemplateNotFoundError,
+  ProjectNotFoundError,
+} from './projects.js';
+
+describe('createProject', () => {
+  let tmpDir: string;
+  let templatesDir: string;
+  let projectsRoot: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'projects-test-'));
+    templatesDir = path.join(tmpDir, 'templates');
+    projectsRoot = path.join(tmpDir, 'projects');
+    await fs.mkdir(templatesDir);
+    await fs.mkdir(projectsRoot);
+    process.env.TEMPLATES_DIR = templatesDir;
+    process.env.PROJECTS_ROOT = projectsRoot;
+  });
+
+  afterEach(async () => {
+    delete process.env.TEMPLATES_DIR;
+    delete process.env.PROJECTS_ROOT;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('templateId sanitization', () => {
+    it('rejects path traversal with ../../etc/passwd', async () => {
+      await expect(createProject('../../etc/passwd')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects path traversal with ../foo', async () => {
+      await expect(createProject('../foo')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects slash-separated paths like foo/bar', async () => {
+      await expect(createProject('foo/bar')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects IDs with dots like foo.bar', async () => {
+      await expect(createProject('foo.bar')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects empty string', async () => {
+      await expect(createProject('')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects IDs starting with a hyphen', async () => {
+      await expect(createProject('-foo')).rejects.toThrow(TemplateNotFoundError);
+    });
+
+    it('rejects IDs starting with an underscore', async () => {
+      await expect(createProject('_foo')).rejects.toThrow(TemplateNotFoundError);
+    });
+  });
+
+  describe('extraction failure cleanup', () => {
+    it('removes the project directory when extraction fails', async () => {
+      // Write an invalid (not a zip) file as the template
+      await fs.writeFile(path.join(templatesDir, 'bad-template.zip'), 'not-a-zip');
+
+      await expect(createProject('bad-template')).rejects.toThrow();
+
+      // The project directory should have been cleaned up
+      const entries = await fs.readdir(projectsRoot);
+      expect(entries).toHaveLength(0);
+    });
+  });
+
+  describe('getProjectDir', () => {
+    it('throws ProjectNotFoundError for invalid UUID format', async () => {
+      await expect(getProjectDir('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('throws ProjectNotFoundError for path traversal attempts', async () => {
+      await expect(getProjectDir('../../etc/passwd')).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('throws ProjectNotFoundError when directory does not exist', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000000';
+      await expect(getProjectDir(fakeUuid)).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('throws ProjectNotFoundError when path is not a directory', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000001';
+      // Create a file (not a directory) at the expected path
+      await fs.writeFile(path.join(projectsRoot, fakeUuid), 'not-a-dir');
+      await expect(getProjectDir(fakeUuid)).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('returns the project directory path when it exists', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000002';
+      const dirPath = path.join(projectsRoot, fakeUuid);
+      await fs.mkdir(dirPath, { recursive: true });
+      const result = await getProjectDir(fakeUuid);
+      expect(result).toBe(dirPath);
+    });
+
+    it('re-throws unexpected filesystem errors', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000003';
+      const dirPath = path.join(projectsRoot, fakeUuid);
+      // Create a directory then remove read permission to trigger EACCES
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.chmod(projectsRoot, 0o000);
+
+      try {
+        await expect(getProjectDir(fakeUuid)).rejects.toThrow();
+      } finally {
+        await fs.chmod(projectsRoot, 0o755);
+      }
+    });
+  });
+});

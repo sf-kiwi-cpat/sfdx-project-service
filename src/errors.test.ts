@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DeploymentError,
   errorToProblem,
   FileNotFoundError,
   NotAFileError,
@@ -32,6 +33,15 @@ describe('errorToProblem', () => {
   it('maps NotAFileError to 400 Bad Request', () => {
     const problem = errorToProblem(new NotAFileError('force-app'));
     expect(problem).toMatchObject({ status: 400, title: 'Bad Request' });
+  });
+
+  it('maps DeploymentError to 502 Deployment Failed', () => {
+    const problem = errorToProblem(new DeploymentError('Component validation error'));
+    expect(problem).toMatchObject({
+      status: 502,
+      title: 'Deployment Failed',
+      detail: 'Component validation error',
+    });
   });
 
   it('maps PathTooLongError to 400 Bad Request', () => {

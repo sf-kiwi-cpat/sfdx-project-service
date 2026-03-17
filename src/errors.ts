@@ -1,3 +1,13 @@
+import { TemplateNotFoundError, ProjectNotFoundError } from './projects.js';
+
+/** Thrown when a Salesforce deployment fails. */
+export class DeploymentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeploymentError';
+  }
+}
+
 /**
  * RFC 9457 Problem Details for HTTP APIs
  * https://www.rfc-editor.org/rfc/rfc9457.html
@@ -63,6 +73,12 @@ export class PathTooLongError extends Error {
  * Map thrown errors to HTTP problem details.
  */
 export function errorToProblem(err: unknown): ProblemDetail {
+  if (err instanceof TemplateNotFoundError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof ProjectNotFoundError) {
+    return problemDetail(404, 'Project Not Found', err.message);
+  }
   if (err instanceof RestrictedPathError) {
     return problemDetail(400, 'Bad Request', err.message);
   }
@@ -77,6 +93,9 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof PathTooLongError) {
     return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof DeploymentError) {
+    return problemDetail(502, 'Deployment Failed', err.message);
   }
 
   const nodeErr = err as NodeJS.ErrnoException;
