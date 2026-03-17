@@ -48,7 +48,7 @@ export function resolveProjectPath(
   return { absolute, relative };
 }
 
-/** Paths to exclude from the tree and block from file operations (matches chokidar watcher ignores). */
+/** Paths to exclude from the tree and block from file operations. */
 const IGNORED_NAMES = new Set(['node_modules', '.git', '.sf']);
 
 function shouldIgnoreEntry(entryName: string): boolean {

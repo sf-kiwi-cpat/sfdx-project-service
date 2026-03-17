@@ -16,24 +16,6 @@ Together, these two services compose the backend for [[App Studio (Program)|App 
 
 Both services share a filesystem — the SFDX project on an **EFS mount** — but have distinct responsibilities.
 
-### Filesystem Concurrency (Steel Thread)
-
-The agent (via the Agent Service) has direct read/write access to the SFDX project on the EFS mount. For the steel thread, **write access is mutually exclusive**: when the agent is active, the Project Service locks out all write operations. The user can still read/browse files, but cannot edit until the agent completes.
-
-This is a deliberate simplification. More sophisticated concurrency (e.g. file-level locking, operational transforms) can be explored later once the basic flow is proven.
-
-#### Write Lock Mechanism
-
-The Project Service owns the lock and exposes it as an internal API:
-
-- `POST /internal/lock` — acquire the write lock (returns a lock ID, starts the TTL)
-- `PATCH /internal/lock` — renew the lock (resets the TTL)
-- `DELETE /internal/lock` — release the lock
-
-The lock uses a **TTL with heartbeat renewal**. The TTL is set to cover a single agent action (not the entire session). The Agent Service acquires the lock when the agent starts, renews it between each action the agent takes, and releases it when the agent finishes. If the agent crashes mid-action, the TTL expires shortly thereafter and the lock auto-releases — no deadlock possible.
-
-Write requests to the Project Service while the lock is held return `409 Conflict` with an RFC 9457 problem detail explaining that the agent is active.
-
 ## Deployment Model
 
 For the steel thread (and likely MVP), the SF Project Service runs in the **same container** as the Agent Service. Both are separate Node.js processes sharing the same OS and EFS mount.
@@ -86,11 +68,6 @@ The steel thread aims for the minimum set of endpoints needed to build a rough U
 | `POST /projects` | Create a project from a template (body: `{ "template": "..." }`) |
 | `GET /projects/:id/tree` | Get the file tree for a specific project |
 | `POST /projects/:id/deploy` | Deploy metadata from a project to a Salesforce org (body: `{ "accessToken": "...", "instanceUrl": "..." }`) |
-| `GET /project/tree` | Return the full directory/file tree for the file explorer |
-| `GET /project/file?path=...` | Read the full contents of a specific file |
-| `PUT /project/file?path=...` | Create or overwrite the full contents of a file (auto-creates parent directories) |
-| `DELETE /project/file?path=...` | Delete a file |
-| `GET /project/events` | SSE stream of filesystem events (file created, modified, deleted) |
 
 ### Template System
 
@@ -107,12 +84,6 @@ Templates are pre-built SFDX projects distributed as `.zip` files in the `templa
 - `GET /projects/:id/tree` returns the recursive file tree for a specific project, using the same `buildTree()` logic as `GET /project/tree` but scoped to the project's directory.
 
 Projects are identified by UUID and stored as subdirectories of `PROJECTS_ROOT`. The project ID is validated as a UUID pattern to prevent path traversal. A `ProjectNotFoundError` (404) is returned if the project directory does not exist.
-
-### Filesystem Events (SSE)
-
-The `GET /project/events` endpoint is a Server-Sent Events stream that pushes real-time filesystem change notifications to the client. Under the hood, a `chokidar` watcher monitors the SFDX project directory. Because both services run in the same container, `inotify` reliably detects all changes — including those made by the agent.
-
-This lets the UI reactively update the file explorer and refresh open files without polling.
 
 ### Metadata Deployment
 
@@ -200,7 +171,6 @@ Environment variables control deployment settings:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Server port |
-| `PROJECT_ROOT` | `cwd()` | SFDX project directory (legacy `/project/*` endpoints) |
 | `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects (each project gets a UUID subdirectory) |
 | `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
 

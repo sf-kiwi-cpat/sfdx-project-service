@@ -26,24 +26,6 @@ npm run dev              # starts Vite dev server on port 5173, proxies API to :
 | `/projects/:id/tree` | GET | Get the file tree for a project |
 | `/projects/:id/deploy` | POST | Deploy project metadata to a Salesforce org (`{ "accessToken", "instanceUrl" }`) |
 
-### Single-Project Endpoints (Legacy)
-
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/project/tree` | GET | Return the full directory/file tree |
-| `/project/file?path=...` | GET | Read a file |
-| `/project/file?path=...` | PUT | Create or overwrite a file |
-| `/project/file?path=...` | DELETE | Delete a file |
-| `/project/events` | GET | SSE stream of filesystem change events |
-
-### Internal Lock API
-
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/internal/lock` | POST | Acquire write lock |
-| `/internal/lock` | PATCH | Renew write lock (`{ "lockId" }`) |
-| `/internal/lock` | DELETE | Release write lock (`{ "lockId" }`) |
-
 Interactive API docs (Swagger UI) are available at `/docs` when the server is running.
 
 ## Template System
@@ -75,7 +57,6 @@ For production, build the UI (`cd ui && npm run build`) and the Express server s
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Server port |
-| `PROJECT_ROOT` | `cwd()` | SFDX project directory (for legacy `/project/*` endpoints) |
 | `PROJECTS_ROOT` | `{cwd}/projects` | Root directory for template-created projects |
 | `TEMPLATES_DIR` | `{package-root}/templates` | Directory containing template `.zip` files |
 

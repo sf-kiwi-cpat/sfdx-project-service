@@ -6,14 +6,12 @@ import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { logger } from './logger.js';
 import { createRouter } from './routes.js';
-import { WriteLock } from './lock.js';
 import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
 
 /**
  * Create and configure the Express app. Exported for testing.
  */
 export function createApp(): express.Application {
-  const writeLock = new WriteLock();
   const app = express();
 
   app.use(
@@ -32,7 +30,6 @@ export function createApp(): express.Application {
   );
 
   app.use(express.json());
-  app.use(express.text({ type: ['text/plain', 'application/octet-stream'] }));
 
   const swaggerSpec = swaggerJsdoc({
     definition: {
@@ -49,11 +46,9 @@ export function createApp(): express.Application {
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
   app.get('/openapi.json', (_req, res) => res.json(swaggerSpec));
 
-  app.use(createRouter(writeLock));
+  app.use(createRouter());
 
   // Serve the demo UI static files in production (built Vite output).
-  // Only static assets are served; SPA client-side routes (e.g. /home, /project/123)
-  // are handled by the UI's own router when the user navigates from index.html.
   const uiDistPath = path.resolve(import.meta.dirname, '..', 'ui', 'dist');
   if (fs.existsSync(uiDistPath)) {
     app.use(express.static(uiDistPath));
