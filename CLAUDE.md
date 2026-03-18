@@ -75,6 +75,17 @@ fast without drifting from intent.
    pass. Cannot modify spec files. Freely creates unit/integration tests.
 4. **`/review`** — Automated code review and Slack notification (via Loop 2)
 
+### Label lifecycle
+
+```
+/brief       → spec:in-progress (+ assign user)
+/spec        → spec:ready-for-review
+Human approves → spec:approved
+Loop 1       → impl:in-progress → impl:ready
+Loop 2       → review:complete (+ Slack notification)
+Human merges PR
+```
+
 ### The rules
 
 - **`spec/` is human-guarded.** These files define the external contract.
@@ -83,6 +94,10 @@ fast without drifting from intent.
   tools the implementation agent creates and maintains freely.
 - **Test code is source of truth.** Prose specs (`contract.md`) are always
   derived from test code, never the reverse.
+- **Never edit `contract.md` directly.** Edit `contract.spec.ts`, then
+  regenerate. Use `/spec --refresh <feature>` if needed.
+- **To change a contract during implementation:** stop, go back to `/spec`,
+  make the change, regenerate both artifacts, get human approval, then resume.
 
 ## Worktrees
 
