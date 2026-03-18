@@ -19,6 +19,15 @@ export interface DeploymentResult {
   errorMessage?: string;
 }
 
+export interface ProgressEvent {
+  deploymentId: string;
+  timestamp: string;
+  status: string;
+  numberComponentsDeployed: number;
+  numberComponentsTotal: number;
+  components: DeploymentComponentResult[];
+}
+
 interface StoredDeployment {
   deploymentId: string;
   projectId: string;
@@ -26,6 +35,7 @@ interface StoredDeployment {
   result: DeploymentResult | null;
   error: string | null;
   pollPromise: Promise<void> | null;
+  progressEvents: ProgressEvent[];
 }
 
 const deploymentStore = new Map<string, StoredDeployment>();
@@ -49,6 +59,7 @@ export function createDeployment(projectId: string): string {
     result: null,
     error: null,
     pollPromise: null,
+    progressEvents: [],
   });
   return deploymentId;
 }
@@ -103,6 +114,24 @@ export function deploymentExists(deploymentId: string): boolean {
  */
 export function getDeployment(deploymentId: string): StoredDeployment | null {
   return deploymentStore.get(deploymentId) ?? null;
+}
+
+/**
+ * Record a progress event for a deployment
+ */
+export function addProgressEvent(deploymentId: string, event: ProgressEvent): void {
+  const deployment = deploymentStore.get(deploymentId);
+  if (deployment) {
+    deployment.progressEvents.push(event);
+  }
+}
+
+/**
+ * Get all progress events for a deployment
+ */
+export function getProgressEvents(deploymentId: string): ProgressEvent[] {
+  const deployment = deploymentStore.get(deploymentId);
+  return deployment?.progressEvents ?? [];
 }
 
 /**

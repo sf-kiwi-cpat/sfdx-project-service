@@ -67,6 +67,7 @@ describe('POST /projects/:id/deploy', () => {
 
     vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
       pollStatus: mockPollStatus,
+      onUpdate: vi.fn().mockReturnValue(undefined),
     } as never);
 
     mockPollStatus.mockResolvedValue({

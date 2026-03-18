@@ -41,6 +41,7 @@ describe('deploy routes integration', () => {
 
     vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
       pollStatus: mockPollStatus,
+      onUpdate: vi.fn().mockReturnValue(undefined),
     } as never);
 
     mockPollStatus.mockResolvedValue({
@@ -118,9 +119,7 @@ describe('deploy routes integration', () => {
             numberComponentsDeployed: 3,
             numberComponentsTotal: 3,
           },
-          getFileResponses: () => [
-            { fullName: 'Test__c', type: 'CustomObject', state: 'Created' },
-          ],
+          getFileResponses: () => [{ fullName: 'Test__c', type: 'CustomObject', state: 'Created' }],
         };
       });
 
@@ -146,9 +145,7 @@ describe('deploy routes integration', () => {
 
   describe('error handling in POST deployments', () => {
     it('returns 502 when ComponentSet.deploy throws', async () => {
-      vi.spyOn(ComponentSet.prototype, 'deploy').mockRejectedValue(
-        new Error('Deploy failed')
-      );
+      vi.spyOn(ComponentSet.prototype, 'deploy').mockRejectedValueOnce(new Error('Deploy failed'));
 
       const credentials = {
         accessToken: 'test-token',

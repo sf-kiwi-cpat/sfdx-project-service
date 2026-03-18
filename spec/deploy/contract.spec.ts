@@ -19,10 +19,6 @@
  */
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 
 // Only mock @salesforce/core (auth requires network). SDR runs for real.
 const { mockConnectionCreate, mockAuthInfoCreate } = vi.hoisted(() => ({
@@ -38,11 +34,16 @@ vi.mock('@salesforce/core', () => ({
 }));
 
 import { createApp } from '../../src/app.js';
-
-const credentials = {
-  accessToken: 'test-access-token',
-  instanceUrl: 'https://test.salesforce.com',
-};
+import {
+  TEST_CREDENTIALS,
+  setupTempProject,
+  cleanupTempProject,
+  setupDefaultMocks,
+  createSuccessDeployResponse,
+  createInProgressDeployResponse,
+  createFailedDeployResponse,
+  setupDeployMock,
+} from './fixtures.js';
 
 describe('POST /v1/projects/:id/deployments', () => {
   let app: ReturnType<typeof createApp>;
@@ -51,43 +52,22 @@ describe('POST /v1/projects/:id/deployments', () => {
   const mockPollStatus = vi.fn();
 
   beforeAll(async () => {
-    // Create a temp projects root and a project with real metadata from the hello-world-1 template
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-test-'));
-    process.env.PROJECTS_ROOT = tmpDir;
+    const setup = await setupTempProject();
+    tmpDir = setup.tmpDir;
+    projectId = setup.projectId;
   });
 
   afterAll(async () => {
-    delete process.env.PROJECTS_ROOT;
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await cleanupTempProject(tmpDir);
   });
 
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
 
-    // Create a project from the hello-world-1 template
-    const createRes = await request(app).post('/projects').send({ template: 'hello-world-1' });
-    projectId = createRes.body.id;
-
-    mockAuthInfoCreate.mockResolvedValue({});
-    mockConnectionCreate.mockResolvedValue({});
-
-    vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
-      pollStatus: mockPollStatus,
-    } as never);
-
-    mockPollStatus.mockResolvedValue({
-      response: {
-        status: 'Succeeded',
-        numberComponentsDeployed: 3,
-        numberComponentsTotal: 3,
-      },
-      getFileResponses: () => [
-        { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
-        { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
-        { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-      ],
-    });
+    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+    setupDeployMock(mockPollStatus);
+    mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
   });
 
   afterEach(() => {
@@ -97,7 +77,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 202 Accepted with deploymentId and initial status', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(credentials)
+      .send(TEST_CREDENTIALS)
       .expect(202);
 
     expect(res.body).toHaveProperty('deploymentId');
@@ -147,7 +127,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 404 when project ID does not exist', async () => {
     const res = await request(app)
       .post('/v1/projects/00000000-0000-0000-0000-000000000000/deployments')
-      .send(credentials)
+      .send(TEST_CREDENTIALS)
       .expect(404);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
@@ -159,7 +139,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(credentials)
+      .send(TEST_CREDENTIALS)
       .expect(502);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
@@ -176,47 +156,27 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   const mockPollStatus = vi.fn();
 
   beforeAll(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-test-'));
-    process.env.PROJECTS_ROOT = tmpDir;
+    const setup = await setupTempProject();
+    tmpDir = setup.tmpDir;
+    projectId = setup.projectId;
   });
 
   afterAll(async () => {
-    delete process.env.PROJECTS_ROOT;
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await cleanupTempProject(tmpDir);
   });
 
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
 
-    // Create a project
-    const createRes = await request(app).post('/projects').send({ template: 'hello-world-1' });
-    projectId = createRes.body.id;
-
-    mockAuthInfoCreate.mockResolvedValue({});
-    mockConnectionCreate.mockResolvedValue({});
-
-    vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
-      pollStatus: mockPollStatus,
-    } as never);
-
-    mockPollStatus.mockResolvedValue({
-      response: {
-        status: 'Succeeded',
-        numberComponentsDeployed: 3,
-        numberComponentsTotal: 3,
-      },
-      getFileResponses: () => [
-        { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
-        { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
-        { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-      ],
-    });
+    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+    setupDeployMock(mockPollStatus);
+    mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
 
     // Initiate deployment
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(credentials);
+      .send(TEST_CREDENTIALS);
     deploymentId = deployRes.body.deploymentId;
   });
 
@@ -225,14 +185,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 200 with deployment status when deployment is in progress', async () => {
-    mockPollStatus.mockResolvedValue({
-      response: {
-        status: 'InProgress',
-        numberComponentsDeployed: 1,
-        numberComponentsTotal: 3,
-      },
-      getFileResponses: () => [],
-    });
+    mockPollStatus.mockResolvedValue(createInProgressDeployResponse());
 
     const res = await request(app)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
@@ -248,29 +201,19 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
       .expect(200);
 
-    expect(res.body).toEqual({
-      deploymentId,
-      status: 'Succeeded',
-      numberComponentsDeployed: 3,
-      numberComponentsTotal: 3,
-      components: [
-        { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
-        { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
-        { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-      ],
-    });
+    expect(res.body.deploymentId).toBe(deploymentId);
+    expect(res.body.status).toBe('Succeeded');
+    expect(res.body.numberComponentsDeployed).toBe(3);
+    expect(res.body.numberComponentsTotal).toBe(3);
+    expect(res.body.components).toEqual([
+      { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
+      { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
+      { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
+    ]);
   });
 
   it('returns 200 with error details when deployment fails', async () => {
-    mockPollStatus.mockResolvedValue({
-      response: {
-        status: 'Failed',
-        numberComponentsDeployed: 0,
-        numberComponentsTotal: 3,
-        errorMessage: 'Deployment failed: invalid metadata',
-      },
-      getFileResponses: () => [],
-    });
+    mockPollStatus.mockResolvedValue(createFailedDeployResponse());
 
     const res = await request(app)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
@@ -305,47 +248,27 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
   const mockPollStatus = vi.fn();
 
   beforeAll(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-test-'));
-    process.env.PROJECTS_ROOT = tmpDir;
+    const setup = await setupTempProject();
+    tmpDir = setup.tmpDir;
+    projectId = setup.projectId;
   });
 
   afterAll(async () => {
-    delete process.env.PROJECTS_ROOT;
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await cleanupTempProject(tmpDir);
   });
 
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
 
-    // Create a project
-    const createRes = await request(app).post('/projects').send({ template: 'hello-world-1' });
-    projectId = createRes.body.id;
-
-    mockAuthInfoCreate.mockResolvedValue({});
-    mockConnectionCreate.mockResolvedValue({});
-
-    vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
-      pollStatus: mockPollStatus,
-    } as never);
-
-    mockPollStatus.mockResolvedValue({
-      response: {
-        status: 'Succeeded',
-        numberComponentsDeployed: 3,
-        numberComponentsTotal: 3,
-      },
-      getFileResponses: () => [
-        { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
-        { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
-        { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-      ],
-    });
+    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+    setupDeployMock(mockPollStatus);
+    mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
 
     // Initiate deployment
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(credentials);
+      .send(TEST_CREDENTIALS);
     deploymentId = deployRes.body.deploymentId;
   });
 

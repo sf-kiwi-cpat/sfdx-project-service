@@ -7,7 +7,10 @@ import { logger } from '../logger.js';
 import {
   setDeploymentResult,
   setDeploymentError,
+  addProgressEvent,
   type DeploymentResult,
+  type ProgressEvent,
+  type DeploymentComponentResult,
 } from '../deployments.js';
 
 export interface DeployComponentResult {
@@ -139,6 +142,20 @@ export async function deployMetadata(
  * Start an async deployment and store the result when complete.
  * This function runs the deployment in the background without blocking.
  * Does not throw errors; stores all results (success and failure) in the deployment store.
+ *
+ * Deployment lifecycle:
+ * 1. Connection is built and validated against Salesforce org
+ * 2. ComponentSet is built from metadata files on disk
+ * 3. deploy() is called with SDR (triggers Metadata API request)
+ * 4. pollStatus() is called with 10-minute timeout to wait for completion
+ * 5. Result is stored in the deployment store (success or error)
+ *
+ * Progress events are emitted via the onUpdate callback as polling occurs.
+ * See the deploy.routes.ts SSE endpoint for how to consume progress events.
+ *
+ * Connection is built twice: once for validation in the POST handler,
+ * and again here for the actual deployment. This ensures early error reporting
+ * while keeping the async background work isolated and retryable.
  */
 export async function deployMetadataAsync(
   deploymentId: string,
@@ -160,7 +177,30 @@ export async function deployMetadataAsync(
       },
     });
 
-    const result = await deploy.pollStatus();
+    // Capture progress events as deployment polls occur
+    deploy.onUpdate((response) => {
+      const components: DeploymentComponentResult[] = response.getFileResponses().map((f) => ({
+        fullName: f.fullName,
+        type: f.type,
+        state: f.state,
+      }));
+
+      const event: ProgressEvent = {
+        deploymentId,
+        timestamp: new Date().toISOString(),
+        status: response.response.status,
+        numberComponentsDeployed: response.response.numberComponentsDeployed,
+        numberComponentsTotal: response.response.numberComponentsTotal,
+        components,
+      };
+
+      addProgressEvent(deploymentId, event);
+    });
+
+    // Set up a 10-minute timeout for polling to prevent indefinite waits
+    const abortSignal = AbortSignal.timeout(10 * 60 * 1000);
+
+    const result = await deploy.pollStatus({ abortSignal });
 
     // Store result regardless of success or failure
     const deploymentResult: DeploymentResult = {
@@ -179,10 +219,7 @@ export async function deployMetadataAsync(
       deploymentResult.errorMessage = result.response.errorMessage;
     }
 
-    logger.info(
-      { deploymentId, status: result.response.status },
-      'Async deployment completed'
-    );
+    logger.info({ deploymentId, status: result.response.status }, 'Async deployment completed');
     setDeploymentResult(deploymentId, deploymentResult);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Deployment failed';

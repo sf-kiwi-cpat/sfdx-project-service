@@ -288,7 +288,11 @@ export function createDeployRouter(): express.Router {
             .status(404)
             .contentType(PROBLEM_JSON)
             .json(
-              problemDetail(404, 'Deployment Not Found', `Deployment ${req.params.deploymentId} not found`)
+              problemDetail(
+                404,
+                'Deployment Not Found',
+                `Deployment ${req.params.deploymentId} not found`
+              )
             );
           return;
         }
@@ -358,7 +362,11 @@ export function createDeployRouter(): express.Router {
             .status(404)
             .contentType(PROBLEM_JSON)
             .json(
-              problemDetail(404, 'Deployment Not Found', `Deployment ${req.params.deploymentId} not found`)
+              problemDetail(
+                404,
+                'Deployment Not Found',
+                `Deployment ${req.params.deploymentId} not found`
+              )
             );
           return;
         }
@@ -374,8 +382,19 @@ export function createDeployRouter(): express.Router {
         res.write('event: start\n');
         res.write(`data: {"deploymentId":"${req.params.deploymentId}"}\n\n`);
 
+        let lastEventCount = 0;
+
         // Poll for deployment result and stream events
         const pollInterval = setInterval(() => {
+          // Stream any new progress events
+          const events = getProgressEvents(req.params.deploymentId);
+          for (let i = lastEventCount; i < events.length; i++) {
+            res.write('event: progress\n');
+            res.write(`data: ${JSON.stringify(events[i])}\n\n`);
+          }
+          lastEventCount = events.length;
+
+          // Check if deployment is complete
           const result = getDeploymentResult(req.params.deploymentId);
           if (result) {
             // Deployment is complete
