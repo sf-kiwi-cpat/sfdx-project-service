@@ -13,20 +13,6 @@ import {
   type DeploymentComponentResult,
 } from '../deployments.js';
 
-export interface DeployComponentResult {
-  fullName: string;
-  type: string;
-  state: string;
-}
-
-export interface DeployResponse {
-  ok: true;
-  status: string;
-  numberComponentsDeployed: number;
-  numberComponentsTotal: number;
-  components: DeployComponentResult[];
-}
-
 export interface OrgCredentials {
   accessToken: string;
   instanceUrl: string;
@@ -82,62 +68,6 @@ export async function buildComponentSet(projectDir: string): Promise<ComponentSe
   return ComponentSet.fromSource({ fsPaths });
 }
 
-export async function deployMetadata(
-  projectDir: string,
-  credentials: OrgCredentials
-): Promise<DeployResponse> {
-  logger.info({ projectDir, instanceUrl: credentials.instanceUrl }, 'Starting deployment');
-
-  try {
-    const connection = await buildConnection(credentials);
-    const components = await buildComponentSet(projectDir);
-
-    const deploy = await components.deploy({
-      usernameOrConnection: connection,
-      apiOptions: {
-        rollbackOnError: true,
-        testLevel: 'NoTestRun',
-        rest: false,
-      },
-    });
-
-    const result = await deploy.pollStatus();
-
-    if (result.response.status !== 'Succeeded') {
-      const msg = result.response.errorMessage ?? `Deployment ${result.response.status}`;
-      logger.error({ projectDir, status: result.response.status }, msg);
-      throw new DeploymentError(msg);
-    }
-
-    logger.info(
-      {
-        projectDir,
-        status: result.response.status,
-        deployed: result.response.numberComponentsDeployed,
-        total: result.response.numberComponentsTotal,
-      },
-      'Deployment succeeded'
-    );
-
-    return {
-      ok: true,
-      status: result.response.status,
-      numberComponentsDeployed: result.response.numberComponentsDeployed,
-      numberComponentsTotal: result.response.numberComponentsTotal,
-      components: result.getFileResponses().map((f) => ({
-        fullName: f.fullName,
-        type: f.type,
-        state: f.state,
-      })),
-    };
-  } catch (err) {
-    if (err instanceof DeploymentError) throw err;
-    const msg = err instanceof Error ? err.message : 'Deployment failed';
-    logger.error({ err, projectDir }, 'Deployment failed');
-    throw new DeploymentError(msg);
-  }
-}
-
 /**
  * Start an async deployment and store the result when complete.
  * This function runs the deployment in the background without blocking.
@@ -180,13 +110,10 @@ export async function deployMetadataAsync(
     // Capture progress events as deployment polls occur
     deploy.onUpdate((statusUpdate: Record<string, unknown>) => {
       // SDR provides status updates during polling
-      const components: DeploymentComponentResult[] = (
-        (statusUpdate.getFileResponses?.() as Array<{
-          fullName: string;
-          type: string;
-          state: string;
-        }>) || []
-      ).map((f) => ({
+      const getFileResponses = statusUpdate.getFileResponses as
+        | (() => Array<{ fullName: string; type: string; state: string }>)
+        | undefined;
+      const components: DeploymentComponentResult[] = (getFileResponses?.() || []).map((f) => ({
         fullName: f.fullName,
         type: f.type,
         state: f.state,
@@ -195,9 +122,9 @@ export async function deployMetadataAsync(
       const event: ProgressEvent = {
         deploymentId,
         timestamp: new Date().toISOString(),
-        status: statusUpdate.status || 'InProgress',
-        numberComponentsDeployed: statusUpdate.numberComponentsDeployed || 0,
-        numberComponentsTotal: statusUpdate.numberComponentsTotal || 0,
+        status: (statusUpdate.status as string) || 'InProgress',
+        numberComponentsDeployed: (statusUpdate.numberComponentsDeployed as number) || 0,
+        numberComponentsTotal: (statusUpdate.numberComponentsTotal as number) || 0,
         components,
       };
 
