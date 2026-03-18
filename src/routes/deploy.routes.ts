@@ -80,7 +80,7 @@ export function createDeployRouter(): express.Router {
    *               $ref: '#/components/schemas/ProblemDetail'
    */
   router.post(
-    '/v1/projects/:id/deployments',
+    '/projects/:id/deployments',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { accessToken, instanceUrl } = req.body as Partial<OrgCredentials>;
@@ -178,7 +178,7 @@ export function createDeployRouter(): express.Router {
    *               $ref: '#/components/schemas/ProblemDetail'
    */
   router.get(
-    '/v1/projects/:id/deployments/:deploymentId',
+    '/projects/:id/deployments/:deploymentId',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         // Verify project exists
@@ -252,7 +252,7 @@ export function createDeployRouter(): express.Router {
    *               $ref: '#/components/schemas/ProblemDetail'
    */
   router.get(
-    '/v1/projects/:id/deployments/:deploymentId/events',
+    '/projects/:id/deployments/:deploymentId/events',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         // Verify project exists

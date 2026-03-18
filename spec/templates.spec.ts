@@ -17,13 +17,13 @@ describe('GET /templates', () => {
   });
 
   it('returns 200 with an array of template objects', async () => {
-    const res = await request(app).get('/templates').expect(200);
+    const res = await request(app).get('/v1/templates').expect(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);
   });
 
   it('each template has name and id fields', async () => {
-    const res = await request(app).get('/templates').expect(200);
+    const res = await request(app).get('/v1/templates').expect(200);
     for (const template of res.body) {
       expect(template).toHaveProperty('id');
       expect(template).toHaveProperty('name');
@@ -33,7 +33,7 @@ describe('GET /templates', () => {
   });
 
   it('lists the hello-world-1 and hello-world-2 templates', async () => {
-    const res = await request(app).get('/templates').expect(200);
+    const res = await request(app).get('/v1/templates').expect(200);
     const ids = res.body.map((t: { id: string }) => t.id);
     expect(ids).toContain('hello-world-1');
     expect(ids).toContain('hello-world-2');

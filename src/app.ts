@@ -44,7 +44,9 @@ export function createApp(): express.Application {
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
   app.get('/openapi.json', (_req, res) => res.json(swaggerSpec));
 
-  app.use(createRouter());
+  // All API endpoints are versioned under /v1
+  // This enables future /v2 endpoints to coexist without conflicts
+  app.use('/v1', createRouter());
 
   // Catch-all for unknown routes — return RFC 9457 JSON, not Express's default HTML
   app.use((req: express.Request, res: express.Response) => {

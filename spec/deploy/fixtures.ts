@@ -28,7 +28,7 @@ export async function setupTempProject(): Promise<{ tmpDir: string; projectId: s
   process.env.PROJECTS_ROOT = tmpDir;
 
   const app = createApp();
-  const createRes = await request(app).post('/projects').send({ template: 'hello-world-1' });
+  const createRes = await request(app).post('/v1/projects').send({ template: 'hello-world-1' });
   const projectId = createRes.body.id;
 
   return { tmpDir, projectId };
