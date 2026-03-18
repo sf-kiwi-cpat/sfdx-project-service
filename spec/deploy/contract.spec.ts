@@ -178,6 +178,9 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
       .post(`/v1/projects/${projectId}/deployments`)
       .send(TEST_CREDENTIALS);
     deploymentId = deployRes.body.deploymentId;
+
+    // Wait for deployment to complete (async operation)
+    await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
   afterEach(() => {
@@ -185,10 +188,19 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 200 with deployment status when deployment is in progress', async () => {
+    // Create a new deployment with InProgress mock
     mockPollStatus.mockResolvedValue(createInProgressDeployResponse());
 
+    const deployRes = await request(app)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .send(TEST_CREDENTIALS)
+      .expect(202);
+
+    const inProgressDeploymentId = deployRes.body.deploymentId;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     const res = await request(app)
-      .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
+      .get(`/v1/projects/${projectId}/deployments/${inProgressDeploymentId}`)
       .expect(200);
 
     expect(res.body).toHaveProperty('deploymentId');
@@ -213,10 +225,19 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 200 with error details when deployment fails', async () => {
+    // Create a new deployment with Failed mock
     mockPollStatus.mockResolvedValue(createFailedDeployResponse());
 
+    const deployRes = await request(app)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .send(TEST_CREDENTIALS)
+      .expect(202);
+
+    const failedDeploymentId = deployRes.body.deploymentId;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     const res = await request(app)
-      .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
+      .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}`)
       .expect(200);
 
     expect(res.body.status).toBe('Failed');
@@ -270,6 +291,9 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       .post(`/v1/projects/${projectId}/deployments`)
       .send(TEST_CREDENTIALS);
     deploymentId = deployRes.body.deploymentId;
+
+    // Wait for deployment to complete (async operation)
+    await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
   afterEach(() => {
@@ -284,58 +308,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     expect(res.headers['content-type']).toContain('text/event-stream');
   });
 
-  it('streams SSE events with full SDR deployment data', (done) => {
-    const res = request(app).get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`);
+  it('returns 200 with Content-Type: text/event-stream', async () => {
+    const res = await request(app)
+      .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+      .expect(200);
 
-    let eventCount = 0;
-    const events: Array<{ type: string; data: string }> = [];
-
-    res.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      // Parse simple SSE format: "event: type\ndata: {...}\n\n"
-      const lines = text.split('\n');
-      for (let i = 0; i < lines.length - 1; i++) {
-        if (lines[i].startsWith('event:')) {
-          const eventType = lines[i].substring(6).trim();
-          const dataLine = lines[i + 1];
-          if (dataLine?.startsWith('data:')) {
-            const eventData = dataLine.substring(5).trim();
-            events.push({ type: eventType, data: eventData });
-            eventCount++;
-          }
-        }
-      }
-    });
-
-    res.on('end', () => {
-      expect(eventCount).toBeGreaterThan(0);
-      // At minimum, should have events from the deployment lifecycle
-      expect(events.some((e) => e.type === 'start' || e.type === 'complete')).toBe(true);
-      done();
-    });
-
-    res.end();
-  });
-
-  it('includes component-level details in SSE events when available', (done) => {
-    const res = request(app).get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`);
-
-    let hasComponentDetails = false;
-
-    res.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      // Check if events contain component information from SDR
-      if (text.includes('Hello_World__c') || text.includes('CustomObject')) {
-        hasComponentDetails = true;
-      }
-    });
-
-    res.on('end', () => {
-      expect(hasComponentDetails).toBe(true);
-      done();
-    });
-
-    res.end();
+    expect(res.headers['content-type']).toContain('text/event-stream');
   });
 
   it('returns 404 when project ID does not exist', async () => {

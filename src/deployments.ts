@@ -103,6 +103,14 @@ export function getDeploymentResult(deploymentId: string): DeploymentResult | nu
 }
 
 /**
+ * Get the poll promise for a deployment (if it's still in progress)
+ */
+export function getDeploymentPollPromise(deploymentId: string): Promise<void> | null {
+  const deployment = deploymentStore.get(deploymentId);
+  return deployment?.pollPromise ?? null;
+}
+
+/**
  * Check if a deployment exists
  */
 export function deploymentExists(deploymentId: string): boolean {

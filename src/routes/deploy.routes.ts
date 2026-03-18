@@ -200,7 +200,10 @@ export function createDeployRouter(): express.Router {
         const projectDir = await getProjectDir(req.params.id);
 
         // Eagerly validate the connection to catch auth errors early
-        const credentials = { accessToken, instanceUrl };
+        const credentials: OrgCredentials = {
+          accessToken: accessToken!,
+          instanceUrl: instanceUrl!,
+        };
         try {
           await buildConnection(credentials);
         } catch (err) {
@@ -297,7 +300,7 @@ export function createDeployRouter(): express.Router {
           return;
         }
 
-        // Get deployment result
+        // Get deployment result (don't wait - polling should return current state)
         const result = getDeploymentResult(req.params.deploymentId);
         if (!result) {
           // Deployment still in progress

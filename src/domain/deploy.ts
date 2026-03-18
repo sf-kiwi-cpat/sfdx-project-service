@@ -178,8 +178,15 @@ export async function deployMetadataAsync(
     });
 
     // Capture progress events as deployment polls occur
-    deploy.onUpdate((response) => {
-      const components: DeploymentComponentResult[] = response.getFileResponses().map((f) => ({
+    deploy.onUpdate((statusUpdate: Record<string, unknown>) => {
+      // SDR provides status updates during polling
+      const components: DeploymentComponentResult[] = (
+        (statusUpdate.getFileResponses?.() as Array<{
+          fullName: string;
+          type: string;
+          state: string;
+        }>) || []
+      ).map((f) => ({
         fullName: f.fullName,
         type: f.type,
         state: f.state,
@@ -188,19 +195,17 @@ export async function deployMetadataAsync(
       const event: ProgressEvent = {
         deploymentId,
         timestamp: new Date().toISOString(),
-        status: response.response.status,
-        numberComponentsDeployed: response.response.numberComponentsDeployed,
-        numberComponentsTotal: response.response.numberComponentsTotal,
+        status: statusUpdate.status || 'InProgress',
+        numberComponentsDeployed: statusUpdate.numberComponentsDeployed || 0,
+        numberComponentsTotal: statusUpdate.numberComponentsTotal || 0,
         components,
       };
 
       addProgressEvent(deploymentId, event);
     });
 
-    // Set up a 10-minute timeout for polling to prevent indefinite waits
-    const abortSignal = AbortSignal.timeout(10 * 60 * 1000);
-
-    const result = await deploy.pollStatus({ abortSignal });
+    // Set up a 10-minute timeout for polling to prevent indefinite waits (600,000 ms)
+    const result = await deploy.pollStatus(undefined, 600);
 
     // Store result regardless of success or failure
     const deploymentResult: DeploymentResult = {
