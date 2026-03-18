@@ -74,7 +74,8 @@ describe('deploy routes integration', () => {
       // First, initiate a deployment
       const deployRes = await request(app)
         .post(`/v1/projects/${projectId}/deployments`)
-        .send(credentials)
+        .set('Authorization', `Bearer ${credentials.accessToken}`)
+        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
         .expect(202);
 
       const deploymentId = deployRes.body.deploymentId;
@@ -125,7 +126,8 @@ describe('deploy routes integration', () => {
 
       const deployRes = await request(app)
         .post(`/v1/projects/${projectId}/deployments`)
-        .send(credentials)
+        .set('Authorization', `Bearer ${credentials.accessToken}`)
+        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
         .expect(202);
 
       const deploymentId = deployRes.body.deploymentId;
@@ -155,7 +157,8 @@ describe('deploy routes integration', () => {
       // This should still return 202 because the error happens async
       const res = await request(app)
         .post(`/v1/projects/${projectId}/deployments`)
-        .send(credentials)
+        .set('Authorization', `Bearer ${credentials.accessToken}`)
+        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
         .expect(202);
 
       expect(res.body.deploymentId).toBeDefined();
@@ -189,7 +192,8 @@ describe('deploy routes integration', () => {
 
       const deployRes = await request(app)
         .post(`/v1/projects/${projectId}/deployments`)
-        .send(credentials)
+        .set('Authorization', `Bearer ${credentials.accessToken}`)
+        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
         .expect(202);
 
       const deploymentId = deployRes.body.deploymentId;

@@ -14,6 +14,17 @@ export const TEST_CREDENTIALS = {
   instanceUrl: 'https://test.salesforce.com',
 };
 
+/**
+ * Apply auth headers to a supertest request
+ */
+export function withAuthHeaders(
+  req: ReturnType<typeof request>
+) {
+  return req
+    .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+    .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
+}
+
 export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },

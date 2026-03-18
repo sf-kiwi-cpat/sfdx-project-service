@@ -77,7 +77,8 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 202 Accepted with deploymentId and initial status', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
       .expect(202);
 
     expect(res.body).toHaveProperty('deploymentId');
@@ -89,7 +90,6 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 400 when credentials are missing', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send({})
       .expect(400);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
@@ -100,7 +100,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 400 when accessToken is missing', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send({ instanceUrl: 'https://test.salesforce.com' })
+      .set('X-Salesforce-Instance-Url', 'https://test.salesforce.com')
       .expect(400);
 
     expect(res.body.status).toBe(400);
@@ -109,7 +109,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 400 when instanceUrl is missing', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send({ accessToken: 'some-token' })
+      .set('Authorization', 'Bearer some-token')
       .expect(400);
 
     expect(res.body.status).toBe(400);
@@ -118,7 +118,8 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 400 when instanceUrl is not a valid URL', async () => {
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send({ accessToken: 'token', instanceUrl: 'not-a-url' })
+      .set('Authorization', 'Bearer token')
+      .set('X-Salesforce-Instance-Url', 'not-a-url')
       .expect(400);
 
     expect(res.body.status).toBe(400);
@@ -127,7 +128,8 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 404 when project ID does not exist', async () => {
     const res = await request(app)
       .post('/v1/projects/00000000-0000-0000-0000-000000000000/deployments')
-      .send(TEST_CREDENTIALS)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
       .expect(404);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
@@ -139,7 +141,8 @@ describe('POST /v1/projects/:id/deployments', () => {
 
     const res = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
       .expect(502);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
@@ -176,7 +179,8 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
     // Initiate deployment
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS);
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
     deploymentId = deployRes.body.deploymentId;
 
     // Wait for deployment to complete (async operation)
@@ -193,7 +197,8 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
 
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
       .expect(202);
 
     const inProgressDeploymentId = deployRes.body.deploymentId;
@@ -230,7 +235,8 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
 
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
       .expect(202);
 
     const failedDeploymentId = deployRes.body.deploymentId;
@@ -289,7 +295,8 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     // Initiate deployment
     const deployRes = await request(app)
       .post(`/v1/projects/${projectId}/deployments`)
-      .send(TEST_CREDENTIALS);
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
     deploymentId = deployRes.body.deploymentId;
 
     // Wait for deployment to complete (async operation)

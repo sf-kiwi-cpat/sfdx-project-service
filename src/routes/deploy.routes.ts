@@ -1,10 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
+import { extractCredentials } from '../auth.js';
 import {
-  validateCredentials,
   deployMetadataAsync,
   buildConnection,
-  type OrgCredentials,
 } from '../domain/deploy.js';
 import { DeploymentError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
@@ -33,21 +32,19 @@ export function createDeployRouter(): express.Router {
    *           type: string
    *           format: uuid
    *         description: Project UUID
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
-   *             required: [accessToken, instanceUrl]
-   *             properties:
-   *               accessToken:
-   *                 type: string
-   *                 description: OAuth access token for the Salesforce org
-   *               instanceUrl:
-   *                 type: string
-   *                 format: uri
-   *                 description: Salesforce instance URL
+   *       - in: header
+   *         name: Authorization
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: OAuth access token (format: Bearer <token>)
+   *       - in: header
+   *         name: X-Salesforce-Instance-Url
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uri
+   *         description: Salesforce instance URL
    *     responses:
    *       '202':
    *         description: Deployment accepted and started
@@ -83,26 +80,22 @@ export function createDeployRouter(): express.Router {
     '/projects/:id/deployments',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { accessToken, instanceUrl } = req.body as Partial<OrgCredentials>;
-
-        // Validate credentials
-        const validation = validateCredentials(accessToken, instanceUrl);
-        if (!validation.valid) {
+        // Extract and validate credentials from headers
+        const credentialsResult = extractCredentials(req);
+        if (!credentialsResult.valid) {
           res
             .status(400)
             .contentType(PROBLEM_JSON)
-            .json(problemDetail(400, 'Bad Request', validation.error));
+            .json(problemDetail(400, 'Bad Request', credentialsResult.error));
           return;
         }
+
+        const credentials = credentialsResult.credentials;
 
         // Get project directory
         const projectDir = await getProjectDir(req.params.id);
 
         // Eagerly validate the connection to catch auth errors early
-        const credentials: OrgCredentials = {
-          accessToken: accessToken!,
-          instanceUrl: instanceUrl!,
-        };
         try {
           await buildConnection(credentials);
         } catch (err) {

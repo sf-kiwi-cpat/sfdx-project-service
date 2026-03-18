@@ -4,6 +4,7 @@ import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { DeploymentError } from '../errors.js';
 import { logger } from '../logger.js';
+import { type OrgCredentials } from '../auth.js';
 import {
   setDeploymentResult,
   setDeploymentError,
@@ -12,35 +13,6 @@ import {
   type ProgressEvent,
   type DeploymentComponentResult,
 } from '../deployments.js';
-
-export interface OrgCredentials {
-  accessToken: string;
-  instanceUrl: string;
-}
-
-/**
- * Validate credentials format
- */
-export function validateCredentials(
-  accessToken?: unknown,
-  instanceUrl?: unknown
-): { valid: false; error: string } | { valid: true } {
-  if (!accessToken || typeof accessToken !== 'string') {
-    return { valid: false, error: 'accessToken is required and must be a string' };
-  }
-  if (!instanceUrl || typeof instanceUrl !== 'string') {
-    return { valid: false, error: 'instanceUrl is required and must be a string' };
-  }
-
-  // Validate instanceUrl is a valid URL
-  try {
-    new URL(instanceUrl);
-  } catch {
-    return { valid: false, error: 'instanceUrl must be a valid URL' };
-  }
-
-  return { valid: true };
-}
 
 export async function buildConnection(credentials: OrgCredentials): Promise<Connection> {
   const authInfo = await AuthInfo.create({
