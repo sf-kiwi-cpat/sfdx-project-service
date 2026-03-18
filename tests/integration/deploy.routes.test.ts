@@ -3,7 +3,7 @@ import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createApp } from '../app.js';
+import { createApp } from '../../src/app.js';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 
 const { mockConnectionCreate, mockAuthInfoCreate } = vi.hoisted(() => ({
