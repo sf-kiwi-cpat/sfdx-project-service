@@ -19,7 +19,7 @@ describe('SF Project Service API', () => {
     });
 
     it('returns 404 with RFC 9457 JSON for wrong method on valid path', async () => {
-      const res = await request(app).delete('/templates').expect(404);
+      const res = await request(app).delete('/v1/templates').expect(404);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 404, title: 'Not Found' });

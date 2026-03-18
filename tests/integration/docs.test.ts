@@ -22,6 +22,6 @@ describe('OpenAPI documentation', () => {
     expect(paths).toContain('/templates');
     expect(paths).toContain('/projects');
     expect(paths).toContain('/projects/{id}/tree');
-    expect(paths).toContain('/projects/{id}/deploy');
+    expect(paths).toContain('/v1/projects/{id}/deployments');
   });
 });

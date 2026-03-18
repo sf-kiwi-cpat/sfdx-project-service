@@ -91,6 +91,69 @@ Claude Code sessions — it detects a missing `node_modules` directory and runs
 > (designed for non-git VCS). Do not use them for post-creation setup like
 > `npm install` — use `SessionStart` instead.
 
+## Development Workflow: Brief → Contract → Implement
+
+This project uses a three-phase workflow for defining and implementing features:
+
+```
+/brief [intent]           # Gather context from GitHub, local state, transcripts
+  ↓
+User picks work
+  ↓
+/contract [intent]        # AI drafts contract.spec.ts + auto-derives contract.spec.md
+  ↓
+Human reviews both artifacts
+  ↓
+Human approves & commits
+  ↓
+/implement [contract]     # AI writes code to make contract tests pass
+```
+
+### Phase 1: Brief
+
+```bash
+/brief                    # Landscape mode: show available work
+/brief #68                # Context mode: detailed context for issue #68
+/brief add SSE streaming  # Context mode: detailed context for description
+```
+
+Outputs landscape or focused context. Offers next step: `/contract`
+
+### Phase 2: Contract
+
+AI drafts both simultaneously:
+- `spec/<feature>/contract.spec.ts` — executable tests (source of truth)
+- `spec/<feature>/contract.spec.md` — auto-derived prose (read-only)
+
+Human reviews both in parallel, edits contract.spec.ts if needed, then approves.
+Never edit contract.spec.md — regenerate it from contract.spec.ts.
+
+```bash
+/contract #68                    # Draft from issue
+/contract add SSE streaming      # Draft from description
+/contract --refresh deploy       # Regenerate prose from tests
+```
+
+### Phase 3: Implement
+
+AI writes production code to make contract tests pass:
+- Cannot modify `spec/**/*.spec.ts` (human-guarded)
+- Cannot modify `spec/**/*.spec.md` (human-guarded)
+- Can create/edit production code and unit/integration tests
+- All contract tests must pass, coverage threshold must be met
+
+```bash
+/implement spec/deploy/contract.spec.ts
+```
+
+### Key Rules
+
+1. `spec/` files are human-guarded — define the external contract
+2. `tests/` files are agent-mutable — quality tools
+3. Contract tests must always pass — implementation is constrained by contract
+4. Prose spec is derived from code — never hand-edit `.spec.md` files
+5. If a spec test seems wrong, surface it to human instead of working around it
+
 ## Gotchas
 
 - Deleting a GitHub Actions workflow file does **not** remove its required status

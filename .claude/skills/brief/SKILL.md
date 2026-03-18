@@ -101,7 +101,7 @@ Ask if they want to set up a worktree for this work. If yes:
 Then offer:
 ```
 Ready to proceed?
-  → /spec  — write acceptance tests for this
+  → /contract  — define executable contracts (code + prose specs)
   → /design — think through architecture first
   → I need more context before starting
 ```
@@ -121,4 +121,14 @@ Wait for their selection and loop back to context mode.
 - **Concise by default.** Show the top items in each category. If there are
   50 open issues, show 10 with a note that more exist. Don't overwhelm.
 - **Context flows forward.** The brief you produce should be useful input for
-  `/spec` or `/design`. Structure it so the next skill can consume it.
+  `/contract` or `/design`. Structure it so the next skill can consume it.
+
+## Workflow Context
+
+The `/brief` skill is the entry point for: **Brief → Contract → Implement**
+
+- **`/brief`** — Gathers context and helps you pick work
+- **`/contract`** — Drafts executable contracts (code test + derived prose spec)
+- **`/implement`** — Makes contracts pass (implementation is agent-mutable)
+
+Each handoff includes context for the next phase.
