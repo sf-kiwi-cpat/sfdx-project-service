@@ -1,14 +1,15 @@
-There are open PRs with the impl:ready label. Query them using: gh pr list --state open --label impl:ready --json number,headRefName,title
+The PR data was provided above as JSON. Do not re-query GitHub for the PR list.
 
 For each PR found:
 1. Extract branch name from headRefName
-2. Extract issue number using: echo "$headRefName" | grep -oP 'issue-\K\d+'
+2. Extract issue number: echo "$headRefName" | sed 's/.*issue-\([0-9]*\).*/\1/'
 3. Find the corresponding worktree and enter it
 4. Run the built-in /review command to assess code quality
 5. If /review succeeds (exits 0):
    - Update issue label: gh issue edit <issue-number> --remove-label impl:ready --add-label review:complete
    - Update PR label: gh pr edit <pr-number> --remove-label impl:ready --add-label review:complete
-   - Send Slack notification to #general with: "✅ PR ready for merge: #{PR} - {title}\nIssue: https://github.com/forcedotcom/sf-project-service/issues/{issue}\nLink: https://github.com/forcedotcom/sf-project-service/pull/{PR}"
+   - Get repo URL: REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+   - Send Slack notification to #general with: "✅ PR ready for merge: #{PR} - {title}\nIssue: https://github.com/$REPO/issues/{issue}\nLink: https://github.com/$REPO/pull/{PR}"
 6. If /review fails (exits non-0):
    - Leave labels at impl:ready
    - /review will have pushed fixes

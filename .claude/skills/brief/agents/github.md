@@ -17,7 +17,7 @@ gh issue list --state open --limit 20 \
   --json number,title,labels,assignees,createdAt,updatedAt,comments | \
   jq 'map(select(
     (.labels | map(.name) |
-      any(. == "spec:in-progress" or . == "impl:in-progress" or . == "impl:ready" or . == "review:complete"))
+      any(. == "spec:in-progress" or . == "spec:ready-for-review" or . == "spec:approved" or . == "impl:in-progress" or . == "impl:ready" or . == "review:complete"))
     | not
   ))'
 ```

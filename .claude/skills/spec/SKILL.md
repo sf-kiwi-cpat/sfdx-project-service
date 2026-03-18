@@ -168,7 +168,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 });
 ```
 
-**Output (contract.spec.md section):**
+**Output (contract.md section):**
 ```markdown
 ### POST `/v1/projects/:id/deployments`
 
@@ -184,7 +184,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 **When human edits `contract.spec.ts`:**
 1. Skill detects the change (human edits the file)
 2. Skill re-parses the updated test file
-3. Skill regenerates `contract.spec.md` with new structure
+3. Skill regenerates `contract.md` with new structure
 4. Human verifies prose still matches intent
 5. Both files committed together
 
@@ -192,12 +192,12 @@ describe('POST /v1/projects/:id/deployments', () => {
 ```bash
 /spec --refresh <feature-name>
 # Re-parses contract.spec.ts
-# Regenerates contract.spec.md
+# Regenerates contract.md
 # Shows both for verification
 ```
 
 **Guard rails:**
-- `contract.spec.md` is marked read-only in header comment (warns against manual edits)
+- `contract.md` is marked read-only in header comment (warns against manual edits)
 - If human edits `.md` manually, it will be overwritten on next refresh
 - Source of truth is always `contract.spec.ts`
 

@@ -21,11 +21,18 @@ while true; do
     # Plain bash — no LLM needed for the check
     PRS=$(gh pr list --state open --label impl:ready --json number,headRefName,title 2>/dev/null || echo "[]")
 
-    if [ "$PRS" != "[]" ] && [ "$PRS" != "" ]; then
+    if echo "$PRS" | jq -e 'length > 0' >/dev/null 2>&1; then
         echo "[$(date)] Found impl:ready PRs: $PRS"
 
-        # NOW spawn Claude with the best model to do the real work
-        claude --model "$MODEL" < "$SCRIPT_DIR/loops/review-monitor.md"
+        # Pass PR data into the prompt so Claude doesn't need to re-query
+        {
+            echo "The following PRs have the impl:ready label:"
+            echo '```json'
+            echo "$PRS"
+            echo '```'
+            echo ""
+            cat "$SCRIPT_DIR/loops/review-monitor.md"
+        } | claude --model "$MODEL"
     else
         echo "[$(date)] No impl:ready PRs found"
     fi
