@@ -4,7 +4,7 @@ import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { DeploymentError } from '../errors.js';
 import { logger } from '../logger.js';
-import { type OrgCredentials } from '../auth.js';
+import { type OrgCredentials } from '../utils/auth.js';
 import {
   setDeploymentResult,
   setDeploymentError,

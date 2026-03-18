@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-import { extractCredentials } from '../auth.js';
+import { extractCredentials } from '../utils/auth.js';
 import {
   deployMetadataAsync,
   buildConnection,
