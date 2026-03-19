@@ -18,18 +18,18 @@ export interface OrgCredentials {
  *
  * Returns validation result with error message if invalid.
  */
-export function extractCredentials(req: Request): {
-  valid: false;
-  error: string;
-} | {
-  valid: true;
-  credentials: OrgCredentials;
-} {
+export function extractCredentials(req: Request):
+  | {
+      valid: false;
+      error: string;
+    }
+  | {
+      valid: true;
+      credentials: OrgCredentials;
+    } {
   // Extract access token from Authorization header
   const authHeader = req.get('Authorization');
-  const accessToken = authHeader?.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : undefined;
+  const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
   // Extract instance URL from custom header
   const instanceUrl = req.get('X-Salesforce-Instance-Url');
@@ -43,8 +43,8 @@ export function extractCredentials(req: Request): {
   return {
     valid: true,
     credentials: {
-      accessToken,
-      instanceUrl,
+      accessToken: accessToken!,
+      instanceUrl: instanceUrl!,
     },
   };
 }
@@ -61,13 +61,15 @@ export function validateCredentials(
   if (!accessToken || typeof accessToken !== 'string') {
     return {
       valid: false,
-      error: 'accessToken is required and must be a string (provide via Authorization: Bearer <token> header)',
+      error:
+        'accessToken is required and must be a string (provide via Authorization: Bearer <token> header)',
     };
   }
   if (!instanceUrl || typeof instanceUrl !== 'string') {
     return {
       valid: false,
-      error: 'instanceUrl is required and must be a string (provide via X-Salesforce-Instance-Url header)',
+      error:
+        'instanceUrl is required and must be a string (provide via X-Salesforce-Instance-Url header)',
     };
   }
 

@@ -1,10 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { extractCredentials } from '../utils/auth.js';
-import {
-  deployMetadataAsync,
-  buildConnection,
-} from '../domain/deploy.js';
+import { deployMetadataAsync, buildConnection } from '../domain/deploy.js';
 import { DeploymentError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
 import {
@@ -37,7 +34,7 @@ export function createDeployRouter(): express.Router {
    *         required: true
    *         schema:
    *           type: string
-   *         description: OAuth access token (format: Bearer <token>)
+   *         description: "OAuth access token (format: Bearer <token>)"
    *       - in: header
    *         name: X-Salesforce-Instance-Url
    *         required: true

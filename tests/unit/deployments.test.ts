@@ -9,7 +9,7 @@ import {
   setDeploymentPollPromise,
   clearAllDeployments,
   type DeploymentResult,
-} from './deployments.js';
+} from '../../src/deployments.js';
 
 describe('deployments', () => {
   beforeEach(() => {
@@ -58,9 +58,7 @@ describe('deployments', () => {
         status: 'Succeeded',
         numberComponentsDeployed: 3,
         numberComponentsTotal: 3,
-        components: [
-          { fullName: 'Test__c', type: 'CustomObject', state: 'Created' },
-        ],
+        components: [{ fullName: 'Test__c', type: 'CustomObject', state: 'Created' }],
       };
 
       setDeploymentResult(deploymentId, result);
