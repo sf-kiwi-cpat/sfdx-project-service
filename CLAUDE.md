@@ -4,10 +4,9 @@
 
 ```bash
 npm install   # install dependencies (required in new worktrees)
-npm test      # run all tests (spec + unit + integration)
-npm run test:spec          # spec tests only (human-guarded contracts)
-npm run test:unit          # unit tests only
-npm run test:integration   # integration tests only
+npm test      # run tests (vitest)
+npm run test:unit          # unit tests only (3 files)
+npm run test:integration   # integration tests only (4 files)
 npm run test:coverage      # all tests + coverage report
 npm run lint  # lint with eslint
 npm run dev   # start dev server with watch mode
@@ -56,27 +55,49 @@ tests/unit/          # agent-mutable unit tests (quality tools)
 tests/integration/   # agent-mutable integration tests (quality tools)
 ```
 
-## SDLC 2026 — Spec-Driven Development
+## SDLC — Spec-Driven Development (prototype)
 
-This project follows the SDLC 2026 process model where spec tests are the
-source of truth for system behavior.
+This repo is a prototype for an AI-native development process where
+executable specs are the source of truth for system behavior.
+
+**The idea:** Humans define *what* the system does (contracts). Agents
+implement *how*. The contract boundary is enforced so agents can move
+fast without drifting from intent.
+
+### Workflow: `/brief` → `/spec` → `/implement` → `/review` (Automated)
+
+1. **`/brief`** — Gathers signals (GitHub issues, transcripts, local git
+   state) and helps the human pick work or build context for chosen work.
+2. **`/spec`** — Translates intent into executable contracts: a
+   `spec/<feature>/contract.spec.ts` (test code, human-guarded) and a
+   derived `contract.md` (prose, auto-generated from tests).
+3. **`/implement`** — Agent writes production code to make contract tests
+   pass. Cannot modify spec files. Freely creates unit/integration tests.
+4. **`/review`** — Automated code review and Slack notification (via Loop 2)
+
+### Label lifecycle
+
+```
+/brief       → spec:in-progress (+ assign user)
+/spec        → spec:ready-for-review
+Human approves → spec:approved
+Loop 1       → impl:in-progress → impl:ready
+Loop 2       → review:complete (+ Slack notification)
+Human merges PR
+```
 
 ### The rules
 
-1. **`spec/` files are human-guarded.** They define the external contract.
-   A `PreToolUse` hook in `.claude/settings.json` blocks agent writes to
-   `spec/*.spec.ts`. Use `/spec` to create or modify them.
-
-2. **`tests/` files are agent-mutable.** Unit and integration tests are
-   quality tools. The implementation agent creates and modifies them freely.
-
-3. **Implementation agents must not modify spec tests.** If a spec test
-   seems wrong, stop and surface it to the human. Do not work around it.
-
-4. **The workflow is:** `/brief` → `/spec` → `/implement`
-   - `/brief` gathers context (GitHub issues, transcripts, local state)
-   - `/spec` translates intent into spec tests (human reviews and commits)
-   - `/implement` writes code to make spec tests pass (cannot touch spec/)
+- **`spec/` is human-guarded.** These files define the external contract.
+  Agents must not modify them. If a spec seems wrong, surface it to the human.
+- **`tests/` is agent-mutable.** Unit and integration tests are quality
+  tools the implementation agent creates and maintains freely.
+- **Test code is source of truth.** Prose specs (`contract.md`) are always
+  derived from test code, never the reverse.
+- **Never edit `contract.md` directly.** Edit `contract.spec.ts`, then
+  regenerate. Use `/spec --refresh <feature>` if needed.
+- **To change a contract during implementation:** stop, go back to `/spec`,
+  make the change, regenerate both artifacts, get human approval, then resume.
 
 ## Worktrees
 
@@ -91,68 +112,49 @@ Claude Code sessions — it detects a missing `node_modules` directory and runs
 > (designed for non-git VCS). Do not use them for post-creation setup like
 > `npm install` — use `SessionStart` instead.
 
-## Development Workflow: Brief → Contract → Implement
+## Automated Workflow Loops
 
-This project uses a three-phase workflow for defining and implementing features:
+Two monitor scripts poll GitHub for label changes using plain bash (zero
+tokens). Claude is only spawned when there's actual work to do.
 
-```
-/brief [intent]           # Gather context from GitHub, local state, transcripts
-  ↓
-User picks work
-  ↓
-/contract [intent]        # AI drafts contract.spec.ts + auto-derives contract.spec.md
-  ↓
-Human reviews both artifacts
-  ↓
-Human approves & commits
-  ↓
-/implement [contract]     # AI writes code to make contract tests pass
-```
+### Starting the Loops
 
-### Phase 1: Brief
-
+**Terminal 1 — Implementation Monitor:**
 ```bash
-/brief                    # Landscape mode: show available work
-/brief #68                # Context mode: detailed context for issue #68
-/brief add SSE streaming  # Context mode: detailed context for description
+./.claude/implement-monitor.sh          # polls every 5 min (default)
+./.claude/implement-monitor.sh 60       # polls every 60 seconds
+CLAUDE_MODEL=sonnet ./.claude/implement-monitor.sh  # override model
 ```
 
-Outputs landscape or focused context. Offers next step: `/contract`
-
-### Phase 2: Contract
-
-AI drafts both simultaneously:
-- `spec/<feature>/contract.spec.ts` — executable tests (source of truth)
-- `spec/<feature>/contract.spec.md` — auto-derived prose (read-only)
-
-Human reviews both in parallel, edits contract.spec.ts if needed, then approves.
-Never edit contract.spec.md — regenerate it from contract.spec.ts.
-
+**Terminal 2 — Review Monitor:**
 ```bash
-/contract #68                    # Draft from issue
-/contract add SSE streaming      # Draft from description
-/contract --refresh deploy       # Regenerate prose from tests
+./.claude/review-monitor.sh
 ```
 
-### Phase 3: Implement
+Stop either with **Ctrl+C**.
 
-AI writes production code to make contract tests pass:
-- Cannot modify `spec/**/*.spec.ts` (human-guarded)
-- Cannot modify `spec/**/*.spec.md` (human-guarded)
-- Can create/edit production code and unit/integration tests
-- All contract tests must pass, coverage threshold must be met
+### How It Works
 
-```bash
-/implement spec/deploy/contract.spec.ts
-```
+1. Bash `while` loop calls `gh pr list` every N seconds — no LLM involved
+2. When a matching PR is found, spawns `claude --model $MODEL` with the
+   prompt from `.claude/loops/*.md`
+3. Claude session runs, does the work, exits
+4. Script resumes polling
 
-### Key Rules
+**Architecture:**
+- `.claude/loops/*.md` — Source-of-truth prompts (what Claude sees)
+- `.claude/*-monitor.sh` — Thin bash wrappers (polling + spawn)
+- Default model: `opus` (override with `CLAUDE_MODEL` env var)
 
-1. `spec/` files are human-guarded — define the external contract
-2. `tests/` files are agent-mutable — quality tools
-3. Contract tests must always pass — implementation is constrained by contract
-4. Prose spec is derived from code — never hand-edit `.spec.md` files
-5. If a spec test seems wrong, surface it to human instead of working around it
+### Loop 1: Implementation Monitor
+
+Detects `spec:approved` PRs → spawns Claude to find the worktree and run
+`/implement` on the contract spec. See `.claude/loops/implement-monitor.md`.
+
+### Loop 2: Review Monitor
+
+Detects `impl:ready` PRs → spawns Claude to run `/review`, update labels
+to `review:complete`, and send Slack notification. See `.claude/loops/review-monitor.md`.
 
 ## Gotchas
 

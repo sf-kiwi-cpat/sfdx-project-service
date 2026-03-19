@@ -10,14 +10,24 @@ and stop.
 ## What to gather
 
 ### Open Issues
+
+Filter out in-flight work (issues already being worked on):
 ```bash
-gh issue list --state open --limit 20 --json number,title,labels,assignees,createdAt,updatedAt,comments
+gh issue list --state open --limit 20 \
+  --json number,title,labels,assignees,createdAt,updatedAt,comments | \
+  jq 'map(select(
+    (.labels | map(.name) |
+      any(. == "spec:in-progress" or . == "spec:ready-for-review" or . == "spec:approved" or . == "impl:in-progress" or . == "impl:ready" or . == "review:complete"))
+    | not
+  ))'
 ```
+
 - Group by: assigned to current user, unassigned, assigned to others
 - Flag issues with no activity in 14+ days as stale
 - Note priority labels if they exist (priority:high, priority:medium, etc.)
 - Look for dependency signals: issues that reference other issue numbers
   in their title or body
+- Skip issues with workflow labels: `spec:in-progress`, `impl:in-progress`, `impl:ready`, `review:complete`
 
 ### Open Pull Requests
 ```bash

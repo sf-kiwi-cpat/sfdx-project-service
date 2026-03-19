@@ -1,8 +1,8 @@
 ---
 name: implement
-description: Implement code to make contract tests pass. Takes a contract (spec) and writes implementation code to satisfy all tests.
+description: Implement code to make contract tests pass. Writes production code to satisfy spec tests and creates supporting unit/integration tests. Never modifies spec files (human-guarded).
 argument-hint: <path-to-contract.spec.ts>
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, Write, Edit
 ---
 
@@ -19,6 +19,18 @@ Takes a single argument: path to a `contract.spec.ts` file
 ```
 
 ## Workflow
+
+### Step 0: Label Transition (Automated Loop Entry)
+If called via Loop 1, remove `spec:approved` label and add `impl:in-progress`:
+```bash
+ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+gh issue edit $ISSUE_NUMBER --remove-label spec:approved --add-label impl:in-progress
+
+PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+if [ -n "$PR_NUMBER" ]; then
+  gh pr edit $PR_NUMBER --remove-label spec:approved --add-label impl:in-progress
+fi
+```
 
 ### Step 1: Parse the Contract
 - Read the contract file (`.spec.ts`)
@@ -53,11 +65,28 @@ Takes a single argument: path to a `contract.spec.ts` file
 - Verify contract tests specifically pass
 - Run linter to check code quality
 
-### Step 6: Report
+### Step 6: Push and Update Labels
+- Commit changes
+- Push to remote
+- Update workflow labels:
+  ```bash
+  ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+
+  if [ -n "$ISSUE_NUMBER" ]; then
+    gh issue edit $ISSUE_NUMBER --remove-label impl:in-progress --add-label impl:ready
+  fi
+
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label impl:in-progress --add-label impl:ready
+  fi
+  ```
+
+### Step 7: Report
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Prepare for human review
+- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/review`)
 
 ---
 
@@ -127,7 +156,7 @@ Before starting implementation:
 
 ## Standalone Usage
 
-This skill is designed to work independently. You can use it without `/brief` or `/contract`:
+This skill is designed to work independently. You can use it without `/brief` or `/spec`:
 
 ```bash
 # Example: Implement from any contract spec
@@ -143,15 +172,22 @@ The only requirement: a valid contract spec file with tests.
 
 ## Integration with Workflow
 
-The skill is part of: **Brief → Contract → Implement**
+The skill is part of: **Brief → Spec → Implement**
 
 - **Brief** (`/brief`) — Gathers context, helps pick work
-- **Contract** (`/contract`) — Defines executable contracts (code + prose)
+- **Spec** (`/spec`) — Defines executable contracts (code + prose)
 - **Implement** (`/implement`) — Writes code to satisfy contracts
 
-Typical flow: `/brief` → `/contract` → `/implement`
+Typical flow: `/brief` → `/spec` → `/implement`
 
 But each skill can be used independently with other tools.
+
+**Automated Loop Integration:**
+- Loop 1 monitors for `spec:approved` labels on PRs
+- When detected, Loop 1 finds the worktree and runs `/implement` automatically
+- `/implement` removes `spec:approved`, adds `impl:in-progress` at start
+- `/implement` removes `impl:in-progress`, adds `impl:ready` at end
+- Loop 2 then detects `impl:ready` and runs `/review` automatically
 
 ---
 

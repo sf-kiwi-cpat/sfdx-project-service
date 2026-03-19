@@ -46,6 +46,9 @@ sfdx-project.json
 .claude/worktrees/
 .claude/.local/
 .claude/projects/
+.claude/scheduled_tasks.lock
+.claude/logs/
+.claude/loops/*.pid
 
 # Project-specific
 .cache/

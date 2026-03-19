@@ -2,7 +2,7 @@
 name: brief
 description: Development session entry point. Gathers signals from GitHub, transcripts, and local workspace to present a work landscape or context brief. Use at the start of any development session.
 argument-hint: [optional: issue number, feature description, or intent]
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash(git worktree *), AskUserQuestion, EnterWorktree
 ---
 
@@ -49,16 +49,19 @@ Once all three agents return, synthesize their findings into a unified brief.
 Present in this order:
 
 **1. Your in-flight work** (from Local agent)
+
 - Current branch, uncommitted changes, unpushed commits
 - Any red tests (acceptance or otherwise)
 
 **2. Available work** (from GitHub agent)
+
 - Open issues grouped by: assigned to you, unassigned high-priority, recently active
 - Open PRs needing your attention (review requested, failing CI)
 - Flag stale issues (no activity in 14+ days)
 - Flag dependencies between issues if detectable
 
 **3. Recent context** (from Transcript agent)
+
 - Recent decisions or action items that haven't been addressed
 - Open questions from recent discussions
 - (Skip this section entirely if no transcripts exist)
@@ -71,19 +74,19 @@ Accept: an issue number, a description of new work, or "continue on [branch]"
 Present in this order:
 
 **1. Work item** — Echo back the intent clearly. If it's an issue number,
-   show the full issue details from the GitHub agent.
+show the full issue details from the GitHub agent.
 
 **2. Related GitHub context** — Related issues, relevant closed PRs,
-   who's worked on this area before.
+who's worked on this area before.
 
 **3. Discussion context** — Relevant transcript excerpts, decisions,
-   action items. (Skip if no transcripts found.)
+action items. (Skip if no transcripts found.)
 
 **4. Local state** — Current branch, any uncommitted work, which
-   acceptance tests cover this area, which source files are likely affected.
+acceptance tests cover this area, which source files are likely affected.
 
 **5. Complexity signal** — Is this extending an existing contract or new
-   surface area? How many modules are likely affected?
+surface area? How many modules are likely affected?
 
 ## Step 3: Handoff
 
@@ -92,6 +95,7 @@ After presenting the brief (in either mode), offer the next step:
 **If the user has picked work or provided intent:**
 
 Ask if they want to set up a worktree for this work. If yes:
+
 - Derive a branch name from the intent (e.g., `t/{user}/issue-42-rename-endpoint`
   or `t/{user}/add-template-descriptions`). Use the git user name for `{user}`.
 - Use the `EnterWorktree` tool to create the worktree. This gives an isolated
@@ -99,11 +103,18 @@ Ask if they want to set up a worktree for this work. If yes:
 - Remind them that `npm install` will run automatically via the SessionStart hook.
 
 Then offer:
+
 ```
 Ready to proceed?
-  → /contract  — define executable contracts (code + prose specs)
-  → /design — think through architecture first
+  → /spec  — define executable contracts (code + prose specs)
   → I need more context before starting
+```
+
+**Add labels to track workflow progress:**
+```bash
+ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
+gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
 ```
 
 **If the user hasn't picked work yet:**
@@ -121,14 +132,18 @@ Wait for their selection and loop back to context mode.
 - **Concise by default.** Show the top items in each category. If there are
   50 open issues, show 10 with a note that more exist. Don't overwhelm.
 - **Context flows forward.** The brief you produce should be useful input for
-  `/contract` or `/design`. Structure it so the next skill can consume it.
+  `/spec`. Structure it so the next skill can consume it.
 
 ## Workflow Context
 
-The `/brief` skill is the entry point for: **Brief → Contract → Implement**
+The `/brief` skill is the entry point for: **Brief → Spec → Implement**
 
 - **`/brief`** — Gathers context and helps you pick work
-- **`/contract`** — Drafts executable contracts (code test + derived prose spec)
+- **`/spec`** — Drafts executable contracts (code test + derived prose spec)
 - **`/implement`** — Makes contracts pass (implementation is agent-mutable)
 
 Each handoff includes context for the next phase.
+
+Automated loops monitor GitHub labels to progress work:
+- **Loop 1** — Detects `spec:approved` labels and runs `/implement` automatically
+- **Loop 2** — Detects `impl:ready` labels and runs `/review` with Slack notifications
