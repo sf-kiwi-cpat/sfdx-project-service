@@ -17,7 +17,7 @@ Consumers install the tarball into a Docker image and start the service via `npx
 
 | Field | Value | Purpose |
 |-------|-------|---------|
-| `files` | `["dist", "README.md"]` | Restrict `npm pack` to production artifacts only |
+| `files` | `["dist", "templates", "README.md"]` | Restrict `npm pack` to production artifacts only |
 | `bin.sf-project-service` | `"./dist/index.js"` | Enable `npx sf-project-service` |
 
 ### Entry point
@@ -32,6 +32,7 @@ After `npm run build`, `npm pack` must produce a tarball containing **only**:
 - `package.json`
 - `README.md`
 - `dist/**` (compiled JavaScript)
+- `templates/**` (project templates)
 
 The tarball must **not** contain:
 
@@ -43,5 +44,5 @@ The tarball must **not** contain:
 
 ## Summary
 
-- **3 describe blocks**, **7 tests**
-- Groups: package.json fields (2), entry point (1), tarball contents (4)
+- **3 describe blocks**, **8 tests**
+- Groups: package.json fields (2), entry point (1), tarball contents (5)

@@ -21,9 +21,10 @@ const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
 
 describe('npm package shape', () => {
   describe('package.json fields', () => {
-    it('has a files field that includes dist and README.md', () => {
+    it('has a files field that includes dist, templates, and README.md', () => {
       expect(pkg.files).toBeDefined();
       expect(pkg.files).toContain('dist');
+      expect(pkg.files).toContain('templates');
       expect(pkg.files).toContain('README.md');
     });
 
@@ -64,6 +65,11 @@ describe('npm package shape', () => {
     it('includes files under dist/', () => {
       const distFiles = packedFiles.filter((f: string) => f.startsWith('dist/'));
       expect(distFiles.length).toBeGreaterThan(0);
+    });
+
+    it('includes files under templates/', () => {
+      const templateFiles = packedFiles.filter((f: string) => f.startsWith('templates/'));
+      expect(templateFiles.length).toBeGreaterThan(0);
     });
 
     it('does not include source files, tests, or config files', () => {
