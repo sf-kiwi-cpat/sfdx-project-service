@@ -19,8 +19,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..', '..');
 const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
 
-// skip: spec pending implementation (#80) — remove .skip when implementing
-describe.skip('npm package shape', () => {
+describe('npm package shape', () => {
   describe('package.json fields', () => {
     it('has a files field that includes dist and README.md', () => {
       expect(pkg.files).toBeDefined();
