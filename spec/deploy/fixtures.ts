@@ -17,9 +17,7 @@ export const TEST_CREDENTIALS = {
 /**
  * Apply auth headers to a supertest request
  */
-export function withAuthHeaders(
-  req: ReturnType<typeof request>
-) {
+export function withAuthHeaders(req: ReturnType<typeof request>) {
   return req
     .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
     .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
@@ -39,8 +37,12 @@ export async function setupTempProject(): Promise<{ tmpDir: string; projectId: s
   process.env.PROJECTS_ROOT = tmpDir;
 
   const app = createApp();
-  const createRes = await request(app).post('/v1/projects').send({ template: 'hello-world-1' });
+  await app.ready();
+  const createRes = await request(app.server)
+    .post('/v1/projects')
+    .send({ template: 'hello-world-1' });
   const projectId = createRes.body.id;
+  await app.close();
 
   return { tmpDir, projectId };
 }
