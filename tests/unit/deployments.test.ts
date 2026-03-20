@@ -6,9 +6,13 @@ import {
   setDeploymentResult,
   setDeploymentError,
   getDeployment,
+  getDeploymentPollPromise,
   setDeploymentPollPromise,
+  addProgressEvent,
+  getProgressEvents,
   clearAllDeployments,
   type DeploymentResult,
+  type ProgressEvent,
 } from '../../src/deployments.js';
 
 describe('deployments', () => {
@@ -125,6 +129,61 @@ describe('deployments', () => {
 
     it('returns null for non-existent deployment', () => {
       expect(getDeploymentResult('deploy_nonexistent')).toBeNull();
+    });
+  });
+
+  describe('getDeploymentPollPromise', () => {
+    it('returns null for non-existent deployment', () => {
+      expect(getDeploymentPollPromise('deploy_nonexistent')).toBeNull();
+    });
+
+    it('returns null before promise is set', () => {
+      const deploymentId = createDeployment('project-1');
+      expect(getDeploymentPollPromise(deploymentId)).toBeNull();
+    });
+
+    it('returns the stored promise', () => {
+      const deploymentId = createDeployment('project-1');
+      const promise = Promise.resolve();
+      setDeploymentPollPromise(deploymentId, promise);
+      expect(getDeploymentPollPromise(deploymentId)).toBe(promise);
+    });
+  });
+
+  describe('addProgressEvent', () => {
+    it('adds an event to an existing deployment', () => {
+      const deploymentId = createDeployment('project-1');
+      const event: ProgressEvent = {
+        deploymentId,
+        timestamp: new Date().toISOString(),
+        status: 'InProgress',
+        numberComponentsDeployed: 1,
+        numberComponentsTotal: 3,
+        components: [],
+      };
+
+      addProgressEvent(deploymentId, event);
+
+      const events = getProgressEvents(deploymentId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual(event);
+    });
+
+    it('does not throw for non-existent deployment', () => {
+      const event: ProgressEvent = {
+        deploymentId: 'deploy_nonexistent',
+        timestamp: new Date().toISOString(),
+        status: 'InProgress',
+        numberComponentsDeployed: 0,
+        numberComponentsTotal: 0,
+        components: [],
+      };
+
+      // Should not throw
+      addProgressEvent('deploy_nonexistent', event);
+
+      // Events should not be stored
+      expect(getProgressEvents('deploy_nonexistent')).toEqual([]);
     });
   });
 
