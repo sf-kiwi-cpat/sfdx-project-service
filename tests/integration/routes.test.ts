@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 
@@ -23,6 +23,41 @@ describe('SF Project Service API', () => {
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 404, title: 'Not Found' });
+    });
+  });
+
+  describe('Error handler', () => {
+    it('returns 500 with generic message for non-Error thrown values', async () => {
+      // Mock listTemplates to reject with a string (not an Error instance)
+      const templates = await import('../../src/domain/templates.js');
+      vi.spyOn(templates, 'listTemplates').mockRejectedValueOnce('unexpected string error');
+
+      const res = await request(app).get('/v1/templates').expect(500);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        status: 500,
+        title: 'Internal Server Error',
+        detail: 'Internal server error',
+      });
+
+      vi.restoreAllMocks();
+    });
+
+    it('returns 500 with error message for Error instances', async () => {
+      const templates = await import('../../src/domain/templates.js');
+      vi.spyOn(templates, 'listTemplates').mockRejectedValueOnce(new Error('disk read failed'));
+
+      const res = await request(app).get('/v1/templates').expect(500);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        status: 500,
+        title: 'Internal Server Error',
+        detail: 'disk read failed',
+      });
+
+      vi.restoreAllMocks();
     });
   });
 });

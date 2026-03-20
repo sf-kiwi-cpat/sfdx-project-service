@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { buildTree, readFile, writeFile, deleteFile, resolveProjectPath } from '../../src/domain/files.js';
+import {
+  buildTree,
+  readFile,
+  writeFile,
+  deleteFile,
+  resolveProjectPath,
+} from '../../src/domain/files.js';
 
 describe('files', () => {
   let tmpDir: string;
@@ -101,6 +107,26 @@ describe('files', () => {
       expect(tree.type).toBe('file');
       expect(tree.name).toBe('sfdx-project.json');
       expect(tree.children).toBeUndefined();
+    });
+  });
+
+  describe('buildTree — ignored entries', () => {
+    it('excludes .git, node_modules, and dotfiles from tree', async () => {
+      await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+      await fs.mkdir(path.join(tmpDir, 'node_modules'), { recursive: true });
+      await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, '.eslintrc'), '{}');
+      await fs.writeFile(path.join(tmpDir, 'sfdx-project.json'), '{}');
+      await fs.mkdir(path.join(tmpDir, 'force-app'), { recursive: true });
+
+      const tree = await buildTree();
+      const names = tree.children!.map((c) => c.name);
+      expect(names).toContain('sfdx-project.json');
+      expect(names).toContain('force-app');
+      expect(names).not.toContain('.git');
+      expect(names).not.toContain('node_modules');
+      expect(names).not.toContain('.sf');
+      expect(names).not.toContain('.eslintrc');
     });
   });
 
