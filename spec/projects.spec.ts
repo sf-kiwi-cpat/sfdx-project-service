@@ -5,7 +5,7 @@
  * They are the source of truth for these endpoints' external behavior.
  * The AI implementation agent must NOT modify this file.
  */
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -26,13 +26,18 @@ describe('Projects API', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     app = createApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
   });
 
   describe('POST /projects', () => {
     it('returns 201 with a project id when given a valid template', async () => {
-      const res = await request(app)
+      const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'hello-world-1' })
         .expect(201);
@@ -46,7 +51,7 @@ describe('Projects API', () => {
     });
 
     it('returns 400 when template is unknown', async () => {
-      const res = await request(app)
+      const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'nonexistent-template' })
         .expect(400);
@@ -56,14 +61,14 @@ describe('Projects API', () => {
     });
 
     it('returns 400 when template field is missing', async () => {
-      const res = await request(app).post('/v1/projects').send({}).expect(400);
+      const res = await request(app.server).post('/v1/projects').send({}).expect(400);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(400);
     });
 
     it('creates a project directory with sfdx-project.json', async () => {
-      const res = await request(app)
+      const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'hello-world-1' })
         .expect(201);
@@ -81,12 +86,14 @@ describe('Projects API', () => {
   describe('GET /projects/:id/tree', () => {
     it('returns 200 with tree structure for an existing project', async () => {
       // First create a project
-      const createRes = await request(app)
+      const createRes = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'hello-world-1' })
         .expect(201);
 
-      const res = await request(app).get(`/v1/projects/${createRes.body.id}/tree`).expect(200);
+      const res = await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}/tree`)
+        .expect(200);
 
       expect(res.body).toHaveProperty('name');
       expect(res.body).toHaveProperty('type', 'directory');
@@ -95,7 +102,7 @@ describe('Projects API', () => {
     });
 
     it('returns 404 for a nonexistent project', async () => {
-      const res = await request(app)
+      const res = await request(app.server)
         .get('/v1/projects/00000000-0000-0000-0000-000000000000/tree')
         .expect(404);
 

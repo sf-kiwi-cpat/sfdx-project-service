@@ -1,4 +1,4 @@
-import { Request } from 'express';
+import { FastifyRequest } from 'fastify';
 
 /**
  * Org credentials for Salesforce authentication.
@@ -18,21 +18,15 @@ export interface OrgCredentials {
  *
  * Returns validation result with error message if invalid.
  */
-export function extractCredentials(req: Request):
-  | {
-      valid: false;
-      error: string;
-    }
-  | {
-      valid: true;
-      credentials: OrgCredentials;
-    } {
+export function extractCredentials(
+  request: FastifyRequest
+): { valid: false; error: string } | { valid: true; credentials: OrgCredentials } {
   // Extract access token from Authorization header
-  const authHeader = req.get('Authorization');
+  const authHeader = request.headers.authorization as string | undefined;
   const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
   // Extract instance URL from custom header
-  const instanceUrl = req.get('X-Salesforce-Instance-Url');
+  const instanceUrl = request.headers['x-salesforce-instance-url'] as string | undefined;
 
   // Validate credentials
   const validation = validateCredentials(accessToken, instanceUrl);

@@ -64,18 +64,20 @@ describe('POST /v1/projects/:id/deployments', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
+    await app.ready();
 
     setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
     setupDeployMock(mockPollStatus);
     mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    await app.close();
   });
 
   it('returns 202 Accepted with deploymentId and initial status', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
@@ -88,9 +90,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   });
 
   it('returns 400 when credentials are missing', async () => {
-    const res = await request(app)
-      .post(`/v1/projects/${projectId}/deployments`)
-      .expect(400);
+    const res = await request(app.server).post(`/v1/projects/${projectId}/deployments`).expect(400);
 
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body.status).toBe(400);
@@ -98,7 +98,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   });
 
   it('returns 400 when accessToken is missing', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('X-Salesforce-Instance-Url', 'https://test.salesforce.com')
       .expect(400);
@@ -107,7 +107,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   });
 
   it('returns 400 when instanceUrl is missing', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', 'Bearer some-token')
       .expect(400);
@@ -116,7 +116,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   });
 
   it('returns 400 when instanceUrl is not a valid URL', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', 'Bearer token')
       .set('X-Salesforce-Instance-Url', 'not-a-url')
@@ -126,7 +126,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   });
 
   it('returns 404 when project ID does not exist', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .post('/v1/projects/00000000-0000-0000-0000-000000000000/deployments')
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
@@ -139,7 +139,7 @@ describe('POST /v1/projects/:id/deployments', () => {
   it('returns 502 when connection fails', async () => {
     mockConnectionCreate.mockRejectedValue(new Error('Invalid access token'));
 
-    const res = await request(app)
+    const res = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
@@ -171,13 +171,14 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
+    await app.ready();
 
     setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
     setupDeployMock(mockPollStatus);
     mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
 
     // Initiate deployment
-    const deployRes = await request(app)
+    const deployRes = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
@@ -187,15 +188,16 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    await app.close();
   });
 
   it('returns 200 with deployment status when deployment is in progress', async () => {
     // Create a new deployment with InProgress mock
     mockPollStatus.mockResolvedValue(createInProgressDeployResponse());
 
-    const deployRes = await request(app)
+    const deployRes = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
@@ -204,7 +206,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
     const inProgressDeploymentId = deployRes.body.deploymentId;
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${inProgressDeploymentId}`)
       .expect(200);
 
@@ -214,7 +216,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 200 with full deployment result when deployment succeeds', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
       .expect(200);
 
@@ -233,7 +235,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
     // Create a new deployment with Failed mock
     mockPollStatus.mockResolvedValue(createFailedDeployResponse());
 
-    const deployRes = await request(app)
+    const deployRes = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
@@ -242,7 +244,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
     const failedDeploymentId = deployRes.body.deploymentId;
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}`)
       .expect(200);
 
@@ -251,7 +253,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 404 when project ID does not exist', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/00000000-0000-0000-0000-000000000000/deployments/${deploymentId}`)
       .expect(404);
 
@@ -259,7 +261,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
   });
 
   it('returns 404 when deployment ID does not exist', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/deploy_nonexistent`)
       .expect(404);
 
@@ -287,13 +289,14 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = createApp();
+    await app.ready();
 
     setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
     setupDeployMock(mockPollStatus);
     mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
 
     // Initiate deployment
-    const deployRes = await request(app)
+    const deployRes = await request(app.server)
       .post(`/v1/projects/${projectId}/deployments`)
       .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
       .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
@@ -303,12 +306,13 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    await app.close();
   });
 
   it('returns 200 with Content-Type: text/event-stream', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
       .expect(200);
 
@@ -316,7 +320,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
   });
 
   it('returns 200 with Content-Type: text/event-stream', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
       .expect(200);
 
@@ -324,7 +328,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
   });
 
   it('returns 404 when project ID does not exist', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/00000000-0000-0000-0000-000000000000/deployments/${deploymentId}/events`)
       .expect(404);
 
@@ -332,7 +336,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
   });
 
   it('returns 404 when deployment ID does not exist', async () => {
-    const res = await request(app)
+    const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/deploy_nonexistent/events`)
       .expect(404);
 

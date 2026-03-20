@@ -1,39 +1,25 @@
-import express, { Request, Response, NextFunction } from 'express';
+import { FastifyInstance } from 'fastify';
+import { Type } from '@sinclair/typebox';
 import { listTemplates } from '../domain/templates.js';
 
-export function createTemplatesRouter(): express.Router {
-  const router = express.Router();
-
-  /**
-   * @openapi
-   * /templates:
-   *   get:
-   *     summary: List available project templates
-   *     description: Returns an array of available project templates.
-   *     responses:
-   *       '200':
-   *         description: List of templates
-   *         content:
-   *           application/json:
-   *             schema:
-   *               type: array
-   *               items:
-   *                 type: object
-   *                 properties:
-   *                   id:
-   *                     type: string
-   *                   name:
-   *                     type: string
-   *                 required: [id, name]
-   */
-  router.get('/templates', async (_req: Request, res: Response, next: NextFunction) => {
-    try {
+export async function templateRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    '/templates',
+    {
+      schema: {
+        response: {
+          200: Type.Array(
+            Type.Object({
+              id: Type.String(),
+              name: Type.String(),
+            })
+          ),
+        },
+      },
+    },
+    async (_request, reply) => {
       const templates = await listTemplates();
-      res.json(templates);
-    } catch (err) {
-      next(err);
+      return reply.send(templates);
     }
-  });
-
-  return router;
+  );
 }

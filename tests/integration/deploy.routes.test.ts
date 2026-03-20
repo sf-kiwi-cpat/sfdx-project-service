@@ -31,9 +31,12 @@ describe('deploy routes integration', () => {
     process.env.PROJECTS_ROOT = tmpDir;
 
     app = createApp();
+    await app.ready();
 
     // Create a project
-    const createRes = await request(app).post('/v1/projects').send({ template: 'hello-world-1' });
+    const createRes = await request(app.server)
+      .post('/v1/projects')
+      .send({ template: 'hello-world-1' });
     projectId = createRes.body.id;
 
     mockAuthInfoCreate.mockResolvedValue({});
@@ -61,6 +64,7 @@ describe('deploy routes integration', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     delete process.env.PROJECTS_ROOT;
+    await app.close();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -72,7 +76,7 @@ describe('deploy routes integration', () => {
       };
 
       // First, initiate a deployment
-      const deployRes = await request(app)
+      const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .set('Authorization', `Bearer ${credentials.accessToken}`)
         .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
@@ -84,7 +88,7 @@ describe('deploy routes integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Then stream the events
-      const res = await request(app)
+      const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
         .expect(200);
 
@@ -124,7 +128,7 @@ describe('deploy routes integration', () => {
         };
       });
 
-      const deployRes = await request(app)
+      const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .set('Authorization', `Bearer ${credentials.accessToken}`)
         .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
@@ -136,7 +140,7 @@ describe('deploy routes integration', () => {
       // Wait for deployment to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      const res = await request(app)
+      const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
         .expect(200);
 
@@ -155,7 +159,7 @@ describe('deploy routes integration', () => {
       };
 
       // This should still return 202 because the error happens async
-      const res = await request(app)
+      const res = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .set('Authorization', `Bearer ${credentials.accessToken}`)
         .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
@@ -190,7 +194,7 @@ describe('deploy routes integration', () => {
         await new Promise(() => {}); // hang forever
       });
 
-      const deployRes = await request(app)
+      const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .set('Authorization', `Bearer ${credentials.accessToken}`)
         .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
@@ -199,7 +203,7 @@ describe('deploy routes integration', () => {
       const deploymentId = deployRes.body.deploymentId;
 
       // Immediately check status (before deployment completes)
-      const statusRes = await request(app)
+      const statusRes = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
         .expect(200);
 

@@ -35,7 +35,7 @@ docker run -p 3000:3000 sf-project-service               # run container
 ## Architecture
 
 - ESM project (`"type": "module"`), Node.js >= 20, TypeScript strict mode
-- Express REST API wrapping an SFDX project
+- Fastify REST API wrapping an SFDX project
 - `.claude/settings.json` is team-shared (checked into git); `.claude/settings.local.json` is personal (gitignored)
 
 ### Directory layout

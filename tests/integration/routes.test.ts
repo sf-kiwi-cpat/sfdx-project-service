@@ -1,17 +1,22 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 
 describe('SF Project Service API', () => {
   let app: ReturnType<typeof createApp>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     app = createApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
   });
 
   describe('Unknown routes', () => {
     it('returns 404 with RFC 9457 JSON for nonexistent path', async () => {
-      const res = await request(app).get('/nonexistent').expect(404);
+      const res = await request(app.server).get('/nonexistent').expect(404);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 404, title: 'Not Found' });
@@ -19,7 +24,7 @@ describe('SF Project Service API', () => {
     });
 
     it('returns 404 with RFC 9457 JSON for wrong method on valid path', async () => {
-      const res = await request(app).delete('/v1/templates').expect(404);
+      const res = await request(app.server).delete('/v1/templates').expect(404);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({ status: 404, title: 'Not Found' });
@@ -32,7 +37,7 @@ describe('SF Project Service API', () => {
       const templates = await import('../../src/domain/templates.js');
       vi.spyOn(templates, 'listTemplates').mockRejectedValueOnce('unexpected string error');
 
-      const res = await request(app).get('/v1/templates').expect(500);
+      const res = await request(app.server).get('/v1/templates').expect(500);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({
@@ -48,7 +53,7 @@ describe('SF Project Service API', () => {
       const templates = await import('../../src/domain/templates.js');
       vi.spyOn(templates, 'listTemplates').mockRejectedValueOnce(new Error('disk read failed'));
 
-      const res = await request(app).get('/v1/templates').expect(500);
+      const res = await request(app.server).get('/v1/templates').expect(500);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body).toMatchObject({
