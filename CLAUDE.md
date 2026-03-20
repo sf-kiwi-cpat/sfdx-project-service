@@ -42,7 +42,7 @@ docker run -p 3000:3000 sf-project-service               # run container
 
 ```
 src/                 # production code
-├── app.ts           # Express app factory, middleware
+├── app.ts           # Fastify app factory, plugin registration
 ├── config.ts        # env-backed configuration
 ├── errors.ts        # error classes, RFC 9457 problem detail
 ├── logger.ts        # pino logger

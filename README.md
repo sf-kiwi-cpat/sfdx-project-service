@@ -6,7 +6,7 @@ REST API for template-based Salesforce project creation and metadata deployment.
 
 ```bash
 npm install
-npm run dev              # starts Express on port 3000 with watch mode
+npm run dev              # starts Fastify on port 3000 with watch mode
 ```
 
 ## API Endpoints
