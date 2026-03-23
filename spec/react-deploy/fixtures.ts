@@ -80,9 +80,7 @@ export async function createReactProject(
  *   sfdx-project.json
  *   force-app/main/default/objects/   (metadata structure, no tsx/jsx)
  */
-export async function createMetadataOnlyProject(
-  tmpDir: string
-): Promise<{ projectId: string }> {
+export async function createMetadataOnlyProject(tmpDir: string): Promise<{ projectId: string }> {
   const projectId = randomUUID();
   const projectDir = path.join(tmpDir, projectId);
 
