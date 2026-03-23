@@ -156,6 +156,54 @@ Detects `spec:approved` PRs → spawns Claude to find the worktree and run
 Detects `impl:ready` PRs → spawns Claude to run `/review`, update labels
 to `review:complete`, and send Slack notification. See `.claude/loops/review-monitor.md`.
 
+## Git Conventions
+
+### Branch naming
+
+All branches follow: `t/{user}/issue-{N}-{slug}`
+
+- `{user}` — git user name (e.g., `ydarar`)
+- `{N}` — GitHub issue number
+- `{slug}` — kebab-case description (2-4 words)
+
+Example: `t/ydarar/issue-78-fastify-migration`
+
+For work without a GitHub issue: `t/{user}/{type}-{slug}` (e.g., `t/ydarar/chore-cleanup-labels`)
+
+### Commit messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+{type}({scope}): {description}
+
+{optional body — why, not what}
+
+Closes #42
+```
+
+**Types:** `feat`, `fix`, `refactor`, `chore`, `spec`, `test`, `docs`
+**Scopes:** `deploy`, `projects`, `templates`, `workflow`, `deps`
+
+Rules:
+- One logical change per commit
+- Body explains "why", not "what" (the diff shows "what")
+- Reference issues with `Closes #N` or `Part of #N` in the body
+- No `(#PR)` in messages — GitHub adds that on merge automatically
+
+### PR titles
+
+Same format as commit messages: `{type}({scope}): {short description}`
+
+Under 70 characters. No issue numbers in the title.
+
+### PR descriptions
+
+Use the template in `.github/pull_request_template.md`:
+- Summary (1-3 bullets)
+- `Closes #N` to auto-close the linked issue
+- Test plan checklist
+
 ## Gotchas
 
 - Deleting a GitHub Actions workflow file does **not** remove its required status

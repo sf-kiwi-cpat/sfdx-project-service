@@ -3,7 +3,7 @@
 # Usage: ./.claude/review-monitor.sh
 # Stop:  Ctrl+C
 
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR/.."
