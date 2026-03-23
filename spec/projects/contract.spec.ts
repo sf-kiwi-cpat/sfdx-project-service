@@ -10,7 +10,7 @@ import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createApp } from '../src/app.js';
+import { createApp } from '../../src/app.js';
 
 describe('Projects API', () => {
   let app: ReturnType<typeof createApp>;

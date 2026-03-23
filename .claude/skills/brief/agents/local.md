@@ -79,9 +79,9 @@ If a specific intent or issue number is provided:
 ### Test Health
 - Spec tests: 3 files, all passing
 - Contracted endpoints:
-  - POST /projects (spec/projects.spec.ts)
-  - GET /projects/:id/tree (spec/projects.spec.ts)
-  - GET /templates (spec/templates.spec.ts)
+  - POST /projects (spec/projects/contract.spec.ts)
+  - GET /projects/:id/tree (spec/projects/contract.spec.ts)
+  - GET /templates (spec/templates/contract.spec.ts)
   - POST /projects/:id/deploy (spec/deploy.spec.ts)
 
 ### Affected Area (if context mode)

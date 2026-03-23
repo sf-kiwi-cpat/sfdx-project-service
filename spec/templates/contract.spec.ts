@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import { createApp } from '../src/app.js';
+import { createApp } from '../../src/app.js';
 
 describe('GET /templates', () => {
   let app: ReturnType<typeof createApp>;
