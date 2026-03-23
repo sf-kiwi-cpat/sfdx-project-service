@@ -26,6 +26,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
+    "test:quality": "vitest run tests/",
     "test:coverage": "vitest run --coverage",
     "prepare": "husky"
   },
