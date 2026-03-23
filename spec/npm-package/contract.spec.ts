@@ -24,7 +24,7 @@ describe('npm package shape', () => {
     it('has a files field that includes dist, templates, and README.md', () => {
       expect(pkg.files).toBeDefined();
       expect(pkg.files).toContain('dist');
-      expect(pkg.files).toContain('templates');
+      expect(pkg.files).toContain('templates/dist');
       expect(pkg.files).toContain('README.md');
     });
 
