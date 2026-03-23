@@ -23,7 +23,7 @@ Takes a single argument: path to a `contract.spec.ts` file
 ### Step 0: Label Transition (Automated Loop Entry)
 If called via Loop 1, remove `spec:approved` label and add `impl:in-progress`:
 ```bash
-ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 gh issue edit $ISSUE_NUMBER --remove-label spec:approved --add-label impl:in-progress
 
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
@@ -66,11 +66,14 @@ fi
 - Run linter to check code quality
 
 ### Step 6: Push and Update Labels
-- Commit changes
+- Commit changes using conventional commit format:
+  - `feat({scope}): {description}` for new functionality
+  - `fix({scope}): {description}` for bug fixes
+  - One logical change per commit; reference issue in body with `Closes #N`
 - Push to remote
 - Update workflow labels:
   ```bash
-  ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+  ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 
   if [ -n "$ISSUE_NUMBER" ]; then

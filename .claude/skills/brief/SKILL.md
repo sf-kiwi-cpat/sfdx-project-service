@@ -96,8 +96,9 @@ After presenting the brief (in either mode), offer the next step:
 
 Ask if they want to set up a worktree for this work. If yes:
 
-- Derive a branch name from the intent (e.g., `t/{user}/issue-42-rename-endpoint`
-  or `t/{user}/add-template-descriptions`). Use the git user name for `{user}`.
+- Derive a branch name following the convention: `t/{user}/issue-{N}-{slug}`
+  (e.g., `t/ydarar/issue-42-rename-endpoint`). Use the git user name for `{user}`.
+  For work without a GitHub issue: `t/{user}/{type}-{slug}`.
 - Use the `EnterWorktree` tool to create the worktree. This gives an isolated
   copy of the repo so there are no collisions with in-progress work.
 - Remind them that `npm install` will run automatically via the SessionStart hook.
@@ -112,7 +113,7 @@ Ready to proceed?
 
 **Add labels to track workflow progress:**
 ```bash
-ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
 gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
 ```

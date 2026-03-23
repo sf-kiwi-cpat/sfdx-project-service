@@ -75,10 +75,12 @@ Ask: "Do these contracts match your intent? Any changes needed?"
 
 Once human approves both artifacts:
 - Commit both `contract.spec.ts` and `contract.md` to the branch
+  - Use conventional commit format: `spec({feature}): {description}`
+  - Reference the issue in the body: `Closes #N` or `Part of #N`
 - Push to remote
 - Update workflow labels to signal readiness for implementation:
   ```bash
-  ISSUE_NUMBER=$(git branch --show-current | grep -oP 'issue-\K\d+')
+  ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 
   if [ -n "$ISSUE_NUMBER" ]; then
