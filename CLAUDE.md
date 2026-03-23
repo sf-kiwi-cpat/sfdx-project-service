@@ -55,6 +55,16 @@ Loop 2           → /cdd-code-review:
 Human merges PR
 ```
 
+See [docs/workflow-guide.md](docs/workflow-guide.md) for the full workflow
+walkthrough, monitor loop setup, and troubleshooting.
+
+### The rules
+
+- `spec/` is human-guarded. Agents cannot modify contract files.
+- `tests/` is agent-mutable. Unit and integration tests are quality tools.
+- Test code is the source of truth. `contract.md` is always derived from
+  `contract.spec.ts`, never the other way around.
+
 ### Automated loops
 
 Three `/loop` commands run in separate Claude Code terminals. Copy the
@@ -107,6 +117,12 @@ Title: same as commit format, under 70 chars. Template in `.github/pull_request_
 
 - `.claude/settings.json` — team-shared (checked into git)
 - `.claude/settings.local.json` — personal (gitignored)
+
+## Documentation
+
+When modifying documentation, follow the structure defined in
+[docs/DOCUMENTATION-ARCHITECTURE.md](docs/DOCUMENTATION-ARCHITECTURE.md).
+Run `/docs-standards` to audit compliance.
 
 ## Gotchas
 

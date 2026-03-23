@@ -131,7 +131,9 @@ This project uses git worktrees. Git worktrees share source but **not** `node_mo
 - [API Documentation](./api.md)
 - [Architecture](./architecture.md)
 - [Development Guide](./development.md)
+- [Workflow Guide](./workflow-guide.md)
 - [Module Reference](./modules.md)
+- [Documentation Architecture](./DOCUMENTATION-ARCHITECTURE.md)
 
 ---
 

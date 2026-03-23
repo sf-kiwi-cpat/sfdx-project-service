@@ -1,0 +1,144 @@
+# Workflow Guide
+
+This repo uses a contract-driven development process. You write specs that
+describe what the system should do, and agents write the code that makes those
+specs pass. Automation handles the handoffs between steps.
+
+You don't have to use this workflow for everything. Bug fixes, chores, doc
+changes, and small refactors can skip it entirely. It's meant for new features
+and changes to observable behavior where you want a spec to exist before code
+gets written.
+
+## How it works
+
+There are five skills. Each one is a Claude command you can run directly.
+
+`/cdd-brief` looks at open GitHub issues, your current branch, and recent
+activity, then shows you what's available to work on. It can also deep-dive
+into a specific issue if you give it one (`/cdd-brief #42`). At the end it
+offers to create a worktree and hand off to `/cdd-spec`.
+
+`/cdd-spec` takes your intent and turns it into two files: a
+`contract.spec.ts` (executable test code, the actual source of truth) and a
+`contract.md` (prose description, auto-generated from the tests). You review
+both, edit the test code if needed, and approve when it looks right. The spec
+gets pushed and labeled `spec:ready-for-review`.
+
+`/cdd-spec-review` reads the spec and evaluates whether it's clear, complete,
+and testable. It runs a blind derivation (a separate agent tries to figure out
+what an implementation would need just from reading the spec) to surface
+ambiguities. Posts findings as a PR comment. If there are gaps, the label
+moves to `spec:comments` so you know to look at the feedback.
+
+`/cdd-implement` reads the contract spec and writes production code to make
+the tests pass. It also creates unit and integration tests, checks coverage
+thresholds, and pushes the result. It cannot modify spec files. If a spec
+seems wrong, it flags it rather than working around it. Labels move to
+`impl:ready` when done.
+
+`/cdd-code-review` reviews the implementation using blind contract derivation
+(a separate agent reads only the production code and tries to derive what the
+contract should be, then compares against the actual spec). Also checks for
+code quality issues. Posts findings as a PR comment. If the verdict is PASS,
+labels move to `review:complete`. If NEEDS WORK, labels move to
+`impl:comments`.
+
+## What you do vs. what agents do
+
+You pick work, write and approve specs, and merge PRs. Agents write code,
+run tests, and review implementations. You never need to write production
+code, but you can.
+
+The boundary is `spec/`. You own it. Agents cannot touch it. Everything in
+`src/` and `tests/` is fair game for agents.
+
+## Labels
+
+Labels on GitHub issues and PRs drive the automation. Each label represents
+one state, and transitions happen when a skill completes its work.
+
+```
+/cdd-brief       sets   spec:in-progress
+/cdd-spec        sets   spec:ready-for-review
+/cdd-spec-review sets   spec:comments         (if gaps found)
+You approve      sets   spec:approved
+/cdd-implement   sets   impl:in-progress, then impl:ready
+/cdd-code-review sets   impl:comments         (if needs work)
+                   or   review:complete        (if passing)
+You merge the PR
+```
+
+The feedback labels (`spec:comments` and `impl:comments`) are how the system
+tells you something needs attention. Address the feedback, push fixes, and
+move the label back to the previous state (`spec:ready-for-review` or
+`impl:ready`) to re-trigger the review.
+
+You can always override. If a spec review says HAS GAPS but you disagree,
+remove `spec:comments` and set `spec:approved` directly.
+
+## Monitor loops
+
+Three loops run in the background and trigger skills automatically when
+labels change. Each one is a `/loop` command you paste into a Claude Code
+terminal. The prompt lives in a markdown file under `.claude/loops/`.
+
+Open three terminals and paste one command into each:
+
+**Loop 1** polls for `spec:ready-for-review` and runs `/cdd-spec-review`.
+Copy the command from `.claude/loops/spec-review-monitor.md`.
+
+**Loop 2** polls for `spec:approved` and runs `/cdd-implement`.
+Copy the command from `.claude/loops/implement-monitor.md`.
+
+**Loop 3** polls for `impl:ready` and runs `/cdd-code-review`.
+Copy the command from `.claude/loops/review-monitor.md`.
+
+Each loop polls every 5 minutes using `gh pr list`. No LLM tokens are spent
+on polling. Claude is only invoked when there's actual work to do. Both
+review loops post results to the `#app-studio-prs` Slack channel.
+
+You can stop any loop with Ctrl+C.
+
+## Walkthrough: a feature from start to finish
+
+1. Run `/cdd-brief` or `/cdd-brief #42`. Pick work and create a worktree.
+2. Run `/cdd-spec`. Review the generated contract, edit if needed, approve.
+3. The spec gets pushed. If loops are running, Loop 1 reviews the spec.
+   Address any feedback or approve directly.
+4. Set `spec:approved`. Loop 2 picks it up and runs `/cdd-implement`.
+5. Implementation gets pushed. Loop 3 runs `/cdd-code-review`.
+6. You get a Slack notification. Review the PR and merge.
+
+Steps 3 through 6 happen automatically if the loops are running. You just
+wait for the Slack ping.
+
+## Rules
+
+`spec/` is human-guarded. Agents cannot modify contract files. If a spec
+seems wrong, the agent flags it for you.
+
+`tests/` is agent-mutable. Unit and integration tests are tools the agent
+creates and maintains.
+
+Test code is the source of truth. The prose spec (`contract.md`) is always
+derived from `contract.spec.ts`. Never edit the markdown directly. Edit
+the test code and regenerate with `/cdd-spec --refresh <feature>`.
+
+To change a contract during implementation: stop, go back to `/cdd-spec`,
+make the change, get it approved, then resume.
+
+## Troubleshooting
+
+**Loop isn't picking up PRs.** Check `gh auth status`. Verify the PR has
+the right label. Make sure the loop terminal is still running.
+
+**Need to re-run implementation.** Remove `impl:in-progress` or `impl:ready`
+from the PR, re-add `spec:approved`. Loop 2 picks it up next cycle.
+
+**Need to re-run a review after fixes.** Move the label from
+`spec:comments` back to `spec:ready-for-review`, or from `impl:comments`
+back to `impl:ready`.
+
+**Worktree problems.** Git worktrees share source files but not
+`node_modules`. Run `npm install` in any new worktree. The `SessionStart`
+hook handles this automatically for Claude Code sessions.
