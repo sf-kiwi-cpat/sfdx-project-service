@@ -1,34 +1,45 @@
 ---
-name: implement
-description: Implement code to make contract tests pass. Writes production code to satisfy spec tests and creates supporting unit/integration tests. Never modifies spec files (human-guarded).
-argument-hint: <path-to-contract.spec.ts>
+name: cdd-implement
+description: Implement code to make contract tests pass. Writes production code to satisfy spec tests and creates supporting unit/integration tests. Never modifies spec files (human-guarded). Works standalone — auto-discovers specs if no path given.
+argument-hint: [optional: path to contract.spec.ts, or feature name]
 disable-model-invocation: false
-allowed-tools: Agent, Read, Glob, Bash, Write, Edit
+allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion, EnterWorktree
 ---
 
-# /implement — Write Code to Satisfy Contracts
+# /cdd-implement — Write Code to Satisfy Contracts
 
 You are the implementation orchestrator. Your job is to write code that makes contract tests pass while respecting human-guarded boundaries.
 
-## Mode
+## Modes
 
-Takes a single argument: path to a `contract.spec.ts` file
-
-```bash
-/implement spec/deploy/contract.spec.ts
-```
+**With path** → Implement that specific contract: `/cdd-implement spec/deploy/contract.spec.ts`
+**With feature name** → Find the contract: `/cdd-implement deploy` (looks for `spec/deploy/contract.spec.ts`)
+**No arguments** → Auto-discover: find all failing contract specs, or ask user
 
 ## Workflow
 
-### Step 0: Label Transition (Automated Loop Entry)
-If called via Loop 1, remove `spec:approved` label and add `impl:in-progress`:
+### Step 0: Environment Setup (auto-detected)
+
+**Find the contract spec.** If no path was given:
+1. Search `spec/*/contract.spec.ts` for all contract files
+2. Run them to find which ones are failing
+3. If exactly one is failing, use it automatically
+4. If multiple are failing, list them and ask the user which to implement
+5. If none are failing, ask the user what they want to work on
+
+**Worktree check.** If not already in a worktree and the branch name suggests
+an issue (`issue-{N}`), you're probably in the right place. If on `main`, offer
+to create a worktree first.
+
+**Label transition.** If this is linked to a GitHub issue, update labels:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-gh issue edit $ISSUE_NUMBER --remove-label spec:approved --add-label impl:in-progress
-
-PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
-if [ -n "$PR_NUMBER" ]; then
-  gh pr edit $PR_NUMBER --remove-label spec:approved --add-label impl:in-progress
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --remove-label spec:approved --add-label impl:in-progress
+  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label spec:approved --add-label impl:in-progress
+  fi
 fi
 ```
 
@@ -89,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/review`)
+- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/cdd-review`)
 
 ---
 
@@ -98,7 +109,7 @@ fi
 ### CANNOT Modify
 
 - **Any `spec/*.spec.ts` files** — Contract tests are human-guarded
-- **Any `spec/*.spec.md` files** — Derived specs are read-only
+- **Any `spec/*/contract.md` files** — Derived specs are read-only
 - **Anything in `spec/*/` except implementation artifacts**
 
 ### CAN Modify
@@ -157,47 +168,24 @@ Before starting implementation:
 
 ---
 
-## Standalone Usage
+## Related Skills
 
-This skill is designed to work independently. You can use it without `/brief` or `/spec`:
+These skills complement `/cdd-implement`, but none are prerequisites:
 
-```bash
-# Example: Implement from any contract spec
-/implement spec/custom-feature/contract.spec.ts
+- **`/cdd-brief`** — Gathers context (helpful for understanding scope, but not required)
+- **`/cdd-spec`** — Defines executable contracts (creates the spec files this skill implements)
+- **`/cdd-review`** — Verifies correctness and code quality after implementation
 
-# Even if contract was created outside this workflow
-/implement /path/to/any/contract.spec.ts
-```
-
-The only requirement: a valid contract spec file with tests.
-
----
-
-## Integration with Workflow
-
-The skill is part of: **Brief → Spec → Implement**
-
-- **Brief** (`/brief`) — Gathers context, helps pick work
-- **Spec** (`/spec`) — Defines executable contracts (code + prose)
-- **Implement** (`/implement`) — Writes code to satisfy contracts
-
-Typical flow: `/brief` → `/spec` → `/implement`
-
-But each skill can be used independently with other tools.
-
-**Automated Loop Integration:**
-- Loop 1 monitors for `spec:approved` labels on PRs
-- When detected, Loop 1 finds the worktree and runs `/implement` automatically
-- `/implement` removes `spec:approved`, adds `impl:in-progress` at start
-- `/implement` removes `impl:in-progress`, adds `impl:ready` at end
-- Loop 2 then detects `impl:ready` and runs `/review` automatically
+**Automation:** Loop 1 can detect `spec:approved` PRs and run `/cdd-implement`
+automatically. After implementation completes (`impl:ready`), Loop 2 can
+run `/cdd-review` for automated verification.
 
 ---
 
 ## Example: Implementing Async Deployment
 
 ```bash
-/implement spec/deploy/contract.spec.ts
+/cdd-implement spec/deploy/contract.spec.ts
 ```
 
 **The skill would:**
