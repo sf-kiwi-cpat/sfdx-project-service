@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { extractCredentials } from '../utils/auth.js';
 import { deployMetadataAsync, buildConnection } from '../domain/deploy.js';
+import { hasReactFiles, runViteBuild } from '../domain/build.js';
 import { DeploymentError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
 import {
@@ -40,6 +41,11 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
       // Get project directory
       const projectDir = await getProjectDir(id);
+
+      // Run Vite build if project contains React source files
+      if (await hasReactFiles(projectDir)) {
+        await runViteBuild(projectDir);
+      }
 
       // Eagerly validate the connection to catch auth errors early
       try {
