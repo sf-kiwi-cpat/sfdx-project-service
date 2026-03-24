@@ -18,8 +18,9 @@ npm run dev   # dev server with watch mode
 ## Git Hooks (husky)
 
 - **pre-commit**: lint-staged (prettier + eslint --fix on staged .ts) + unit tests
-- **pre-push**: build + all tests with coverage (90%/85% thresholds)
+- **pre-push**: build + all tests with coverage (thresholds in `tests/CLAUDE.md`)
 
+Hooks run automatically after `npm install` (via `prepare` script).
 Do not skip hooks with `--no-verify`.
 
 ## CDD — Contract-Driven Development
@@ -94,6 +95,11 @@ with `Closes #N` or `Part of #N`.
 ### PRs
 
 Title: same as commit format, under 70 chars. Template in `.github/pull_request_template.md`.
+
+## Settings
+
+- `.claude/settings.json` — team-shared (checked into git)
+- `.claude/settings.local.json` — personal (gitignored)
 
 ## Gotchas
 

@@ -26,4 +26,4 @@ Contract specs import from `src/` using relative paths:
 ```ts
 import { buildApp } from '../../src/app.js';
 ```
-The depth is always `../../` since specs live in `spec/<feature>/`.
+Depth depends on nesting — `spec/<feature>/` uses `../../`.
