@@ -13,7 +13,9 @@ import { randomUUID } from 'node:crypto';
  *   index.html              (Vite entry)
  *   src/main.tsx             (React entry point)
  *   src/App.tsx              (React component)
- *   force-app/main/default/staticresources/   (build output target)
+ *   force-app/main/default/webapplications/App/   (build output target)
+ *   force-app/main/default/webapplications/App/App.webapplication-meta.xml
+ *   force-app/main/default/webapplications/App/webapplication.json
  */
 export async function createReactProject(
   tmpDir: string,
@@ -23,9 +25,33 @@ export async function createReactProject(
   const projectDir = path.join(tmpDir, projectId);
 
   await fs.mkdir(path.join(projectDir, 'src'), { recursive: true });
-  await fs.mkdir(path.join(projectDir, 'force-app/main/default/staticresources'), {
+  await fs.mkdir(path.join(projectDir, 'force-app/main/default/webapplications/App'), {
     recursive: true,
   });
+
+  await fs.writeFile(
+    path.join(projectDir, 'force-app/main/default/webapplications/App/App.webapplication-meta.xml'),
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<WebApplication xmlns="http://soap.sforce.com/2006/04/metadata">',
+      '  <masterLabel>App</masterLabel>',
+      '  <version>1.0</version>',
+      '  <isActive>true</isActive>',
+      '</WebApplication>',
+    ].join('\n')
+  );
+
+  await fs.writeFile(
+    path.join(projectDir, 'force-app/main/default/webapplications/App/webapplication.json'),
+    JSON.stringify(
+      {
+        outputDir: 'dist',
+        routing: { fallback: 'index.html' },
+      },
+      null,
+      2
+    )
+  );
 
   await fs.writeFile(
     path.join(projectDir, 'sfdx-project.json'),

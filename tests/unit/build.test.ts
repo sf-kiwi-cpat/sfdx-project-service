@@ -73,7 +73,7 @@ describe('runViteBuild', () => {
       expect.objectContaining({
         root: tmpDir,
         build: expect.objectContaining({
-          outDir: path.join(tmpDir, 'force-app/main/default/staticresources/App'),
+          outDir: path.join(tmpDir, 'force-app/main/default/webapplications/App/dist'),
           emptyOutDir: true,
         }),
         logLevel: 'silent',

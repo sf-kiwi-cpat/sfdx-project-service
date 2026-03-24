@@ -34,8 +34,8 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
  * Run vite.build() programmatically with a 5-minute timeout.
  *
  * The service owns the build config — the user's project has no build tooling.
- * Build output goes to force-app/main/default/staticresources/App/ so SDR
- * picks it up as part of the normal metadata deployment.
+ * Build output goes to force-app/main/default/webapplications/App/dist/ so SDR
+ * picks it up as part of the WebApplication metadata deployment.
  */
 export async function runViteBuild(projectDir: string): Promise<void> {
   logger.info({ projectDir }, 'Running Vite build');
@@ -45,7 +45,7 @@ export async function runViteBuild(projectDir: string): Promise<void> {
     const buildPromise = build({
       root: projectDir,
       build: {
-        outDir: path.join(projectDir, 'force-app/main/default/staticresources/App'),
+        outDir: path.join(projectDir, 'force-app/main/default/webapplications/App/dist'),
         emptyOutDir: true,
       },
       logLevel: 'silent',
