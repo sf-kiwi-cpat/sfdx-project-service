@@ -119,47 +119,41 @@ Claude Code sessions — it detects a missing `node_modules` directory and runs
 
 ## Automated Workflow Loops
 
-Two monitor scripts poll GitHub for label changes using plain bash (zero
-tokens). Claude is only spawned when there's actual work to do.
+Two loops run inside interactive Claude Code sessions using the `/loop`
+command. Each runs in its own terminal. Full tool access, skill invocation,
+and interactive permissions — no bash wrapper needed.
 
 ### Starting the Loops
 
 **Terminal 1 — Implementation Monitor:**
-```bash
-./.claude/implement-monitor.sh          # polls every 5 min (default)
-./.claude/implement-monitor.sh 60       # polls every 60 seconds
-CLAUDE_MODEL=sonnet ./.claude/implement-monitor.sh  # override model
-```
+Copy the `/loop` command from `.claude/loops/implement-monitor.md` into a
+Claude Code session. Polls every 5 minutes for `spec:approved` PRs.
 
 **Terminal 2 — Review Monitor:**
-```bash
-./.claude/review-monitor.sh
-```
+Copy the `/loop` command from `.claude/loops/review-monitor.md` into a
+Claude Code session. Polls every 5 minutes for `impl:ready` PRs.
 
 Stop either with **Ctrl+C**.
 
 ### How It Works
 
-1. Bash `while` loop calls `gh pr list` every N seconds — no LLM involved
-2. When a matching PR is found, spawns `claude --model $MODEL` with the
-   prompt from `.claude/loops/*.md`
-3. Claude session runs, does the work, exits
-4. Script resumes polling
+1. `/loop 5m <prompt>` runs the prompt every 5 minutes inside the session
+2. Each cycle queries `gh pr list` for matching labels
+3. When a PR is found, the loop enters the worktree and runs the skill
+4. Skills handle label transitions, code changes, and pushing
 
 **Architecture:**
-- `.claude/loops/*.md` — Source-of-truth prompts (what Claude sees)
-- `.claude/*-monitor.sh` — Thin bash wrappers (polling + spawn)
-- Default model: `opus` (override with `CLAUDE_MODEL` env var)
+- `.claude/loops/*.md` — Loop documentation with copy-paste `/loop` commands
 
 ### Loop 1: Implementation Monitor
 
-Detects `spec:approved` PRs → spawns Claude to find the worktree and run
-`/cdd-implement` on the contract spec. See `.claude/loops/implement-monitor.md`.
+Detects `spec:approved` PRs → enters worktree → runs `/cdd-implement` on
+the contract spec. See `.claude/loops/implement-monitor.md`.
 
 ### Loop 2: Review Monitor
 
-Detects `impl:ready` PRs → spawns Claude to run `/cdd-review`, update labels
-to `review:complete`, and send Slack notification. See `.claude/loops/review-monitor.md`.
+Detects `impl:ready` PRs → enters worktree → runs `/cdd-review` → sends
+Slack notification. See `.claude/loops/review-monitor.md`.
 
 ## Git Conventions
 
