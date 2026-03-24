@@ -142,6 +142,6 @@ These skills can follow `/brief`, but none are required:
 
 - **`/spec`** — Define executable contracts (for features that need formal specs)
 - **`/implement`** — Write code to satisfy contract tests
-- **`/simplify`** — Review and clean up code
+- **`/review`** — Verify correctness and code quality
 
 Each skill is self-sufficient. Use them in any order, skip any, or use none.

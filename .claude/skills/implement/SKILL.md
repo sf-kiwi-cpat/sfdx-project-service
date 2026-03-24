@@ -100,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/simplify`)
+- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/review`)
 
 ---
 
@@ -174,11 +174,11 @@ These skills complement `/implement`, but none are prerequisites:
 
 - **`/brief`** — Gathers context (helpful for understanding scope, but not required)
 - **`/spec`** — Defines executable contracts (creates the spec files this skill implements)
-- **`/simplify`** — Reviews and cleans up code after implementation
+- **`/review`** — Verifies correctness and code quality after implementation
 
 **Automation:** Loop 1 can detect `spec:approved` PRs and run `/implement`
 automatically. After implementation completes (`impl:ready`), Loop 2 can
-run `/simplify` for automated review.
+run `/review` for automated verification.
 
 ---
 

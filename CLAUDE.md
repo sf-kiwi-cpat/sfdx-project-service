@@ -73,7 +73,7 @@ fast without drifting from intent.
   derived `contract.md` (prose, auto-generated from tests).
 - **`/implement`** — Agent writes production code to make contract tests
   pass. Cannot modify spec files. Auto-discovers specs if no path given.
-- **`/simplify`** — Automated code review for quality, reuse, and efficiency.
+- **`/review`** — Blind contract verification and quality audit.
 
 Use them in any order. The typical flow is `/brief` → `/spec` → `/implement`,
 but each skill gathers its own context and sets up its own environment.

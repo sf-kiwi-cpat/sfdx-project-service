@@ -257,7 +257,7 @@ These skills complement `/spec`, but none are prerequisites:
 
 - **`/brief`** — Gathers context (helpful before writing specs, but /spec gathers its own)
 - **`/implement`** — Writes code to satisfy contract tests
-- **`/simplify`** — Reviews and cleans up code
+- **`/review`** — Verifies correctness and code quality
 
 **Automation:** After spec is approved (`spec:approved` label), Loop 1 can
 automatically run `/implement`. But you can also run `/implement` manually at any time.
