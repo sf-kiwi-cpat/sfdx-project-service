@@ -51,7 +51,7 @@ export function resolveProjectPath(
 /** Paths to exclude from the tree and block from file operations. */
 const IGNORED_NAMES = new Set(['node_modules', '.git', '.sf']);
 
-function shouldIgnoreEntry(entryName: string): boolean {
+export function shouldIgnoreEntry(entryName: string): boolean {
   return IGNORED_NAMES.has(entryName) || entryName.startsWith('.');
 }
 
