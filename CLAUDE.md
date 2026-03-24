@@ -51,10 +51,11 @@ Human merges PR
 
 ### Automated loops
 
-Two `/loop` commands run in separate Claude Code terminals. Copy the
-command from each file:
-- `.claude/loops/implement-monitor.md` — polls for `spec:approved`
-- `.claude/loops/review-monitor.md` — polls for `impl:ready`
+Two loops run in separate Claude Code terminals. Just ask Claude:
+- "Start the implementation monitor loop" — polls for `spec:approved`
+- "Start the review monitor loop" — polls for `impl:ready`
+
+Reference prompts live in `.claude/loops/`.
 
 ## Directory layout
 
