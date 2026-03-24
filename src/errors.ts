@@ -109,6 +109,12 @@ export function errorToProblem(err: unknown): ProblemDetail {
     return problemDetail(502, 'Deployment Failed', err.message);
   }
 
+  // Fastify validation errors (e.g. missing required querystring params)
+  const fastifyErr = err as { statusCode?: number; validation?: unknown[] };
+  if (fastifyErr?.statusCode && fastifyErr.validation) {
+    return problemDetail(fastifyErr.statusCode, 'Bad Request', (err as Error).message);
+  }
+
   const nodeErr = err as NodeJS.ErrnoException;
   if (nodeErr?.code === 'ENOENT') {
     return problemDetail(404, 'File Not Found', 'File not found');
