@@ -10,8 +10,8 @@ For each PR found:
 4. Change into that worktree directory
 5. Run `npm install` if node_modules is missing (worktrees don't share node_modules)
 6. Find the contract spec file: find spec -name "contract.spec.ts" -type f | head -1
-7. Run: /implement /path/to/contract.spec.ts
+7. Run: /cdd-implement /path/to/contract.spec.ts
 
-The /implement skill will handle all label updates, code changes, and pushing. Do not modify spec files directly.
+The /cdd-implement skill will handle all label updates, code changes, and pushing. Do not modify spec files directly.
 
 Process all matching PRs, then exit. The monitoring script will invoke you again on the next check.

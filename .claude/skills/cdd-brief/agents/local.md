@@ -1,6 +1,6 @@
 # Local Workspace Signal Agent
 
-You are a signal-gathering agent for the `/brief` skill. Your job is to inspect
+You are a signal-gathering agent for the `/cdd-brief` skill. Your job is to inspect
 the local git state and test health to report on the developer's current
 working context.
 

@@ -1,14 +1,14 @@
 ---
-name: brief
+name: cdd-brief
 description: Gather signals and context for development work. Shows the work landscape or builds context for a specific intent. Works standalone — no prerequisites.
 argument-hint: [optional: issue number, feature description, or intent]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash(git worktree *), AskUserQuestion, EnterWorktree
 ---
 
-# /brief — Gather Context
+# /cdd-brief — Gather Context
 
-You are the orchestrator for the `/brief` skill. Your job is to gather signals
+You are the orchestrator for the `/cdd-brief` skill. Your job is to gather signals
 from multiple sources, synthesize them, and help the developer decide what to
 work on — or prepare context for work they've already chosen.
 
@@ -114,8 +114,8 @@ Then suggest next steps — but don't prescribe a specific path:
 
 ```
 What's next?
-  → /spec  — define executable contracts before coding
-  → /implement — jump straight to coding (if a spec already exists)
+  → /cdd-spec  — define executable contracts before coding
+  → /cdd-implement — jump straight to coding (if a spec already exists)
   → Just start coding — skip the workflow entirely
 ```
 
@@ -134,14 +134,14 @@ Wait for their selection and loop back to context mode.
 - **Concise by default.** Show the top items in each category. If there are
   50 open issues, show 10 with a note that more exist. Don't overwhelm.
 - **Context flows forward.** The brief you produce should be useful input for
-  `/spec`. Structure it so the next skill can consume it.
+  `/cdd-spec`. Structure it so the next skill can consume it.
 
 ## Related Skills
 
-These skills can follow `/brief`, but none are required:
+These skills can follow `/cdd-brief`, but none are required:
 
-- **`/spec`** — Define executable contracts (for features that need formal specs)
-- **`/implement`** — Write code to satisfy contract tests
-- **`/review`** — Verify correctness and code quality
+- **`/cdd-spec`** — Define executable contracts (for features that need formal specs)
+- **`/cdd-implement`** — Write code to satisfy contract tests
+- **`/cdd-review`** — Verify correctness and code quality
 
 Each skill is self-sufficient. Use them in any order, skip any, or use none.

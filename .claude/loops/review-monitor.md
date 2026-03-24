@@ -8,13 +8,13 @@ For each PR found:
    git worktree list --porcelain | grep -B2 "branch.*$headRefName" | grep "^worktree " | cut -d' ' -f2
    ```
 4. Run `npm install` if node_modules is missing (worktrees don't share node_modules)
-5. Run /review to verify implementation correctness and code quality
-6. If /review verdict is PASS:
-   - Labels are already transitioned to review:complete by the /review skill
+5. Run /cdd-review to verify implementation correctness and code quality
+6. If /cdd-review verdict is PASS:
+   - Labels are already transitioned to review:complete by the /cdd-review skill
    - Get repo URL: REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
    - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread (see Slack threading below):
      "PR ready for merge: #<pr-number> - <title>\nIssue: https://github.com/$REPO/issues/<issue>\nLink: https://github.com/$REPO/pull/<pr-number>"
-7. If /review verdict is NEEDS WORK:
+7. If /cdd-review verdict is NEEDS WORK:
    - Do NOT update labels (leave impl:ready so it gets re-reviewed next cycle)
    - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread noting the review findings
 

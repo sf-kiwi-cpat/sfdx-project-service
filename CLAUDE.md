@@ -66,25 +66,25 @@ fast without drifting from intent.
 
 ### Skills (each works standalone)
 
-- **`/brief`** — Gathers signals (GitHub issues, transcripts, local git
+- **`/cdd-brief`** — Gathers signals (GitHub issues, transcripts, local git
   state) and helps the human pick work or build context for chosen work.
-- **`/spec`** — Translates intent into executable contracts: a
+- **`/cdd-spec`** — Translates intent into executable contracts: a
   `spec/<feature>/contract.spec.ts` (test code, human-guarded) and a
   derived `contract.md` (prose, auto-generated from tests).
-- **`/implement`** — Agent writes production code to make contract tests
+- **`/cdd-implement`** — Agent writes production code to make contract tests
   pass. Cannot modify spec files. Auto-discovers specs if no path given.
-- **`/review`** — Blind contract verification and quality audit.
+- **`/cdd-review`** — Blind contract verification and quality audit.
 
-Use them in any order. The typical flow is `/brief` → `/spec` → `/implement`,
+Use them in any order. The typical flow is `/cdd-brief` → `/cdd-spec` → `/cdd-implement`,
 but each skill gathers its own context and sets up its own environment.
-Not everything needs a spec — bug fixes and chores can go straight to `/implement`
+Not everything needs a spec — bug fixes and chores can go straight to `/cdd-implement`
 or skip the workflow entirely.
 
 ### Label lifecycle
 
 ```
-/brief       → spec:in-progress (+ assign user)
-/spec        → spec:ready-for-review
+/cdd-brief   → spec:in-progress (+ assign user)
+/cdd-spec    → spec:ready-for-review
 Human approves → spec:approved
 Loop 1       → impl:in-progress → impl:ready
 Loop 2       → review:complete (+ Slack notification)
@@ -100,8 +100,8 @@ Human merges PR
 - **Test code is source of truth.** Prose specs (`contract.md`) are always
   derived from test code, never the reverse.
 - **Never edit `contract.md` directly.** Edit `contract.spec.ts`, then
-  regenerate. Use `/spec --refresh <feature>` if needed.
-- **To change a contract during implementation:** stop, go back to `/spec`,
+  regenerate. Use `/cdd-spec --refresh <feature>` if needed.
+- **To change a contract during implementation:** stop, go back to `/cdd-spec`,
   make the change, regenerate both artifacts, get human approval, then resume.
 
 ## Worktrees
@@ -154,11 +154,11 @@ Stop either with **Ctrl+C**.
 ### Loop 1: Implementation Monitor
 
 Detects `spec:approved` PRs → spawns Claude to find the worktree and run
-`/implement` on the contract spec. See `.claude/loops/implement-monitor.md`.
+`/cdd-implement` on the contract spec. See `.claude/loops/implement-monitor.md`.
 
 ### Loop 2: Review Monitor
 
-Detects `impl:ready` PRs → spawns Claude to run `/review`, update labels
+Detects `impl:ready` PRs → spawns Claude to run `/cdd-review`, update labels
 to `review:complete`, and send Slack notification. See `.claude/loops/review-monitor.md`.
 
 ## Git Conventions

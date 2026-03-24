@@ -1,12 +1,12 @@
 ---
-name: spec
-description: Define executable contracts (specs). Drafts test code + natural language spec together, then keeps them in sync. Works standalone — gathers its own context if /brief hasn't run. Enters plan mode for discussion before pushing for review.
+name: cdd-spec
+description: Define executable contracts (specs). Drafts test code + natural language spec together, then keeps them in sync. Works standalone — gathers its own context if /cdd-brief hasn't run. Enters plan mode for discussion before pushing for review.
 argument-hint: [optional: issue number, feature description, or intent]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion, EnterPlanMode, EnterWorktree
 ---
 
-# /spec — Define Executable Contracts
+# /cdd-spec — Define Executable Contracts
 
 You are the contract orchestrator. Your job is to translate intent into **executable contracts**:
 - Code artifact: `spec/<feature>/contract.spec.ts` (test file, human-guarded)
@@ -17,11 +17,11 @@ Both artifacts are generated together so humans can review them in parallel.
 ## Modes
 
 **No arguments** → Interactive mode: prompt for feature name and intent
-**With arguments** → Direct mode: use intent to draft contracts (e.g., `/spec #68`, `/spec add SSE deployment streaming`)
+**With arguments** → Direct mode: use intent to draft contracts (e.g., `/cdd-spec #68`, `/cdd-spec add SSE deployment streaming`)
 
 ## Workflow
 
-**Overall approach:** This skill gathers context, proposes contracts for discussion, refines them with the human, then pushes for review. It works standalone — `/brief` is helpful but not required.
+**Overall approach:** This skill gathers context, proposes contracts for discussion, refines them with the human, then pushes for review. It works standalone — `/cdd-brief` is helpful but not required.
 
 ### Step 0: Environment Setup (auto-detected)
 
@@ -108,7 +108,7 @@ Once human approves both artifacts:
     gh pr edit $PR_NUMBER --remove-label spec:in-progress --add-label spec:ready-for-review
   fi
   ```
-- Notify: **"Specs pushed for review!"** Mention that once approved (label set to `spec:approved`), Loop 1 will automatically run `/implement`
+- Notify: **"Specs pushed for review!"** Mention that once approved (label set to `spec:approved`), Loop 1 will automatically run `/cdd-implement`
 
 ---
 
@@ -209,7 +209,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 **Manual refresh (if needed):**
 ```bash
-/spec --refresh <feature-name>
+/cdd-spec --refresh <feature-name>
 # Re-parses contract.spec.ts
 # Regenerates contract.md
 # Shows both for verification
@@ -226,7 +226,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 ### Example 1: Direct Mode (Issue Number)
 ```bash
-/spec #68
+/cdd-spec #68
 # Fetches issue #68 details
 # Drafts contract.spec.ts + contract.md for async deployment
 # Presents both for review
@@ -234,7 +234,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 ### Example 2: Direct Mode (Description)
 ```bash
-/spec add SSE deployment streaming
+/cdd-spec add SSE deployment streaming
 # Uses description to draft contract
 # Generates spec/deploy-sse/contract.spec.ts + contract.md
 # Presents both
@@ -242,7 +242,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 ### Example 3: Interactive Mode
 ```bash
-/spec
+/cdd-spec
 # → What feature are you defining a contract for?
 # → My intent is...
 # Drafts contracts
@@ -253,11 +253,11 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 ## Related Skills
 
-These skills complement `/spec`, but none are prerequisites:
+These skills complement `/cdd-spec`, but none are prerequisites:
 
-- **`/brief`** — Gathers context (helpful before writing specs, but /spec gathers its own)
-- **`/implement`** — Writes code to satisfy contract tests
-- **`/review`** — Verifies correctness and code quality
+- **`/cdd-brief`** — Gathers context (helpful before writing specs, but /cdd-spec gathers its own)
+- **`/cdd-implement`** — Writes code to satisfy contract tests
+- **`/cdd-review`** — Verifies correctness and code quality
 
 **Automation:** After spec is approved (`spec:approved` label), Loop 1 can
-automatically run `/implement`. But you can also run `/implement` manually at any time.
+automatically run `/cdd-implement`. But you can also run `/cdd-implement` manually at any time.

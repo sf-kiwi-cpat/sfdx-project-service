@@ -1,19 +1,19 @@
 ---
-name: implement
+name: cdd-implement
 description: Implement code to make contract tests pass. Writes production code to satisfy spec tests and creates supporting unit/integration tests. Never modifies spec files (human-guarded). Works standalone — auto-discovers specs if no path given.
 argument-hint: [optional: path to contract.spec.ts, or feature name]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion, EnterWorktree
 ---
 
-# /implement — Write Code to Satisfy Contracts
+# /cdd-implement — Write Code to Satisfy Contracts
 
 You are the implementation orchestrator. Your job is to write code that makes contract tests pass while respecting human-guarded boundaries.
 
 ## Modes
 
-**With path** → Implement that specific contract: `/implement spec/deploy/contract.spec.ts`
-**With feature name** → Find the contract: `/implement deploy` (looks for `spec/deploy/contract.spec.ts`)
+**With path** → Implement that specific contract: `/cdd-implement spec/deploy/contract.spec.ts`
+**With feature name** → Find the contract: `/cdd-implement deploy` (looks for `spec/deploy/contract.spec.ts`)
 **No arguments** → Auto-discover: find all failing contract specs, or ask user
 
 ## Workflow
@@ -100,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/review`)
+- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/cdd-review`)
 
 ---
 
@@ -170,22 +170,22 @@ Before starting implementation:
 
 ## Related Skills
 
-These skills complement `/implement`, but none are prerequisites:
+These skills complement `/cdd-implement`, but none are prerequisites:
 
-- **`/brief`** — Gathers context (helpful for understanding scope, but not required)
-- **`/spec`** — Defines executable contracts (creates the spec files this skill implements)
-- **`/review`** — Verifies correctness and code quality after implementation
+- **`/cdd-brief`** — Gathers context (helpful for understanding scope, but not required)
+- **`/cdd-spec`** — Defines executable contracts (creates the spec files this skill implements)
+- **`/cdd-review`** — Verifies correctness and code quality after implementation
 
-**Automation:** Loop 1 can detect `spec:approved` PRs and run `/implement`
+**Automation:** Loop 1 can detect `spec:approved` PRs and run `/cdd-implement`
 automatically. After implementation completes (`impl:ready`), Loop 2 can
-run `/review` for automated verification.
+run `/cdd-review` for automated verification.
 
 ---
 
 ## Example: Implementing Async Deployment
 
 ```bash
-/implement spec/deploy/contract.spec.ts
+/cdd-implement spec/deploy/contract.spec.ts
 ```
 
 **The skill would:**

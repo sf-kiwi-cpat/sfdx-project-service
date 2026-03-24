@@ -1,12 +1,12 @@
 ---
-name: review
+name: cdd-review
 description: Quality review via blind contract derivation and code audit. A separate agent reads only production code to derive what the contract should be, then compares against the actual spec. Catches correctness drift, AI slop, and architecture issues. Works standalone.
 argument-hint: [optional: path to contract.spec.ts, feature name, or PR number]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion
 ---
 
-# /review — Blind Verification & Quality Audit
+# /cdd-review — Blind Verification & Quality Audit
 
 You are the review orchestrator. Your job is to verify implementation
 correctness and code quality using **independent verification** — not by
@@ -19,9 +19,9 @@ able to derive it from the code alone.
 
 ## Modes
 
-**With path** → Review that specific feature: `/review spec/deploy/contract.spec.ts`
-**With feature name** → Find and review: `/review deploy`
-**With PR number** → Review all changes in a PR: `/review #42`
+**With path** → Review that specific feature: `/cdd-review spec/deploy/contract.spec.ts`
+**With feature name** → Find and review: `/cdd-review deploy`
+**With PR number** → Review all changes in a PR: `/cdd-review #42`
 **No arguments** → Auto-detect: find the feature from current branch or recent changes
 
 ## Workflow
@@ -182,21 +182,21 @@ with 3 actionable findings is better than one with 30 style complaints.
 
 ### No Auto-Fix
 This skill reports findings. It does not fix code. The implementation agent
-(or human) addresses findings and re-runs `/review`. This separation ensures
+(or human) addresses findings and re-runs `/cdd-review`. This separation ensures
 the reviewer stays independent.
 
 ### Verdict Has Teeth
 If the verdict is NEEDS WORK, the label stays at `impl:ready` and the loop
-will re-invoke `/review` on the next cycle after fixes are applied. The
+will re-invoke `/cdd-review` on the next cycle after fixes are applied. The
 review gate is real, not advisory.
 
 ---
 
 ## Related Skills
 
-- **`/implement`** — Writes the code this skill reviews
-- **`/spec`** — Defines the contracts this skill verifies against
-- **`/brief`** — Gathers context (not needed for review)
+- **`/cdd-implement`** — Writes the code this skill reviews
+- **`/cdd-spec`** — Defines the contracts this skill verifies against
+- **`/cdd-brief`** — Gathers context (not needed for review)
 
-**Automation:** Loop 2 detects `impl:ready` PRs and runs `/review` automatically.
+**Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-review` automatically.
 If review passes, labels transition to `review:complete` and Slack is notified.
