@@ -1,17 +1,29 @@
-The PR data was provided above as JSON. Do not re-query GitHub for the PR list.
+# Implementation Monitor Loop
 
-For each PR found:
-1. Extract the branch name from the headRefName field
-2. Extract issue number from branch name: echo "$headRefName" | sed 's/.*issue-\([0-9]*\).*/\1/'
-3. Find the corresponding worktree:
-   ```bash
-   git worktree list --porcelain | grep -B2 "branch.*$headRefName" | grep "^worktree " | cut -d' ' -f2
-   ```
-4. Change into that worktree directory
-5. Run `npm install` if node_modules is missing (worktrees don't share node_modules)
-6. Find the contract spec file: find spec -name "contract.spec.ts" -type f | head -1
-7. Run: /cdd-implement /path/to/contract.spec.ts
+Detects `spec:approved` PRs and runs `/cdd-implement` on each.
 
-The /cdd-implement skill will handle all label updates, code changes, and pushing. Do not modify spec files directly.
+## Start
 
-Process all matching PRs, then exit. The monitoring script will invoke you again on the next check.
+```
+/loop 5m Check for open PRs with the spec:approved label using gh pr list --state open --label spec:approved --json number,headRefName. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, find the contract spec with find spec -name contract.spec.ts, then run /cdd-implement on it. The /cdd-implement skill handles all label transitions and code changes.
+```
+
+## What happens each cycle
+
+1. Query: `gh pr list --state open --label spec:approved --json number,headRefName`
+2. If no results, do nothing (wait for next cycle)
+3. For each PR found:
+   - Extract issue number: `echo "$branch" | sed 's/.*issue-\([0-9]*\).*/\1/'`
+   - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
+   - Enter worktree via `EnterWorktree`
+   - `npm install` if `node_modules/` missing
+   - Find spec: `find spec -name "contract.spec.ts" -type f | head -1`
+   - Run `/cdd-implement <path>`
+4. `/cdd-implement` handles: `spec:approved` → `impl:in-progress` → `impl:ready`
+
+## Label transitions
+
+```
+spec:approved  →  impl:in-progress  (at /cdd-implement start)
+impl:in-progress  →  impl:ready     (at /cdd-implement end)
+```

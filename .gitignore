@@ -48,7 +48,6 @@ Thumbs.db
 .claude/projects/
 .claude/scheduled_tasks.lock
 .claude/logs/
-.claude/loops/*.pid
 
 # Templates (built from templates/src/)
 templates/dist/

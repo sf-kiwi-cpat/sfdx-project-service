@@ -1,34 +1,42 @@
-The PR data was provided above as JSON. Do not re-query GitHub for the PR list.
+# Review Monitor Loop
 
-For each PR found:
-1. Extract branch name from the headRefName field
-2. Extract issue number: echo "$headRefName" | sed 's/.*issue-\([0-9]*\).*/\1/'
-3. Find the corresponding worktree and enter it:
-   ```bash
-   git worktree list --porcelain | grep -B2 "branch.*$headRefName" | grep "^worktree " | cut -d' ' -f2
-   ```
-4. Run `npm install` if node_modules is missing (worktrees don't share node_modules)
-5. Run /cdd-review to verify implementation correctness and code quality
-6. If /cdd-review verdict is PASS:
-   - Labels are already transitioned to review:complete by the /cdd-review skill
-   - Get repo URL: REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-   - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread (see Slack threading below):
-     "PR ready for merge: #<pr-number> - <title>\nIssue: https://github.com/$REPO/issues/<issue>\nLink: https://github.com/$REPO/pull/<pr-number>"
-7. If /cdd-review verdict is NEEDS WORK:
-   - Do NOT update labels (leave impl:ready so it gets re-reviewed next cycle)
-   - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread noting the review findings
+Detects `impl:ready` PRs, runs `/cdd-review`, and sends Slack notification.
 
-Use gh CLI for all GitHub operations. Use Slack MCP tool for notifications.
+## Start
+
+```
+/loop 5m Check for open PRs with the impl:ready label using gh pr list --state open --label impl:ready --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-review. If review verdict is PASS: labels are already transitioned by /cdd-review, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: do NOT update labels, post review findings in the PR's thread.
+```
+
+## What happens each cycle
+
+1. Query: `gh pr list --state open --label impl:ready --json number,headRefName,title`
+2. If no results, do nothing (wait for next cycle)
+3. For each PR found:
+   - Extract issue number: `echo "$branch" | sed 's/.*issue-\([0-9]*\).*/\1/'`
+   - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
+   - Enter worktree via `EnterWorktree`
+   - `npm install` if `node_modules/` missing
+   - Run `/cdd-review`
+4. If verdict is PASS:
+   - Labels already transitioned to `review:complete` by `/cdd-review`
+   - Post to #app-studio-prs in the PR's thread (see Slack threading below)
+5. If verdict is NEEDS WORK:
+   - Do NOT update labels (leave `impl:ready` for re-review next cycle)
+   - Post review findings in the PR's thread
 
 ## Slack threading in #app-studio-prs
 
-Each PR gets its own thread. To find or create it:
+Each PR gets its own thread in channel C0ANF2KL5HT:
 
-1. Search channel for existing thread: use slack_read_channel on C0ANF2KL5HT and look for
-   a message containing "PR #<pr-number>" or the PR URL.
-2. If found: reply in that thread (set thread_ts to the parent message's timestamp).
-3. If not found: post a new top-level message to start the thread. Use format:
-   "PR #<pr-number> - <title>\nLink: https://github.com/$REPO/pull/<pr-number>"
-   Then reply in that thread with the review status.
+1. Search channel for existing thread containing "PR #N" or the PR URL
+2. If found: reply in that thread (set `thread_ts` to the parent message's timestamp)
+3. If not found: post a new top-level message:
+   `"PR #N - title\nLink: https://github.com/REPO/pull/N"`
+   Then reply in that thread with the review status
 
-Process all matching PRs, then exit. The monitoring script will invoke you again on the next check.
+## Label transitions
+
+```
+impl:ready  →  review:complete  (after /cdd-review passes)
+```
