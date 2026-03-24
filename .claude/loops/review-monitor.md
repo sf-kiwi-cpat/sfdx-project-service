@@ -12,12 +12,23 @@ For each PR found:
 6. If /review verdict is PASS:
    - Labels are already transitioned to review:complete by the /review skill
    - Get repo URL: REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-   - DM the PR author via Slack MCP tool (use slack_search_users to find their user ID by name) with:
+   - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread (see Slack threading below):
      "PR ready for merge: #<pr-number> - <title>\nIssue: https://github.com/$REPO/issues/<issue>\nLink: https://github.com/$REPO/pull/<pr-number>"
 7. If /review verdict is NEEDS WORK:
    - Do NOT update labels (leave impl:ready so it gets re-reviewed next cycle)
-   - DM the PR author via Slack noting the review findings
+   - Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread noting the review findings
 
-Use gh CLI for all GitHub operations. Use Slack MCP tool for DM notifications to the PR author.
+Use gh CLI for all GitHub operations. Use Slack MCP tool for notifications.
+
+## Slack threading in #app-studio-prs
+
+Each PR gets its own thread. To find or create it:
+
+1. Search channel for existing thread: use slack_read_channel on C0ANF2KL5HT and look for
+   a message containing "PR #<pr-number>" or the PR URL.
+2. If found: reply in that thread (set thread_ts to the parent message's timestamp).
+3. If not found: post a new top-level message to start the thread. Use format:
+   "PR #<pr-number> - <title>\nLink: https://github.com/$REPO/pull/<pr-number>"
+   Then reply in that thread with the review status.
 
 Process all matching PRs, then exit. The monitoring script will invoke you again on the next check.
