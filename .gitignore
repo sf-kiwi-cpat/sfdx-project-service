@@ -33,13 +33,13 @@ coverage/
 Thumbs.db
 .DS_Store
 
-# Salesforce / SFDX
+# Salesforce / SFDX (root-level only, not inside templates/src/)
 .sfdx/
 .sf/
 .salesforcerc
 *.sfdx
-force-app/
-sfdx-project.json
+/force-app/
+/sfdx-project.json
 
 # Claude Code (local/personal files — keep .claude/settings.json, rules/, agents/, skills/ committed)
 .claude/settings.local.json
@@ -49,6 +49,9 @@ sfdx-project.json
 .claude/scheduled_tasks.lock
 .claude/logs/
 .claude/loops/*.pid
+
+# Templates (built from templates/src/)
+templates/dist/
 
 # Project-specific
 .cache/

@@ -9,11 +9,13 @@
   },
   "files": [
     "dist",
-    "templates",
+    "templates/dist",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:templates",
+    "build:templates": "node scripts/zip-templates.js",
+    "pretest": "npm run build:templates",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",

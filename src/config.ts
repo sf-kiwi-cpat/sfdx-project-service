@@ -20,5 +20,5 @@ export function getProjectsRoot(): string {
  * (one level up from dist/ at runtime).
  */
 export function getTemplatesDir(): string {
-  return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates');
+  return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates', 'dist');
 }
