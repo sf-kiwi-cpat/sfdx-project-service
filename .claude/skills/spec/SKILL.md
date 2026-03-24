@@ -1,9 +1,9 @@
 ---
 name: spec
-description: Define executable contracts (specs). Drafts test code + natural language spec together, then keeps them in sync. Part of the Brief → Spec → Implement workflow. Enters plan mode for discussion before pushing for review.
+description: Define executable contracts (specs). Drafts test code + natural language spec together, then keeps them in sync. Works standalone — gathers its own context if /brief hasn't run. Enters plan mode for discussion before pushing for review.
 argument-hint: [optional: issue number, feature description, or intent]
 disable-model-invocation: false
-allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion, EnterPlanMode
+allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion, EnterPlanMode, EnterWorktree
 ---
 
 # /spec — Define Executable Contracts
@@ -21,19 +21,36 @@ Both artifacts are generated together so humans can review them in parallel.
 
 ## Workflow
 
-**Overall approach:** This skill gathers context, proposes contracts for discussion, refines them with the human, then pushes for review.
+**Overall approach:** This skill gathers context, proposes contracts for discussion, refines them with the human, then pushes for review. It works standalone — `/brief` is helpful but not required.
+
+### Step 0: Environment Setup (auto-detected)
+
+Check the current environment and set up what's missing:
+
+**Worktree:** Check if already in a worktree (`git worktree list` — if cwd is not the
+main worktree, you're in one). If not, and this is for a GitHub issue, offer to
+create one:
+- Branch convention: `t/{user}/issue-{N}-{slug}`
+- Use `EnterWorktree` to create it
+- `npm install` runs automatically via SessionStart hook
+
+**Labels:** If working on a GitHub issue and no workflow labels exist yet, add them:
+```bash
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
+  gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
+fi
+```
 
 ### Step 1: Gather Context
 - If an issue number is provided, fetch details using `gh issue view`
 - If description is provided, use it directly
 - If no arguments, ask the user interactively for feature name and intent
+- Check for existing specs in `spec/` that might overlap or relate
+- Look at related source files to understand current implementation state
 
-### Step 2: Gather Brief Context (Optional but Recommended)
-- Spawn a parallel agent to run `/brief <intent>` style gathering
-- Pulls in GitHub context, related PRs, local file analysis
-- Enriches the drafting process
-
-### Step 3: AI Drafts Both Artifacts Simultaneously
+### Step 2: AI Drafts Both Artifacts Simultaneously
 
 **Generate `spec/<feature>/contract.spec.ts`:**
 - Executable test file using vitest
@@ -49,14 +66,14 @@ Both artifacts are generated together so humans can review them in parallel.
 - Includes examples
 - Never manually edited (always regenerated from code)
 
-### Step 4: Present Both to Human
+### Step 3: Present Both to Human
 Show side-by-side or sequentially:
 1. The natural language spec (easier to review)
 2. The code spec (executable assertions)
 
 Ask: "Do these contracts match your intent? Any changes needed?"
 
-### Step 5: Discussion & Refinement
+### Step 4: Discussion & Refinement
 
 **Enter plan mode** to discuss contracts with the human:
 - Use `EnterPlanMode` to signal that you're ready for collaborative design discussion
@@ -71,7 +88,7 @@ Ask: "Do these contracts match your intent? Any changes needed?"
 - Return to discussion as needed
 - Repeat until both artifacts are approved
 
-### Step 6: Push for Review & Commit
+### Step 5: Push for Review & Commit
 
 Once human approves both artifacts:
 - Commit both `contract.spec.ts` and `contract.md` to the branch
@@ -234,15 +251,13 @@ describe('POST /v1/projects/:id/deployments', () => {
 
 ---
 
-## Integration with Workflow
+## Related Skills
 
-The skill is part of: **Brief → Spec → Implement**
+These skills complement `/spec`, but none are prerequisites:
 
-- **Brief** (`/brief`) — Gathers context, helps pick work
-- **Spec** (`/spec`) — Defines executable contracts from intent
-- **Implement** (`/implement`) — Makes contracts pass (agent-mutable implementation)
+- **`/brief`** — Gathers context (helpful before writing specs, but /spec gathers its own)
+- **`/implement`** — Writes code to satisfy contract tests
+- **`/simplify`** — Reviews and cleans up code
 
-Each skill hands off to the next with clean context.
-
-After spec is approved by setting `spec:approved` label, automated Loop 1 will detect it
-and run `/implement` automatically. The loop removes `spec:approved` and adds `impl:in-progress`.
+**Automation:** After spec is approved (`spec:approved` label), Loop 1 can
+automatically run `/implement`. But you can also run `/implement` manually at any time.

@@ -64,16 +64,21 @@ executable specs are the source of truth for system behavior.
 implement *how*. The contract boundary is enforced so agents can move
 fast without drifting from intent.
 
-### Workflow: `/brief` → `/spec` → `/implement` → `/review` (Automated)
+### Skills (each works standalone)
 
-1. **`/brief`** — Gathers signals (GitHub issues, transcripts, local git
-   state) and helps the human pick work or build context for chosen work.
-2. **`/spec`** — Translates intent into executable contracts: a
-   `spec/<feature>/contract.spec.ts` (test code, human-guarded) and a
-   derived `contract.md` (prose, auto-generated from tests).
-3. **`/implement`** — Agent writes production code to make contract tests
-   pass. Cannot modify spec files. Freely creates unit/integration tests.
-4. **`/review`** — Automated code review and Slack notification (via Loop 2)
+- **`/brief`** — Gathers signals (GitHub issues, transcripts, local git
+  state) and helps the human pick work or build context for chosen work.
+- **`/spec`** — Translates intent into executable contracts: a
+  `spec/<feature>/contract.spec.ts` (test code, human-guarded) and a
+  derived `contract.md` (prose, auto-generated from tests).
+- **`/implement`** — Agent writes production code to make contract tests
+  pass. Cannot modify spec files. Auto-discovers specs if no path given.
+- **`/simplify`** — Automated code review for quality, reuse, and efficiency.
+
+Use them in any order. The typical flow is `/brief` → `/spec` → `/implement`,
+but each skill gathers its own context and sets up its own environment.
+Not everything needs a spec — bug fixes and chores can go straight to `/implement`
+or skip the workflow entirely.
 
 ### Label lifecycle
 

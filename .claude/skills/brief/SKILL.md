@@ -1,12 +1,12 @@
 ---
 name: brief
-description: Development session entry point. Gathers signals from GitHub, transcripts, and local workspace to present a work landscape or context brief. Use at the start of any development session.
+description: Gather signals and context for development work. Shows the work landscape or builds context for a specific intent. Works standalone — no prerequisites.
 argument-hint: [optional: issue number, feature description, or intent]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash(git worktree *), AskUserQuestion, EnterWorktree
 ---
 
-# /brief — Development Session Entry Point
+# /brief — Gather Context
 
 You are the orchestrator for the `/brief` skill. Your job is to gather signals
 from multiple sources, synthesize them, and help the developer decide what to
@@ -103,19 +103,20 @@ Ask if they want to set up a worktree for this work. If yes:
   copy of the repo so there are no collisions with in-progress work.
 - Remind them that `npm install` will run automatically via the SessionStart hook.
 
-Then offer:
-
-```
-Ready to proceed?
-  → /spec  — define executable contracts (code + prose specs)
-  → I need more context before starting
-```
-
-**Add labels to track workflow progress:**
+**Add labels to track workflow progress** (if linked to a GitHub issue):
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
 gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
+```
+
+Then suggest next steps — but don't prescribe a specific path:
+
+```
+What's next?
+  → /spec  — define executable contracts before coding
+  → /implement — jump straight to coding (if a spec already exists)
+  → Just start coding — skip the workflow entirely
 ```
 
 **If the user hasn't picked work yet:**
@@ -135,16 +136,12 @@ Wait for their selection and loop back to context mode.
 - **Context flows forward.** The brief you produce should be useful input for
   `/spec`. Structure it so the next skill can consume it.
 
-## Workflow Context
+## Related Skills
 
-The `/brief` skill is the entry point for: **Brief → Spec → Implement**
+These skills can follow `/brief`, but none are required:
 
-- **`/brief`** — Gathers context and helps you pick work
-- **`/spec`** — Drafts executable contracts (code test + derived prose spec)
-- **`/implement`** — Makes contracts pass (implementation is agent-mutable)
+- **`/spec`** — Define executable contracts (for features that need formal specs)
+- **`/implement`** — Write code to satisfy contract tests
+- **`/simplify`** — Review and clean up code
 
-Each handoff includes context for the next phase.
-
-Automated loops monitor GitHub labels to progress work:
-- **Loop 1** — Detects `spec:approved` labels and runs `/implement` automatically
-- **Loop 2** — Detects `impl:ready` labels and runs `/review` with Slack notifications
+Each skill is self-sufficient. Use them in any order, skip any, or use none.
