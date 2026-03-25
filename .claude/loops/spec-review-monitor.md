@@ -21,6 +21,7 @@ Detects `spec:ready-for-review` PRs, runs `/cdd-spec-review`, and sends Slack no
    - Run `/cdd-spec-review`
 4. If assessment is SOLID:
    - Labels transition: `spec:ready-for-review` → `spec:agent-reviewed`
+   - PR marked as ready for review (`gh pr ready`) — draft → non-draft
    - Post to #app-studio-prs in the PR's thread:
      `🤖 CDD Agent · spec-review`
      `✅ SOLID — ready for human approval`

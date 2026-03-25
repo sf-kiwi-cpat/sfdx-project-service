@@ -179,8 +179,9 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
-**If SOLID** — transition to `spec:agent-reviewed` so the human knows
-the agent has cleared the spec and it's ready for their approval.
+**If SOLID** — transition to `spec:agent-reviewed` and mark the PR as
+ready for review (undraft). This is the signal to humans that the agent
+has cleared the spec and it's ready for their approval.
 
 ```bash
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
@@ -189,6 +190,7 @@ if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)"
   gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
   if [ -n "$PR_NUMBER" ]; then
     gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+    gh pr ready $PR_NUMBER
   fi
 fi
 ```

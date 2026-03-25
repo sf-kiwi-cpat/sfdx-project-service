@@ -106,12 +106,33 @@ Once human approves both artifacts:
   - Use conventional commit format: `spec({feature}): {description}`
   - Reference the issue in the body: `Closes #N` or `Part of #N`
 - Push to remote
-- Update workflow labels to signal readiness for implementation:
+- Create a **draft PR** (or ensure existing PR is draft). Draft PRs signal
+  that the spec is not yet agent-reviewed — humans should not review until
+  the agent clears it and marks it ready:
   ```bash
-  ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+  BRANCH=$(git branch --show-current)
+  PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
 
-  if [ -n "$ISSUE_NUMBER" ]; then
+  if [ -z "$PR_NUMBER" ]; then
+    gh pr create --draft --title "spec({feature}): {description}" \
+      --body "$(cat <<'EOF'
+  ## Summary
+  - ...
+
+  Part of #N
+  EOF
+  )"
+    PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
+  else
+    # Ensure existing PR is in draft mode
+    gh pr ready "$PR_NUMBER" --undo 2>/dev/null || true
+  fi
+  ```
+- Update workflow labels to signal readiness for agent review:
+  ```bash
+  ISSUE_NUMBER=$(echo "$BRANCH" | sed 's/.*issue-\([0-9]*\).*/\1/')
+
+  if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$BRANCH" ]; then
     gh issue edit $ISSUE_NUMBER --remove-label spec:in-progress --add-label spec:ready-for-review
   fi
 
@@ -119,7 +140,9 @@ Once human approves both artifacts:
     gh pr edit $PR_NUMBER --remove-label spec:in-progress --add-label spec:ready-for-review
   fi
   ```
-- Notify: **"Specs pushed for review!"** Mention that once approved (label set to `spec:approved`), Loop 1 will automatically run `/cdd-implement`
+- Notify: **"Draft PR created — specs pushed for agent review!"** The spec
+  review loop will automatically run `/cdd-spec-review`. When the agent
+  clears the spec, the PR is marked ready for human review.
 
 ---
 

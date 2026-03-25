@@ -43,9 +43,9 @@ use CDD. Everything else, just start coding.
 
 ```
 /cdd-brief       → spec:in-progress
-/cdd-spec        → spec:ready-for-review
+/cdd-spec        → spec:ready-for-review (draft PR)
 Loop 1           → /cdd-spec-review:
-                      SOLID    → spec:agent-reviewed
+                      SOLID    → spec:agent-reviewed (PR marked ready)
                       HAS GAPS → spec:comments (fix → spec:ready-for-review)
 Human approves   → spec:approved
 Loop 2           → impl:in-progress → impl:ready
