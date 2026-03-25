@@ -36,9 +36,8 @@ Humans define *what* (contracts in `spec/`). Agents implement *how* (code in
 - **`/cdd-implement`** — Write code to satisfy contracts. Auto-discovers specs.
 - **`/cdd-code-review`** — Blind contract verification and quality audit
 
-Use CDD for `feat` commits and changes to observable behavior (new endpoints,
-response shape changes). Skip it for `fix`, `refactor`, `chore`, `docs`, and
-`test` work — just start coding.
+If the commit type would be `feat` or the change affects what the API returns,
+use CDD. Everything else, just start coding.
 
 ### Label lifecycle
 
@@ -56,14 +55,12 @@ Loop 2           → /cdd-code-review:
 Human merges PR
 ```
 
-### The rules
+### Guardrails
 
 `spec/` is human-guarded (agents cannot modify). `tests/` is agent-mutable.
 Test code (`contract.spec.ts`) is source of truth; `contract.md` is always
-derived from it.
-
-See [docs/workflow-guide.md](docs/workflow-guide.md) for the full workflow,
-loop setup, and troubleshooting. Loop prompts live in `.claude/loops/`.
+derived from it. See [docs/workflow-guide.md](docs/workflow-guide.md) for
+the full workflow, loop setup, and troubleshooting.
 
 ## Directory layout
 

@@ -125,10 +125,7 @@ wait for the Slack ping.
 
 ## Rules
 
-The guardrails are in `CLAUDE.md` (agents read them every session). The
-short version: `spec/` is human-guarded, `tests/` is agent-mutable, test
-code is source of truth.
-
+Guardrails are defined in `CLAUDE.md` and enforced every agent session.
 Two things worth expanding on here:
 
 Never edit `contract.md` directly. It's derived from `contract.spec.ts`.
