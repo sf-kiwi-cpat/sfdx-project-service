@@ -257,7 +257,10 @@ These skills complement `/cdd-spec`, but none are prerequisites:
 
 - **`/cdd-brief`** — Gathers context (helpful before writing specs, but /cdd-spec gathers its own)
 - **`/cdd-implement`** — Writes code to satisfy contract tests
-- **`/cdd-review`** — Verifies correctness and code quality
+- **`/cdd-code-review`** — Verifies correctness and code quality
+- **`/cdd-spec-review`** — Evaluates spec quality before human approval
 
-**Automation:** After spec is approved (`spec:approved` label), Loop 1 can
-automatically run `/cdd-implement`. But you can also run `/cdd-implement` manually at any time.
+**Automation:** After specs are pushed (`spec:ready-for-review` label), Loop 3
+runs `/cdd-spec-review` to post findings to the PR. After human approves
+(`spec:approved` label), Loop 1 runs `/cdd-implement`. After implementation
+completes (`impl:ready`), Loop 2 runs `/cdd-code-review`.
