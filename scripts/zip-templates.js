@@ -2,11 +2,13 @@
 
 /**
  * Zips each subdirectory of templates/src/ into templates/dist/.
- * Uses adm-zip (already a project dependency).
+ * Templates with a package.json get `npm install` run first so the
+ * zip includes node_modules (self-contained, like npm pack).
  */
 
-import { readdirSync, mkdirSync, statSync } from 'node:fs';
+import { readdirSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import AdmZip from 'adm-zip';
 
 const root = resolve(import.meta.dirname, '..');
@@ -20,8 +22,16 @@ const templates = readdirSync(srcDir).filter((name) =>
 );
 
 for (const name of templates) {
+  const templateDir = join(srcDir, name);
+
+  // Install deps so the zip is self-contained
+  if (existsSync(join(templateDir, 'package.json'))) {
+    console.log(`  ${name}: installing dependencies…`);
+    execSync('npm install --ignore-scripts', { cwd: templateDir, stdio: 'pipe' });
+  }
+
   const zip = new AdmZip();
-  zip.addLocalFolder(join(srcDir, name));
+  zip.addLocalFolder(templateDir);
   const outPath = join(distDir, `${name}.zip`);
   zip.writeZip(outPath);
   console.log(`  ${name} → ${outPath}`);
