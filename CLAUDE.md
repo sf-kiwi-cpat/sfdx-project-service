@@ -36,8 +36,24 @@ Code is a derived artifact; contracts are the durable source of truth.
 - **`/cdd-implement`** — Write code to satisfy contracts. Auto-discovers specs.
 - **`/cdd-code-review`** — Blind contract verification and quality audit
 
-Use in any order. Not everything needs a spec — bug fixes and chores can
-skip the workflow entirely.
+Use in any order. Not everything needs a spec. The CDD workflow exists for
+new features and changes to observable behavior. Most other work should
+skip it.
+
+### When to use CDD
+
+| Work type | Use CDD? | Why |
+|-----------|----------|-----|
+| New endpoint or feature | Yes | New observable behavior needs a contract |
+| Changing existing behavior | Yes | Contract should update before code does |
+| Bug fix with clear repro | No | Just fix it, add a regression test |
+| Refactor (no behavior change) | No | Existing specs already cover it |
+| Docs, chores, dependency bumps | No | No observable behavior to contract |
+| Test improvements | No | Tests are agent-mutable, no spec needed |
+
+When in doubt: if the commit type would be `feat` or the change affects
+what the API returns, use CDD. For `fix`, `refactor`, `chore`, `docs`,
+or `test`, just start coding.
 
 ### Label lifecycle
 
