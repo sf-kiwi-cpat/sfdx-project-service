@@ -22,7 +22,7 @@
  *
  * Acceptance criteria (from issue #80):
  * - npm pack produces a tarball containing only dist/, package.json, and README.md
- * - npx sf-project-service starts the server after npm install ./sf-project-service-<version>.tgz
+ * - npx sfdx-project-service starts the server after npm install ./sfdx-project-service-<version>.tgz
  *
  * These tests are the source of truth for this feature's external behavior.
  * The AI implementation agent must NOT modify this file.
@@ -44,9 +44,9 @@ describe('npm package shape', () => {
       expect(pkg.files).toContain('README.md');
     });
 
-    it('has a bin field mapping sf-project-service to ./dist/index.js', () => {
+    it('has a bin field mapping sfdx-project-service to ./dist/index.js', () => {
       expect(pkg.bin).toBeDefined();
-      expect(pkg.bin['sf-project-service']).toBe('./dist/index.js');
+      expect(pkg.bin['sfdx-project-service']).toBe('./dist/index.js');
     });
   });
 
