@@ -31,8 +31,8 @@ export function createApp() {
     openapi: {
       openapi: '3.0.0',
       info: {
-        title: 'SF Project Service',
-        version: '1.0.0',
+        title: 'SFDX Project Service',
+        version: '0.1.0',
         description: 'REST API wrapping an SFDX project for remote IDE-like operations',
       },
     },

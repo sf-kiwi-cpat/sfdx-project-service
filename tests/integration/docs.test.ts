@@ -39,7 +39,7 @@ describe('OpenAPI documentation', () => {
     const res = await request(app.server).get('/openapi.json');
     expect(res.status).toBe(200);
     expect(res.body.openapi).toBe('3.0.0');
-    expect(res.body.info.title).toBe('SF Project Service');
+    expect(res.body.info.title).toBe('SFDX Project Service');
     expect(res.body.paths).toBeDefined();
 
     const paths = Object.keys(res.body.paths);

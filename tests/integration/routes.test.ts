@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 
-describe('SF Project Service API', () => {
+describe('SFDX Project Service API', () => {
   let app: ReturnType<typeof createApp>;
 
   beforeEach(async () => {
