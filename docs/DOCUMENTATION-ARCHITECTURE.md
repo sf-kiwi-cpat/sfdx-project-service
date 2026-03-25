@@ -97,3 +97,18 @@ Link to the relevant `docs/` file instead.
 **Manual edits to sync-docs files.** Files marked as sync-docs maintained
 will be overwritten on the next run. Change the source code or templates
 instead.
+
+**Fragile links to sync-docs files.** If sync-docs renames a generated
+file (e.g., `docs/development.md`), links in manually maintained files
+like `CONTRIBUTING.md` break silently. The `/docs-standards` link
+integrity check catches this, but keep it in mind when linking to
+sync-docs outputs.
+
+## Scope checks
+
+The `/docs-standards` audit validates scope rules for manually maintained
+files: `CLAUDE.md`, `CONTRIBUTING.md`, `docs/workflow-guide.md`, and
+`docs/DOCUMENTATION-ARCHITECTURE.md`. Sync-docs maintained files
+(`docs/development.md`, `docs/architecture.md`, `docs/api.md`, etc.) are
+excluded — their content is generated and doesn't need manual scope
+enforcement.
