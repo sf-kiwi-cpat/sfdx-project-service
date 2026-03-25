@@ -132,8 +132,8 @@ code is source of truth.
 Two things worth expanding on here:
 
 Never edit `contract.md` directly. It's derived from `contract.spec.ts`.
-If you need to update it, edit the test code and run
-`/cdd-spec --refresh <feature>`.
+If you need to update it, edit the test code and re-run `/cdd-spec` on
+the feature to regenerate it.
 
 To change a contract during implementation: stop, go back to `/cdd-spec`,
 make the change, get it approved, then resume. Don't hack around a spec

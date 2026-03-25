@@ -29,7 +29,7 @@ for every check that follows. Extract:
 
 - The file inventory table (which files should exist, their audience, purpose, maintainer)
 - The CLAUDE.md scope rules (what belongs vs. what doesn't)
-- The CONTRIBUTING.md scope rules (thin orientation, max ~50 lines)
+- The CONTRIBUTING.md scope rules (thin orientation, ~50 lines target)
 - The anti-patterns list
 - The decision framework (where new content should go)
 
@@ -52,12 +52,14 @@ audit each file against its declared purpose. For each file:
 3. Flag content that belongs in a different file per the decision framework
 
 Pay special attention to:
-- **CLAUDE.md**: Should be under 120 lines. Should contain dev commands, git
-  hooks, CDD skill list, concise label lifecycle, directory layout, guardrail
-  rules, git conventions, and worktree gotchas. Should NOT contain full workflow
+- **CLAUDE.md**: Aim for ~120 lines. Should contain dev commands, git hooks,
+  CDD skill list, concise label lifecycle, directory layout, guardrail rules,
+  git conventions, and worktree gotchas. Should NOT contain full workflow
   walkthroughs, loop setup instructions, troubleshooting, or Docker commands.
-- **CONTRIBUTING.md**: Should be under 60 lines. Thin orientation with links
-  to `docs/`. Should NOT contain detailed instructions.
+  Flag if significantly over 120, but a few lines over is fine if every line
+  earns its place.
+- **CONTRIBUTING.md**: Aim for ~50 lines. Thin orientation with links to
+  `docs/`. Should NOT contain detailed instructions. Flag if over ~60.
 
 ### Step 4: Link Integrity
 

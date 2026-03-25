@@ -69,12 +69,13 @@ The label lifecycle stays in CLAUDE.md because agents need to know the
 state machine to set labels correctly, but the detailed walkthrough and
 loop setup live in `docs/workflow-guide.md`.
 
-Target: under 125 lines.
+Aim for ~120 lines. If you need to add content, consider what to move
+to `docs/` first.
 
 ## CONTRIBUTING.md scope
 
 Quick-start orientation, readable in under 2 minutes. Answers "I'm new,
-where do I start?" Maximum ~50 lines. Lists prerequisites, a 4-line quick
+where do I start?" Aim for ~50 lines. Lists prerequisites, a 4-line quick
 start, a brief workflow summary, and links to `docs/` for everything else.
 Never duplicates content from `docs/development.md` or
 `docs/workflow-guide.md`.

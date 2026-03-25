@@ -26,7 +26,7 @@ a step in the audit workflow.
 - [ ] Does NOT contain: monitor loop setup instructions
 - [ ] Does NOT contain: troubleshooting guides
 - [ ] Does NOT contain: Docker build/run commands
-- [ ] Line count is under 125
+- [ ] Line count is around 120 or less (guideline, not a hard gate)
 
 ### CONTRIBUTING.md
 - [ ] Contains: prerequisites list
@@ -35,7 +35,7 @@ a step in the audit workflow.
 - [ ] Contains: further reading links to docs/
 - [ ] Does NOT contain: detailed instructions (> 2 sentences per topic)
 - [ ] Does NOT contain: content duplicated from docs/development.md
-- [ ] Line count is under 60
+- [ ] Line count is around 60 or less (guideline, not a hard gate)
 
 ### docs/workflow-guide.md
 - [ ] Contains: all five CDD skills with correct names

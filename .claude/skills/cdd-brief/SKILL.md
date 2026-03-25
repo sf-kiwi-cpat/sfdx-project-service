@@ -114,9 +114,9 @@ Then suggest next steps — but don't prescribe a specific path:
 
 ```
 What's next?
-  → /cdd-spec      — define executable contracts before coding
-  → /cdd-implement — jump straight to coding (if a spec already exists)
-  → Just start coding — for docs, chores, refactors, and clear bug fixes
+- /cdd-spec — define executable contracts before coding
+- /cdd-implement — jump straight to coding (if a spec already exists)
+- Just start coding — for docs, chores, refactors, and clear bug fixes
 ```
 
 Annotate the third option based on the work type. If the work is a doc
