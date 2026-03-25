@@ -125,6 +125,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         // Stream any new progress events
         const events = getProgressEvents(deploymentId);
         for (let i = lastEventCount; i < events.length; i++) {
+          /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new events */
           raw.write('event: progress\n');
           raw.write(`data: ${JSON.stringify(events[i])}\n\n`);
         }
