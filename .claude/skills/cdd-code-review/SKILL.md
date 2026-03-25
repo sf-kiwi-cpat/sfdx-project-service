@@ -1,12 +1,12 @@
 ---
-name: cdd-review
+name: cdd-code-review
 description: Quality review via blind contract derivation and code audit. A separate agent reads only production code to derive what the contract should be, then compares against the actual spec. Catches correctness drift, AI slop, and architecture issues. Works standalone.
 argument-hint: [optional: path to contract.spec.ts, feature name, or PR number]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, Write, Edit, AskUserQuestion
 ---
 
-# /cdd-review — Blind Verification & Quality Audit
+# /cdd-code-review — Blind Verification & Quality Audit
 
 You are the review orchestrator. Your job is to verify implementation
 correctness and code quality using **independent verification** — not by
@@ -19,9 +19,9 @@ able to derive it from the code alone.
 
 ## Modes
 
-**With path** → Review that specific feature: `/cdd-review spec/deploy/contract.spec.ts`
-**With feature name** → Find and review: `/cdd-review deploy`
-**With PR number** → Review all changes in a PR: `/cdd-review #42`
+**With path** → Review that specific feature: `/cdd-code-review spec/deploy/contract.spec.ts`
+**With feature name** → Find and review: `/cdd-code-review deploy`
+**With PR number** → Review all changes in a PR: `/cdd-code-review #42`
 **No arguments** → Auto-detect: find the feature from current branch or recent changes
 
 ## Workflow
@@ -126,11 +126,13 @@ Review the implementation diff (`git diff main -- src/ tests/`) for:
 - No leftover debug/console statements
 - Import ordering matches project style
 
-### Step 4: Report
+### Step 4: Report & Post to PR
 
 Present findings organized by severity:
 
 ```
+**[CDD Code Review]**
+
 ## Contract Verification
 [Zero discrepancies | List of under/over/drift findings]
 
@@ -149,13 +151,33 @@ Present findings organized by severity:
 [PASS — ready for human merge | NEEDS WORK — fix listed issues first]
 ```
 
-If the verdict is NEEDS WORK and this was invoked by the automated loop,
-do NOT update labels to `review:complete`. Leave the `impl:ready` label
-so the issues can be addressed first.
+If the verdict is NEEDS WORK, transition labels to `impl:comments` so the
+state machine clearly reflects that fixes are needed. This prevents the
+review loop from re-reviewing unchanged code.
 
-### Step 5: Label Transition (if passing)
+**Post the report to the PR** so findings are durable and visible to human
+reviewers. Edit an existing review comment if one exists to avoid duplicates:
 
-Only if verdict is PASS, update labels:
+```bash
+PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+if [ -n "$PR_NUMBER" ]; then
+  EXISTING=$(gh pr view $PR_NUMBER --json comments \
+    --jq '.comments[] | select(.body | startswith("**[CDD Code Review]**")) | .url' | tail -1)
+  COMMENT_ID=$(echo "$EXISTING" | grep -oE '[0-9]+$')
+  if [ -n "$COMMENT_ID" ]; then
+    gh api repos/{owner}/{repo}/issues/comments/$COMMENT_ID \
+      -X PATCH -f body="$REVIEW_BODY"
+  else
+    gh pr comment $PR_NUMBER --body "$REVIEW_BODY"
+  fi
+fi
+```
+
+### Step 5: Label Transition
+
+Update labels based on verdict:
+
+**If PASS:**
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
@@ -163,6 +185,18 @@ if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)"
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
     gh pr edit $PR_NUMBER --remove-label impl:ready --add-label review:complete
+  fi
+fi
+```
+
+**If NEEDS WORK:**
+```bash
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --remove-label impl:ready --add-label impl:comments
+  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label impl:ready --add-label impl:comments
   fi
 fi
 ```
@@ -182,13 +216,14 @@ with 3 actionable findings is better than one with 30 style complaints.
 
 ### No Auto-Fix
 This skill reports findings. It does not fix code. The implementation agent
-(or human) addresses findings and re-runs `/cdd-review`. This separation ensures
-the reviewer stays independent.
+(or human) addresses findings and re-runs `/cdd-code-review`. This separation
+ensures the reviewer stays independent.
 
 ### Verdict Has Teeth
-If the verdict is NEEDS WORK, the label stays at `impl:ready` and the loop
-will re-invoke `/cdd-review` on the next cycle after fixes are applied. The
-review gate is real, not advisory.
+If the verdict is NEEDS WORK, labels transition to `impl:comments`. The
+review loop ignores PRs with this label — fixes must be applied and the
+label moved back to `impl:ready` before re-review occurs. The review gate
+is real, not advisory.
 
 ---
 
@@ -196,7 +231,9 @@ review gate is real, not advisory.
 
 - **`/cdd-implement`** — Writes the code this skill reviews
 - **`/cdd-spec`** — Defines the contracts this skill verifies against
+- **`/cdd-spec-review`** — Evaluates spec quality before human approval
 - **`/cdd-brief`** — Gathers context (not needed for review)
 
-**Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-review` automatically.
-If review passes, labels transition to `review:complete` and Slack is notified.
+**Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-code-review`
+automatically. If review passes, labels transition to `review:complete` and
+Slack is notified. If review fails, labels transition to `impl:comments`.

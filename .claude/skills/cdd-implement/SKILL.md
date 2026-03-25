@@ -100,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/cdd-review`)
+- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/cdd-code-review`)
 
 ---
 
@@ -174,11 +174,12 @@ These skills complement `/cdd-implement`, but none are prerequisites:
 
 - **`/cdd-brief`** — Gathers context (helpful for understanding scope, but not required)
 - **`/cdd-spec`** — Defines executable contracts (creates the spec files this skill implements)
-- **`/cdd-review`** — Verifies correctness and code quality after implementation
+- **`/cdd-code-review`** — Verifies correctness and code quality after implementation
+- **`/cdd-spec-review`** — Evaluates spec quality before human approval
 
 **Automation:** Loop 1 can detect `spec:approved` PRs and run `/cdd-implement`
 automatically. After implementation completes (`impl:ready`), Loop 2 can
-run `/cdd-review` for automated verification.
+run `/cdd-code-review` for automated verification.
 
 ---
 

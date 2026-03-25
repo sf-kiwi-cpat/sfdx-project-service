@@ -32,8 +32,9 @@ Code is a derived artifact; contracts are the durable source of truth.
 
 - **`/cdd-brief`** — Gather context from GitHub, transcripts, local state
 - **`/cdd-spec`** — Define executable contracts (`contract.spec.ts` + `contract.md`)
+- **`/cdd-spec-review`** — Evaluate spec quality before human approval
 - **`/cdd-implement`** — Write code to satisfy contracts. Auto-discovers specs.
-- **`/cdd-review`** — Blind contract verification and quality audit
+- **`/cdd-code-review`** — Blind contract verification and quality audit
 
 Use in any order. Not everything needs a spec — bug fixes and chores can
 skip the workflow entirely.
@@ -41,18 +42,24 @@ skip the workflow entirely.
 ### Label lifecycle
 
 ```
-/cdd-brief   → spec:in-progress
-/cdd-spec    → spec:ready-for-review
-Human approves → spec:approved
-Loop 1       → impl:in-progress → impl:ready
-Loop 2       → review:complete (+ Slack notification)
+/cdd-brief       → spec:in-progress
+/cdd-spec        → spec:ready-for-review
+Loop 3           → /cdd-spec-review:
+                      SOLID    → stays spec:ready-for-review
+                      HAS GAPS → spec:comments (fix → spec:ready-for-review)
+Human approves   → spec:approved
+Loop 1           → impl:in-progress → impl:ready
+Loop 2           → /cdd-code-review:
+                      PASS       → review:complete
+                      NEEDS WORK → impl:comments (fix → impl:ready)
 Human merges PR
 ```
 
 ### Automated loops
 
-Two `/loop` commands run in separate Claude Code terminals. Copy the
+Three `/loop` commands run in separate Claude Code terminals. Copy the
 command from each file:
+- `.claude/loops/spec-review-monitor.md` — polls for `spec:ready-for-review`
 - `.claude/loops/implement-monitor.md` — polls for `spec:approved`
 - `.claude/loops/review-monitor.md` — polls for `impl:ready`
 

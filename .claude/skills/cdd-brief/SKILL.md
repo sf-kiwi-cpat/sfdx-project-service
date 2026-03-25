@@ -142,6 +142,7 @@ These skills can follow `/cdd-brief`, but none are required:
 
 - **`/cdd-spec`** — Define executable contracts (for features that need formal specs)
 - **`/cdd-implement`** — Write code to satisfy contract tests
-- **`/cdd-review`** — Verify correctness and code quality
+- **`/cdd-code-review`** — Verify correctness and code quality
+- **`/cdd-spec-review`** — Evaluate spec quality before human approval
 
 Each skill is self-sufficient. Use them in any order, skip any, or use none.
