@@ -102,28 +102,10 @@ export async function deployMetadataAsync(
       },
     });
 
-    // Capture progress events as deployment polls occur
+    // Capture progress events as deployment polls occur — only fires during real SDR polling
+    /* v8 ignore next 3 */
     deploy.onUpdate((statusUpdate: Record<string, unknown>) => {
-      // SDR provides status updates during polling
-      const getFileResponses = statusUpdate.getFileResponses as
-        | (() => Array<{ fullName: string; type: string; state: string }>)
-        | undefined;
-      const components: DeploymentComponentResult[] = (getFileResponses?.() || []).map((f) => ({
-        fullName: f.fullName,
-        type: f.type,
-        state: f.state,
-      }));
-
-      const event: ProgressEvent = {
-        deploymentId,
-        timestamp: new Date().toISOString(),
-        status: (statusUpdate.status as string) || 'InProgress',
-        numberComponentsDeployed: (statusUpdate.numberComponentsDeployed as number) || 0,
-        numberComponentsTotal: (statusUpdate.numberComponentsTotal as number) || 0,
-        components,
-      };
-
-      addProgressEvent(deploymentId, event);
+      addProgressEvent(deploymentId, mapStatusToProgressEvent(deploymentId, statusUpdate));
     });
 
     // Set up a 10-minute timeout for polling to prevent indefinite waits (600,000 ms)
@@ -142,6 +124,7 @@ export async function deployMetadataAsync(
       })),
     };
 
+    /* v8 ignore next 3 -- only set when Salesforce returns an error message */
     if (result.response.errorMessage) {
       deploymentResult.errorMessage = result.response.errorMessage;
     }
@@ -153,4 +136,31 @@ export async function deployMetadataAsync(
     logger.error({ deploymentId, err }, 'Async deployment failed');
     setDeploymentError(deploymentId, msg);
   }
+}
+
+/**
+ * Map an SDR status update into a ProgressEvent.
+ * Extracted as a pure function for testability.
+ */
+export function mapStatusToProgressEvent(
+  deploymentId: string,
+  statusUpdate: Record<string, unknown>
+): ProgressEvent {
+  const getFileResponses = statusUpdate.getFileResponses as
+    | (() => Array<{ fullName: string; type: string; state: string }>)
+    | undefined;
+  const components: DeploymentComponentResult[] = (getFileResponses?.() || []).map((f) => ({
+    fullName: f.fullName,
+    type: f.type,
+    state: f.state,
+  }));
+
+  return {
+    deploymentId,
+    timestamp: new Date().toISOString(),
+    status: (statusUpdate.status as string) || 'InProgress',
+    numberComponentsDeployed: (statusUpdate.numberComponentsDeployed as number) || 0,
+    numberComponentsTotal: (statusUpdate.numberComponentsTotal as number) || 0,
+    components,
+  };
 }

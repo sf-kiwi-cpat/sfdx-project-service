@@ -19,7 +19,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { buildComponentSet } from '../../src/domain/deploy.js';
+import { buildComponentSet, mapStatusToProgressEvent } from '../../src/domain/deploy.js';
 
 describe('buildComponentSet', () => {
   let tmpDir: string;
@@ -49,5 +49,51 @@ describe('buildComponentSet', () => {
     await expect(buildComponentSet(tmpDir)).rejects.toThrow(
       'sfdx-project.json must contain at least one packageDirectory'
     );
+  });
+});
+
+describe('mapStatusToProgressEvent', () => {
+  it('maps a full status update with file responses', () => {
+    const statusUpdate = {
+      status: 'InProgress',
+      numberComponentsDeployed: 2,
+      numberComponentsTotal: 5,
+      getFileResponses: () => [
+        { fullName: 'MyObject__c', type: 'CustomObject', state: 'Created' },
+        { fullName: 'MyField__c', type: 'CustomField', state: 'Changed' },
+      ],
+    };
+
+    const event = mapStatusToProgressEvent('dep-1', statusUpdate);
+
+    expect(event.deploymentId).toBe('dep-1');
+    expect(event.status).toBe('InProgress');
+    expect(event.numberComponentsDeployed).toBe(2);
+    expect(event.numberComponentsTotal).toBe(5);
+    expect(event.components).toEqual([
+      { fullName: 'MyObject__c', type: 'CustomObject', state: 'Created' },
+      { fullName: 'MyField__c', type: 'CustomField', state: 'Changed' },
+    ]);
+    expect(event.timestamp).toBeDefined();
+  });
+
+  it('defaults to InProgress when status is missing', () => {
+    const event = mapStatusToProgressEvent('dep-2', {});
+
+    expect(event.status).toBe('InProgress');
+    expect(event.numberComponentsDeployed).toBe(0);
+    expect(event.numberComponentsTotal).toBe(0);
+    expect(event.components).toEqual([]);
+  });
+
+  it('handles missing getFileResponses gracefully', () => {
+    const event = mapStatusToProgressEvent('dep-3', {
+      status: 'Succeeded',
+      numberComponentsDeployed: 3,
+      numberComponentsTotal: 3,
+    });
+
+    expect(event.status).toBe('Succeeded');
+    expect(event.components).toEqual([]);
   });
 });
