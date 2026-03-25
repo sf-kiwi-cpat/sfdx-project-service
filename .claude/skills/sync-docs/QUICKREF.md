@@ -53,7 +53,7 @@ gh pr view [pr-number]
 ├── README.md           # Overview + tech stack
 ├── api.md             # Endpoints + examples
 ├── architecture.md    # Design + security + deployment
-├── development.md     # Setup + testing + docker
+├── development.md     # Setup + testing + CI/CD
 ├── api-examples.md    # Curl/bash/JS/Python examples
 └── modules.md         # Module reference + code examples
 ```

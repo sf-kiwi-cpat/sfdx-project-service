@@ -48,14 +48,6 @@ npm run test:coverage    # all tests with coverage report
 npm run lint             # eslint
 ```
 
-## Docker
-
-```bash
-npm run build
-docker build -t sfdx-project-service .
-docker run -p 3000:3000 sfdx-project-service
-```
-
 ## Error Responses
 
 All errors follow RFC 9457 (Problem Details) with `Content-Type: application/problem+json`:

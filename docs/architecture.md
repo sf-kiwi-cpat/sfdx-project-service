@@ -274,17 +274,8 @@ PROJECTS_ROOT=/mnt/efs/projects   # EFS mount for projects
 TEMPLATES_DIR=/app/templates      # Read-only template location
 ```
 
-### Docker
+### npm Package
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY dist/ ./dist/
-COPY templates/ ./templates/
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-```
-
-See [development.md](./development.md) for build instructions.
+The service is distributed as an npm tarball (`npm pack`). Consumers install it
+and start via `npx sfdx-project-service`. See the `npm-package` contract spec
+for tarball shape requirements.

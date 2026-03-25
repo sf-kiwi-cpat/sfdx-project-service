@@ -36,7 +36,7 @@ Starts the server with file watching (reloads on changes). Listen on `http://loc
 npm run build
 ```
 
-Compiles `src/` to `dist/`. Required before running with `npm start` or building Docker images.
+Compiles `src/` to `dist/`. Required before running with `npm start`.
 
 ### Format & Lint
 
@@ -123,53 +123,6 @@ Runs on `git push`:
 3. **Coverage check** — Ensure 90% threshold met
 
 Blocks push if build fails, tests fail, or coverage is insufficient.
-
-## Docker
-
-### Build Image
-
-```bash
-npm run build
-docker build -t sfdx-project-service .
-```
-
-### Run Container
-
-```bash
-docker run -p 3000:3000 sfdx-project-service
-```
-
-### Environment Variables in Docker
-
-```bash
-docker run \
-  -p 3000:3000 \
-  -e PORT=3000 \
-  -e PROJECTS_ROOT=/data/projects \
-  -v /mnt/efs:/data \
-  sfdx-project-service
-```
-
-### Dockerfile
-
-Located at `Dockerfile`:
-
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY dist/ ./dist/
-COPY templates/ ./templates/
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-```
-
-To build:
-```bash
-npm run build  # Must build before docker build
-docker build -t sfdx-project-service .
-```
 
 ## Git Worktrees
 
@@ -341,8 +294,7 @@ GitHub Actions workflow runs on every push and PR:
 2. Run linting
 3. Run tests with coverage
 4. Check coverage thresholds (90%)
-5. Build Docker image (on main branch)
-6. Push image to registry (on main branch)
+5. Build npm package (on main branch)
 
 Workflow file: `.github/workflows/ci.yml`
 
@@ -355,14 +307,6 @@ Ensure `templates/` directory exists and contains at least one `.zip` file.
 ### Pre-push hook blocks with coverage error
 
 Run `npm run test:coverage` locally to see full coverage report. Coverage threshold is 90% overall and 85% per file on branches.
-
-### Docker build fails
-
-Ensure TypeScript is compiled first:
-```bash
-npm run build
-docker build -t sfdx-project-service .
-```
 
 ### Port 3000 already in use
 
@@ -391,6 +335,6 @@ nvm use 20  # If using nvm
 2. Update version in `package.json`
 3. Create a git tag: `git tag v1.0.0`
 4. Push tag: `git push origin v1.0.0`
-5. GitHub Actions builds and pushes Docker image to registry
+5. GitHub Actions builds and publishes npm package
 
 See CI/CD workflow for details.
