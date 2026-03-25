@@ -114,10 +114,16 @@ Then suggest next steps — but don't prescribe a specific path:
 
 ```
 What's next?
-  → /cdd-spec  — define executable contracts before coding
-  → /cdd-implement — jump straight to coding (if a spec already exists)
-  → Just start coding — skip the workflow entirely
+- /cdd-spec — define executable contracts before coding
+- /cdd-implement — jump straight to coding (if a spec already exists)
+- Just start coding — for docs, chores, refactors, and clear bug fixes
 ```
+
+Annotate the third option based on the work type. If the work is a doc
+change, chore, dependency bump, refactor with no behavior change, or a
+bug fix with a clear repro, say so: "This looks like a [type] — you can
+skip the contract workflow and start coding directly." The CDD workflow
+is for new features and changes to observable behavior.
 
 **If the user hasn't picked work yet:**
 Wait for their selection and loop back to context mode.

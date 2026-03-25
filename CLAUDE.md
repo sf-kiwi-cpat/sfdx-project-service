@@ -25,8 +25,8 @@ Do not skip hooks with `--no-verify`.
 
 ## CDD — Contract-Driven Development
 
-Humans define *what* (contracts in `spec/`). Agents implement *how* (code in `src/`).
-Code is a derived artifact; contracts are the durable source of truth.
+Humans define *what* (contracts in `spec/`). Agents implement *how* (code in
+`src/`). Code is a derived artifact; contracts are the durable source of truth.
 
 ### Skills (each works standalone)
 
@@ -36,32 +36,31 @@ Code is a derived artifact; contracts are the durable source of truth.
 - **`/cdd-implement`** — Write code to satisfy contracts. Auto-discovers specs.
 - **`/cdd-code-review`** — Blind contract verification and quality audit
 
-Use in any order. Not everything needs a spec — bug fixes and chores can
-skip the workflow entirely.
+If the commit type would be `feat` or the change affects what the API returns,
+use CDD. Everything else, just start coding.
 
 ### Label lifecycle
 
 ```
 /cdd-brief       → spec:in-progress
 /cdd-spec        → spec:ready-for-review
-Loop 3           → /cdd-spec-review:
+Loop 1           → /cdd-spec-review:
                       SOLID    → stays spec:ready-for-review
                       HAS GAPS → spec:comments (fix → spec:ready-for-review)
 Human approves   → spec:approved
-Loop 1           → impl:in-progress → impl:ready
-Loop 2           → /cdd-code-review:
+Loop 2           → impl:in-progress → impl:ready
+Loop 3           → /cdd-code-review:
                       PASS       → review:complete
                       NEEDS WORK → impl:comments (fix → impl:ready)
 Human merges PR
 ```
 
-### Automated loops
+### Guardrails
 
-Three `/loop` commands run in separate Claude Code terminals. Copy the
-command from each file:
-- `.claude/loops/spec-review-monitor.md` — polls for `spec:ready-for-review`
-- `.claude/loops/implement-monitor.md` — polls for `spec:approved`
-- `.claude/loops/review-monitor.md` — polls for `impl:ready`
+`spec/` is human-guarded (agents cannot modify). `tests/` is agent-mutable.
+Test code (`contract.spec.ts`) is source of truth; `contract.md` is always
+derived from it. See [docs/workflow-guide.md](docs/workflow-guide.md) for
+the full workflow, loop setup, and troubleshooting.
 
 ## Directory layout
 
@@ -107,6 +106,12 @@ Title: same as commit format, under 70 chars. Template in `.github/pull_request_
 
 - `.claude/settings.json` — team-shared (checked into git)
 - `.claude/settings.local.json` — personal (gitignored)
+
+## Documentation
+
+When modifying documentation, follow the structure defined in
+[docs/DOCUMENTATION-ARCHITECTURE.md](docs/DOCUMENTATION-ARCHITECTURE.md).
+Run `/docs-standards` to audit compliance.
 
 ## Gotchas
 

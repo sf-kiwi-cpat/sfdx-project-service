@@ -14,7 +14,7 @@ npm run lint         # Lint with ESLint
 
 ## What Is This?
 
-SF Project Service is a Node.js Express API that provides remote operations on Salesforce SFDX projects:
+SF Project Service is a Node.js Fastify API that provides remote operations on Salesforce SFDX projects:
 
 - **Template-based project creation** — Bootstrap new projects from pre-packaged templates (`.zip` files)
 - **File tree traversal** — Explore project file structure and organization
@@ -36,13 +36,13 @@ Projects are deployed using Salesforce credentials (access token + instance URL)
 ## Technology Stack
 
 - **Runtime**: Node.js ≥ 20 (ESM)
-- **Framework**: Express 4
+- **Framework**: Fastify
 - **Language**: TypeScript (strict mode)
 - **Dependencies**:
   - `@salesforce/core` — Salesforce API
   - `@salesforce/source-deploy-retrieve` — SDR for metadata deployment
   - `pino` — Structured logging
-  - `swagger-jsdoc` + `swagger-ui-express` — API documentation
+  - `@fastify/swagger` + `@fastify/swagger-ui` — API documentation
   - `adm-zip` — ZIP file extraction
 
 ## API Endpoints
@@ -96,7 +96,7 @@ This project uses git worktrees. Git worktrees share source but **not** `node_mo
 .
 ├── src/                          # Source TypeScript
 │   ├── index.ts                  # Server entry point
-│   ├── app.ts                    # Express app setup
+│   ├── app.ts                    # Fastify app setup
 │   ├── config.ts                 # Configuration (env vars)
 │   ├── logger.ts                 # Pino logger setup
 │   ├── errors.ts                 # Error handling (RFC 9457)
@@ -104,7 +104,7 @@ This project uses git worktrees. Git worktrees share source but **not** `node_mo
 │   ├── projects.ts               # Project CRUD
 │   ├── deploy.ts                 # Deployment logic
 │   ├── files.ts                  # File tree building
-│   └── routes/                   # Express route handlers
+│   └── routes/                   # Fastify route handlers
 │       ├── index.ts              # Route aggregation
 │       ├── templates.routes.ts   # GET /templates
 │       ├── projects.routes.ts    # POST/GET /projects/*
@@ -124,7 +124,9 @@ This project uses git worktrees. Git worktrees share source but **not** `node_mo
 - [API Documentation](./api.md)
 - [Architecture](./architecture.md)
 - [Development Guide](./development.md)
+- [Workflow Guide](./workflow-guide.md)
 - [Module Reference](./modules.md)
+- [Documentation Architecture](./DOCUMENTATION-ARCHITECTURE.md)
 
 ---
 
