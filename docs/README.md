@@ -73,7 +73,7 @@ See [architecture.md](./architecture.md) for detailed system design, data flow, 
 
 ## Development
 
-See [development.md](./development.md) for testing, linting, Docker setup, and CI/CD information.
+See [development.md](./development.md) for testing, linting, and CI/CD information.
 
 ## Testing
 
@@ -85,13 +85,6 @@ npm run test:watch     # Watch mode
 ```
 
 Coverage must run against the full test suite (integration tests provide most coverage).
-
-## Docker
-
-```bash
-npm run build && docker build -t sfdx-project-service .
-docker run -p 3000:3000 sfdx-project-service
-```
 
 ## Worktrees
 

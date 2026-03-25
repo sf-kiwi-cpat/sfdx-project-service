@@ -27,7 +27,7 @@ The SF Project Service starts in its **own repo** for the steel thread. Key reas
 - Enforces the clean boundary between services — no accidental coupling via internal imports
 - Enables moving fast without coordinating repo conventions with another team
 
-The container build (Dockerfile) pulls from both repos to colocate them at deploy time.
+The service is distributed as an npm package and consumed via `npx`.
 
 ### Future: Consolidation into `agentic-dx`
 
