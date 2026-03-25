@@ -146,7 +146,7 @@ Present findings organized by severity:
 - [Style preferences, minor improvements]
 
 ## Verdict
-[PASS — ready for human merge | NEEDS WORK — fix listed issues first]
+[✅ PASS — ready for human merge | ⚠️ NEEDS WORK — fix listed issues first]
 ```
 
 If the verdict is NEEDS WORK, transition labels to `impl:comments` so the

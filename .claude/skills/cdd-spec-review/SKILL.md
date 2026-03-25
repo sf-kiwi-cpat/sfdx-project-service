@@ -155,7 +155,7 @@ mock boundary issues, missing scenarios]
 - [Notes on spec structure, style, patterns]
 
 ## Assessment
-[SOLID — spec is clear and complete | HAS GAPS — address listed items
+[✅ SOLID — spec is clear and complete | ⚠️ HAS GAPS — address listed items
 before approving]
 ```
 
