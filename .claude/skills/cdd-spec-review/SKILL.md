@@ -1,6 +1,6 @@
 ---
 name: cdd-spec-review
-description: Evaluate spec quality before human approval. Independent agent critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Advisory — does not gate label transitions.
+description: Evaluate spec quality before human approval. Independent agent critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Transitions to spec:comments when gaps are found.
 argument-hint: [optional: path to contract.spec.ts, feature name, or PR number]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, AskUserQuestion
@@ -179,9 +179,29 @@ if [ -n "$PR_NUMBER" ]; then
 fi
 ```
 
-This skill does NOT transition labels. The spec review is advisory — the
-human decides whether to approve the spec based on both their own judgment
-and the agent's critique.
+**Label transition based on assessment:**
+
+**If SOLID** — no label change. The spec stays at `spec:ready-for-review`
+for human approval.
+
+**If HAS GAPS** — transition to `spec:comments` so the state machine
+reflects that feedback exists. The spec author addresses findings and
+re-pushes, which moves the label back to `spec:ready-for-review`.
+
+```bash
+PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+  fi
+fi
+```
+
+The human can still approve a spec with `spec:comments` if they disagree
+with the agent's assessment — just remove `spec:comments` and add
+`spec:approved` directly.
 
 ---
 
@@ -192,11 +212,12 @@ The spec critic must not share context with the spec author. The blind
 derivation agent reads only spec files and derives what an implementation
 would need. If the derivation is ambiguous, the spec is ambiguous.
 
-### Advisory, Not Blocking
-This skill posts findings but does not gate label transitions. The human
-reviewer considers the critique alongside their own review and decides
-whether to approve (`spec:approved`) or request changes. The spec review
-loop re-runs when the spec is updated.
+### Gating, Not Blocking
+When the assessment is HAS GAPS, this skill transitions labels to
+`spec:comments` — making it clear that feedback exists. The human can
+override this by moving directly to `spec:approved` if they disagree.
+The spec review loop re-runs when the spec returns to
+`spec:ready-for-review`.
 
 ### Concrete over Abstract
 "Consider adding error handling tests" is useless feedback. "What happens
@@ -224,5 +245,5 @@ separation ensures the critic stays independent.
 - **`/cdd-brief`** — Gathers context (not needed for spec review)
 
 **Automation:** Loop 3 detects `spec:ready-for-review` PRs and runs
-`/cdd-spec-review` automatically. Findings are posted to the PR for the
-human reviewer.
+`/cdd-spec-review` automatically. Findings are posted to the PR. If gaps
+are found, labels transition to `spec:comments`.

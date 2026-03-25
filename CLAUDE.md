@@ -44,10 +44,14 @@ skip the workflow entirely.
 ```
 /cdd-brief       → spec:in-progress
 /cdd-spec        → spec:ready-for-review
-Loop 3           → /cdd-spec-review posts findings to PR (advisory)
+Loop 3           → /cdd-spec-review:
+                      SOLID    → stays spec:ready-for-review
+                      HAS GAPS → spec:comments (fix → spec:ready-for-review)
 Human approves   → spec:approved
 Loop 1           → impl:in-progress → impl:ready
-Loop 2           → /cdd-code-review posts report to PR → review:complete
+Loop 2           → /cdd-code-review:
+                      PASS       → review:complete
+                      NEEDS WORK → impl:comments (fix → impl:ready)
 Human merges PR
 ```
 

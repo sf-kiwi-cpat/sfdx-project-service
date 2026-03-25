@@ -5,7 +5,7 @@ Detects `spec:ready-for-review` PRs, runs `/cdd-spec-review`, and posts findings
 ## Start
 
 ```
-/loop 5m Check for open PRs with the spec:ready-for-review label using gh pr list --state open --label spec:ready-for-review --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings directly to the PR as a comment.
+/loop 5m Check for open PRs with the spec:ready-for-review label using gh pr list --state open --label spec:ready-for-review --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings to the PR as a comment. If gaps are found, labels transition to spec:comments.
 ```
 
 ## What happens each cycle
@@ -20,10 +20,12 @@ Detects `spec:ready-for-review` PRs, runs `/cdd-spec-review`, and posts findings
    - Find spec: `find spec -name "contract.spec.ts" -type f | head -1`
    - Run `/cdd-spec-review`
 4. `/cdd-spec-review` posts findings as a PR comment
-5. No label transitions — the human decides `spec:approved`
+5. If assessment is SOLID: no label change (stays `spec:ready-for-review`)
+6. If assessment is HAS GAPS: labels transition to `spec:comments`
+7. The human can override by moving directly to `spec:approved`
 
 ## Label transitions
 
 ```
-(none — spec review is advisory, does not gate approval)
+spec:ready-for-review  →  spec:comments  (if /cdd-spec-review finds gaps)
 ```

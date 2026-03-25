@@ -151,9 +151,9 @@ Present findings organized by severity:
 [PASS — ready for human merge | NEEDS WORK — fix listed issues first]
 ```
 
-If the verdict is NEEDS WORK and this was invoked by the automated loop,
-do NOT update labels to `review:complete`. Leave the `impl:ready` label
-so the issues can be addressed first.
+If the verdict is NEEDS WORK, transition labels to `impl:comments` so the
+state machine clearly reflects that fixes are needed. This prevents the
+review loop from re-reviewing unchanged code.
 
 **Post the report to the PR** so findings are durable and visible to human
 reviewers. Edit an existing review comment if one exists to avoid duplicates:
@@ -173,9 +173,11 @@ if [ -n "$PR_NUMBER" ]; then
 fi
 ```
 
-### Step 5: Label Transition (if passing)
+### Step 5: Label Transition
 
-Only if verdict is PASS, update labels:
+Update labels based on verdict:
+
+**If PASS:**
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
@@ -183,6 +185,18 @@ if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)"
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
     gh pr edit $PR_NUMBER --remove-label impl:ready --add-label review:complete
+  fi
+fi
+```
+
+**If NEEDS WORK:**
+```bash
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --remove-label impl:ready --add-label impl:comments
+  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label impl:ready --add-label impl:comments
   fi
 fi
 ```
@@ -206,9 +220,10 @@ This skill reports findings. It does not fix code. The implementation agent
 ensures the reviewer stays independent.
 
 ### Verdict Has Teeth
-If the verdict is NEEDS WORK, the label stays at `impl:ready` and the loop
-will re-invoke `/cdd-code-review` on the next cycle after fixes are applied.
-The review gate is real, not advisory.
+If the verdict is NEEDS WORK, labels transition to `impl:comments`. The
+review loop ignores PRs with this label — fixes must be applied and the
+label moved back to `impl:ready` before re-review occurs. The review gate
+is real, not advisory.
 
 ---
 
@@ -221,4 +236,4 @@ The review gate is real, not advisory.
 
 **Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-code-review`
 automatically. If review passes, labels transition to `review:complete` and
-Slack is notified.
+Slack is notified. If review fails, labels transition to `impl:comments`.

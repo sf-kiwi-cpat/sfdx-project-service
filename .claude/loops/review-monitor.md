@@ -5,7 +5,7 @@ Detects `impl:ready` PRs, runs `/cdd-code-review`, and sends Slack notification.
 ## Start
 
 ```
-/loop 5m Check for open PRs with the impl:ready label using gh pr list --state open --label impl:ready --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels are already transitioned by /cdd-code-review, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: do NOT update labels, post review findings in the PR's thread.
+/loop 5m Check for open PRs with the impl:ready label using gh pr list --state open --label impl:ready --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels are already transitioned to review:complete by /cdd-code-review, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: labels are already transitioned to impl:comments by /cdd-code-review, post review findings in the PR's thread.
 ```
 
 ## What happens each cycle
@@ -22,8 +22,9 @@ Detects `impl:ready` PRs, runs `/cdd-code-review`, and sends Slack notification.
    - Labels already transitioned to `review:complete` by `/cdd-code-review`
    - Post to #app-studio-prs in the PR's thread (see Slack threading below)
 5. If verdict is NEEDS WORK:
-   - Do NOT update labels (leave `impl:ready` for re-review next cycle)
+   - Labels already transitioned to `impl:comments` by `/cdd-code-review`
    - Post review findings in the PR's thread
+   - The PR will not be re-reviewed until `impl:comments` is moved back to `impl:ready`
 
 ## Slack threading in #app-studio-prs
 
@@ -39,4 +40,5 @@ Each PR gets its own thread in channel C0ANF2KL5HT:
 
 ```
 impl:ready  →  review:complete  (after /cdd-code-review passes)
+impl:ready  →  impl:comments    (after /cdd-code-review finds issues)
 ```
