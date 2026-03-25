@@ -2,18 +2,18 @@
 
 ## Purpose
 
-Defines the contract for integrating a Vite programmatic build step into the deployment pipeline. When a project contains `.tsx` or `.jsx` source files, the service runs `vite.build()` before proceeding with metadata deployment to Salesforce. The service owns the build configuration — the user's project has no build tooling (no `package.json`, no `vite.config.ts`).
+Defines the contract for integrating a Vite programmatic build step into the deployment pipeline. When a project contains `.tsx` or `.jsx` source files, the service runs `vite.build()` before proceeding with metadata deployment to Salesforce. The service owns the build configuration — the user's project has no build tooling (no `vite.config.ts`).
 
 ## Endpoints
 
 ### POST /v1/projects/:id/deployments
 
-Initiates a deployment with optional Vite build step. Behavior depends on project contents:
+Initiates a deployment with optional Vite build step. The POST always returns 202 immediately — the build runs asynchronously as part of the deployment pipeline. Build errors surface in the deployment result.
 
-1. **Project has .tsx/.jsx files, build succeeds** -> Deployment proceeds -> 202 Accepted
-2. **Project has .tsx/.jsx files, build fails** -> Deployment aborted -> 502 Build Failed
-3. **Project has .tsx/.jsx files, build times out (5 min)** -> Deployment aborted -> 502 Build Failed
-4. **No .tsx/.jsx files (metadata-only)** -> Build skipped, deployment proceeds -> 202 Accepted
+1. **Project has .tsx/.jsx files, build succeeds** → 202 Accepted → deployment proceeds
+2. **Project has .tsx/.jsx files, build fails** → 202 Accepted → deployment result contains build error
+3. **Project has .tsx/.jsx files, build times out (5 min)** → 202 Accepted → deployment result contains timeout error
+4. **No .tsx/.jsx files (metadata-only)** → 202 Accepted → build skipped, deployment proceeds
 
 ## Request
 
@@ -32,9 +32,9 @@ X-Salesforce-Instance-Url: {instanceUrl}
 
 ## Responses
 
-### 202 Accepted — Build and/or Deployment Queued
+### 202 Accepted — Deployment Queued
 
-Returned when build succeeds (or is skipped) and deployment is queued.
+Always returned for valid requests. Build and deployment run asynchronously.
 
 ```json
 {
@@ -43,33 +43,7 @@ Returned when build succeeds (or is skipped) and deployment is queued.
 }
 ```
 
-**Conditions:**
-- Build completed successfully (if applicable) or was skipped (no tsx/jsx)
-- Deployment queued for async execution
-- Client can poll `/v1/projects/:id/deployments/:deploymentId` for status
-
-### 502 Build Failed
-
-Returned when `vite.build()` fails or times out. Deployment is not queued.
-
-```json
-{
-  "status": 502,
-  "title": "Build Failed",
-  "detail": "Build failed: syntax error in App.tsx"
-}
-```
-
-Content-Type: `application/problem+json` (RFC 9457)
-
-**Build Timeout Variant:**
-```json
-{
-  "status": 502,
-  "title": "Build Failed",
-  "detail": "Build timed out after 5 minutes"
-}
-```
+Client monitors progress via SSE (`/v1/projects/:id/deployments/:deploymentId/events`) or polling (`GET /v1/projects/:id/deployments/:deploymentId`).
 
 ### 400 Bad Request — Missing/Invalid Credentials
 
@@ -112,11 +86,9 @@ The service scans the project directory for `.tsx` or `.jsx` files. If any are f
 Build uses the Vite programmatic API (`vite.build()`). The service provides the build configuration:
 
 - **Entry:** `index.html` at project root
-- **Output:** `force-app/main/default/staticresources/App/`
-- **Timeout:** 5 minutes (300,000 ms) via AbortSignal
-- **Framework:** React (JSX transform configured by service)
-
-The user's project contains only source files (`.tsx`, `.jsx`, `index.html`). No `package.json`, `vite.config.ts`, or `node_modules` exist in the project — the service owns all build infrastructure.
+- **Output:** `force-app/main/default/webapplications/App/dist/`
+- **Timeout:** 5 minutes (300,000 ms)
+- **Concurrency:** Per-project lock prevents duplicate builds; concurrent requests coalesce
 
 ### When Build is Skipped
 
@@ -124,30 +96,34 @@ Build is skipped (deployment proceeds directly) when no `.tsx` or `.jsx` files e
 
 ### Build Output
 
-Vite outputs compiled assets to `force-app/main/default/staticresources/App/`. SDR then picks up these files as part of the normal metadata deployment to Salesforce.
+Vite outputs compiled assets to `force-app/main/default/webapplications/App/dist/`. The `webapplication.json` declares `outputDir: "dist"`. SDR picks up the WebApplication metadata for deployment to Salesforce.
+
+### Timeout Cleanup
+
+If the build exceeds 5 minutes, the output directory is cleaned up to prevent stale artifacts from being deployed by a subsequent attempt.
 
 ## Request Processing Order
 
 ```
-1. Extract and validate credentials          -> 400 if missing/invalid
-2. Resolve project directory                 -> 404 if not found
-3. Detect .tsx/.jsx files in project
-4. If found: run vite.build() synchronously  -> 502 "Build Failed" on error/timeout
-5. Validate Salesforce connection eagerly     -> 502 "Deployment Failed" on error
-6. Create deployment record
-7. Start async metadata deployment
-8. Return 202 Accepted
+1. Extract and validate credentials          → 400 if missing/invalid
+2. Resolve project directory                 → 404 if not found
+3. Validate Salesforce connection eagerly     → 502 "Deployment Failed" on error
+4. Create deployment record
+5. Return 202 Accepted immediately
+6. [async] Detect .tsx/.jsx files in project
+7. [async] If found: run vite.build()        → error stored in deployment result
+8. [async] Deploy metadata via SDR           → result stored in deployment result
 ```
 
-Build is **synchronous** — it runs in the POST handler before 202 is returned. Build failure returns 502 immediately (fast failure). Don't queue a deployment if the code doesn't compile.
+Build runs **asynchronously** inside the deployment pipeline. The POST returns 202 before the build starts. Build and deploy errors are captured in the deployment result, observable via SSE or polling.
 
 ## Design Principles
 
-1. **Service owns the build** — User vibecodes React; all deployment mechanics are hidden
-2. **Detection by content** — `.tsx`/`.jsx` presence, not `package.json` or config files
-3. **Programmatic API** — `vite.build()` not shell execution; safer, faster, more control
-4. **Build gates deployment** — No metadata is deployed if build fails
-5. **Fast failure** — 5-minute timeout enforced via AbortSignal
+1. **Non-blocking** — POST returns immediately; build + deploy run in background
+2. **Service owns the build** — User writes React; all deployment mechanics are hidden
+3. **Detection by content** — `.tsx`/`.jsx` presence, not config files
+4. **Programmatic API** — `vite.build()` not shell execution; safer, faster, more control
+5. **Coalesced builds** — Concurrent deploys for the same project share a single build
 6. **Graceful degradation** — Metadata-only projects deploy without any build step
 
 ## Example Flows
@@ -156,42 +132,48 @@ Build is **synchronous** — it runs in the POST handler before 202 is returned.
 
 ```
 POST /v1/projects/{id}/deployments
-  |- Credentials valid
-  |- Project found, contains src/App.tsx
-  |- vite.build() succeeds -> assets in staticresources/App/
-  |- Salesforce connection validated
-  |- Deployment queued
-  '- Returns 202 Accepted + deploymentId
+  ├─ Credentials valid, connection verified
+  ├─ Returns 202 Accepted + deploymentId
+  │  [async pipeline]
+  ├─ Project contains src/App.tsx
+  ├─ vite.build() succeeds → assets in webapplications/App/dist/
+  ├─ SDR deploys metadata
+  └─ Deployment result: Succeeded
 ```
 
 ### Flow 2: React Project — Build Fails
 
 ```
 POST /v1/projects/{id}/deployments
-  |- Credentials valid
-  |- Project found, contains src/App.tsx
-  |- vite.build() rejects with error
-  '- Returns 502 Build Failed (deployment never queued)
+  ├─ Credentials valid, connection verified
+  ├─ Returns 202 Accepted + deploymentId
+  │  [async pipeline]
+  ├─ Project contains src/App.tsx
+  ├─ vite.build() rejects with error
+  └─ Deployment error: "Build failed: syntax error in App.tsx"
 ```
 
 ### Flow 3: Metadata-Only Project
 
 ```
 POST /v1/projects/{id}/deployments
-  |- Credentials valid
-  |- Project found, no .tsx/.jsx files
-  |- Build skipped
-  |- Salesforce connection validated
-  |- Deployment queued (metadata only)
-  '- Returns 202 Accepted
+  ├─ Credentials valid, connection verified
+  ├─ Returns 202 Accepted + deploymentId
+  │  [async pipeline]
+  ├─ No .tsx/.jsx files → build skipped
+  ├─ SDR deploys metadata
+  └─ Deployment result: Succeeded
 ```
 
 ### Flow 4: Build Timeout
 
 ```
 POST /v1/projects/{id}/deployments
-  |- Credentials valid
-  |- Project found, contains src/App.tsx
-  |- vite.build() exceeds 5 minutes -> AbortError
-  '- Returns 502 Build Failed (detail contains "timeout")
+  ├─ Credentials valid, connection verified
+  ├─ Returns 202 Accepted + deploymentId
+  │  [async pipeline]
+  ├─ Project contains src/App.tsx
+  ├─ vite.build() exceeds 5 minutes
+  ├─ Output directory cleaned up
+  └─ Deployment error: "Build timeout after 5 minutes"
 ```

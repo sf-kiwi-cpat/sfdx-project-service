@@ -7,10 +7,12 @@
  * The build contract is: when a project contains .tsx or .jsx source files,
  * the service runs vite.build() programmatically before deployment.
  * The service owns the build config — the user's project has no build tooling.
+ * The build runs asynchronously as part of the deployment pipeline — the POST
+ * always returns 202 immediately. Build errors surface in the deployment result.
  *
- * - Project has .tsx/.jsx → vite.build() runs → 202 Accepted
- * - Build fails → 502 Build Failed (RFC 9457 Problem Details)
- * - Build times out (5 min) → 502 Build Failed
+ * - Project has .tsx/.jsx → 202 Accepted → async build + deploy
+ * - Build fails → 202 Accepted → deployment result contains build error
+ * - Build times out (5 min) → 202 Accepted → deployment result contains timeout error
  * - No .tsx/.jsx files → build skipped → 202 Accepted (metadata-only deploy)
  *
  * Mocking strategy:
@@ -56,6 +58,7 @@ import {
   createSuccessDeployResponse,
   setupDeployMock,
 } from '../deploy/fixtures.js';
+import { getDeploymentPollPromise, getDeployment } from '../../src/deployments.js';
 import { createReactProject, createMetadataOnlyProject } from './fixtures.js';
 
 describe('POST /v1/projects/:id/deployments with Vite build step', () => {
@@ -104,7 +107,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
   });
 
   describe('project with .tsx source files', () => {
-    it('runs Vite build before deployment and succeeds → 202 Accepted', async () => {
+    it('returns 202 immediately and runs Vite build asynchronously', async () => {
       const res = await request(app.server)
         .post(`/v1/projects/${reactProjectId}/deployments`)
         .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
@@ -114,24 +117,31 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
       expect(res.body).toHaveProperty('deploymentId');
       expect(res.body.deploymentId).toMatch(/^deploy_/);
       expect(res.body.status).toBe('Queued');
+
+      // Wait for async pipeline to complete, then verify build ran
+      const { deploymentId } = res.body;
+      await getDeploymentPollPromise(deploymentId);
       expect(mockViteBuild).toHaveBeenCalled();
     });
 
-    it('build fails → 502 Build Failed with RFC 9457 Problem Details', async () => {
+    it('build fails → 202 Accepted, deployment result contains build error', async () => {
       mockViteBuild.mockRejectedValue(new Error('Build failed: syntax error in App.tsx'));
 
       const res = await request(app.server)
         .post(`/v1/projects/${reactProjectId}/deployments`)
         .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
         .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
-        .expect(502);
+        .expect(202);
 
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(502);
-      expect(res.body.title).toBe('Build Failed');
+      // Wait for async pipeline to complete
+      const { deploymentId } = res.body;
+      await getDeploymentPollPromise(deploymentId);
+
+      const deployment = getDeployment(deploymentId);
+      expect(deployment?.error).toContain('Build failed');
     });
 
-    it('build timeout after 5 minutes → 502 Build Failed', async () => {
+    it('build timeout → 202 Accepted, deployment result contains timeout error', async () => {
       const abortError = new Error('The operation was aborted');
       abortError.name = 'AbortError';
       mockViteBuild.mockRejectedValue(abortError);
@@ -140,12 +150,14 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
         .post(`/v1/projects/${reactProjectId}/deployments`)
         .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
         .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
-        .expect(502);
+        .expect(202);
 
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(502);
-      expect(res.body.title).toBe('Build Failed');
-      expect(res.body.detail).toContain('timeout');
+      // Wait for async pipeline to complete
+      const { deploymentId } = res.body;
+      await getDeploymentPollPromise(deploymentId);
+
+      const deployment = getDeployment(deploymentId);
+      expect(deployment?.error).toContain('timeout');
     });
   });
 
