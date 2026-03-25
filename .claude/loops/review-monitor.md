@@ -19,7 +19,7 @@ Detects `impl:ready` PRs, runs `/cdd-code-review`, and sends Slack notification.
    - `npm install` if `node_modules/` missing
    - Run `/cdd-code-review`
 4. If verdict is PASS:
-   - Labels already transitioned to `review:complete` by `/cdd-code-review`
+   - Labels already transitioned to `impl:ready-to-merge` by `/cdd-code-review`
    - Post to #app-studio-prs in the PR's thread:
      `🤖 CDD Agent · code-review`
      `✅ PASS — ready for merge`
@@ -45,6 +45,6 @@ Each PR gets its own thread in channel C0ANF2KL5HT:
 ## Label transitions
 
 ```
-impl:ready  →  review:complete  (after /cdd-code-review passes)
+impl:ready  →  impl:ready-to-merge  (after /cdd-code-review passes)
 impl:ready  →  impl:comments    (after /cdd-code-review finds issues)
 ```

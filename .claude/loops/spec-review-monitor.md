@@ -20,7 +20,7 @@ Detects `spec:ready-for-review` PRs, runs `/cdd-spec-review`, and sends Slack no
    - Find spec: `find spec -name "contract.spec.ts" -type f | head -1`
    - Run `/cdd-spec-review`
 4. If assessment is SOLID:
-   - No label change (stays `spec:ready-for-review`)
+   - Labels transition: `spec:ready-for-review` → `spec:agent-reviewed`
    - Post to #app-studio-prs in the PR's thread:
      `🤖 CDD Agent · spec-review`
      `✅ SOLID — ready for human approval`
@@ -47,5 +47,6 @@ Each PR gets its own thread in channel C0ANF2KL5HT:
 ## Label transitions
 
 ```
-spec:ready-for-review  →  spec:comments  (if /cdd-spec-review finds gaps)
+spec:ready-for-review  →  spec:agent-reviewed  (if /cdd-spec-review says SOLID)
+spec:ready-for-review  →  spec:comments        (if /cdd-spec-review finds gaps)
 ```

@@ -45,12 +45,12 @@ use CDD. Everything else, just start coding.
 /cdd-brief       → spec:in-progress
 /cdd-spec        → spec:ready-for-review
 Loop 1           → /cdd-spec-review:
-                      SOLID    → stays spec:ready-for-review
+                      SOLID    → spec:agent-reviewed
                       HAS GAPS → spec:comments (fix → spec:ready-for-review)
 Human approves   → spec:approved
 Loop 2           → impl:in-progress → impl:ready
 Loop 3           → /cdd-code-review:
-                      PASS       → review:complete
+                      PASS       → impl:ready-to-merge
                       NEEDS WORK → impl:comments (fix → impl:ready)
 Human merges PR
 ```
