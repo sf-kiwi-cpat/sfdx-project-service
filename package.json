@@ -1,11 +1,11 @@
 {
-  "name": "sf-project-service",
-  "version": "1.0.0",
+  "name": "@salesforce/sfdx-project-service",
+  "version": "0.1.0",
   "description": "REST API wrapping an SFDX project for remote IDE-like operations",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "sf-project-service": "./dist/index.js"
+    "sfdx-project-service": "./dist/index.js"
   },
   "files": [
     "dist",
