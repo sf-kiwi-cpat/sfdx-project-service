@@ -131,8 +131,6 @@ Review the implementation diff (`git diff main -- src/ tests/`) for:
 Present findings organized by severity:
 
 ```
-**[CDD Code Review]**
-
 ## Contract Verification
 [Zero discrepancies | List of under/over/drift findings]
 
@@ -155,23 +153,10 @@ If the verdict is NEEDS WORK, transition labels to `impl:comments` so the
 state machine clearly reflects that fixes are needed. This prevents the
 review loop from re-reviewing unchanged code.
 
-**Post the report to the PR** so findings are durable and visible to human
-reviewers. Edit an existing review comment if one exists to avoid duplicates:
-
-```bash
-PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
-if [ -n "$PR_NUMBER" ]; then
-  EXISTING=$(gh pr view $PR_NUMBER --json comments \
-    --jq '.comments[] | select(.body | startswith("**[CDD Code Review]**")) | .url' | tail -1)
-  COMMENT_ID=$(echo "$EXISTING" | grep -oE '[0-9]+$')
-  if [ -n "$COMMENT_ID" ]; then
-    gh api repos/{owner}/{repo}/issues/comments/$COMMENT_ID \
-      -X PATCH -f body="$REVIEW_BODY"
-  else
-    gh pr comment $PR_NUMBER --body "$REVIEW_BODY"
-  fi
-fi
-```
+**Post the report to the PR** using the `/gh-comment` skill with comment
+name `CDD Code Review`. Read `.claude/skills/gh-comment/SKILL.md` and
+follow its posting procedure. The body is the review report above (without
+the header — the skill adds the `🤖 CDD Code Review` header for you).
 
 ### Step 5: Label Transition
 
@@ -233,6 +218,7 @@ is real, not advisory.
 - **`/cdd-spec`** — Defines the contracts this skill verifies against
 - **`/cdd-spec-review`** — Evaluates spec quality before human approval
 - **`/cdd-brief`** — Gathers context (not needed for review)
+- **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
 **Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-code-review`
 automatically. If review passes, labels transition to `review:complete` and

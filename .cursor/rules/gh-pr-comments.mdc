@@ -1,0 +1,13 @@
+---
+description: When posting comments to GitHub PRs, use the /gh-comment skill for standard agent branding
+globs:
+alwaysApply: false
+---
+
+# GitHub PR Comments
+
+When posting any comment to a GitHub PR — reviews, feedback, status updates —
+use the `/gh-comment` skill at `.claude/skills/gh-comment/SKILL.md`.
+
+Read the skill file and follow its format and posting procedure. Never post
+bare comments without the standard `🤖 {Name}` header.
