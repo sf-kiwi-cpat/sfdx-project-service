@@ -43,7 +43,7 @@ Always returned for valid requests. Build and deployment run asynchronously.
 }
 ```
 
-Client monitors progress via SSE (`/v1/projects/:id/deployments/:deploymentId/events`) or polling (`GET /v1/projects/:id/deployments/:deploymentId`).
+Client monitors progress via SSE (`/v1/projects/:id/deployments/:deploymentId/events`).
 
 ### 400 Bad Request — Missing/Invalid Credentials
 
@@ -115,7 +115,7 @@ If the build exceeds 5 minutes, the output directory is cleaned up to prevent st
 8. [async] Deploy metadata via SDR           → result stored in deployment result
 ```
 
-Build runs **asynchronously** inside the deployment pipeline. The POST returns 202 before the build starts. Build and deploy errors are captured in the deployment result, observable via SSE or polling.
+Build runs **asynchronously** inside the deployment pipeline. The POST returns 202 before the build starts. Build and deploy errors are captured in the deployment result, observable via the SSE events stream.
 
 ## Design Principles
 
