@@ -89,8 +89,8 @@ Coverage must run against the full test suite (integration tests provide most co
 ## Docker
 
 ```bash
-npm run build && docker build -t sf-project-service .
-docker run -p 3000:3000 sf-project-service
+npm run build && docker build -t sfdx-project-service .
+docker run -p 3000:3000 sfdx-project-service
 ```
 
 ## Worktrees

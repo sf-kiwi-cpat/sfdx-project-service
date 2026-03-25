@@ -10,13 +10,13 @@ Before starting, make sure you have:
 
 - Node.js >= 20 installed
 - Access to the repository
-- The spec document at `.agents/sf-project-service-spec.md` (read it before you do anything else — the spec is the source of truth)
+- The spec document at `.agents/sfdx-project-service-spec.md` (read it before you do anything else — the spec is the source of truth)
 - A terminal with `curl` available
 - Optionally, `python3` for pretty-printing JSON responses (`| python3 -m json.tool`)
 
 ## Phase 1: Spec Familiarization
 
-Read `.agents/sf-project-service-spec.md` end-to-end before touching code. Pay particular attention to:
+Read `.agents/sfdx-project-service-spec.md` end-to-end before touching code. Pay particular attention to:
 
 1. **API Surface table** — this defines every endpoint that must exist
 2. **Write Lock Mechanism** — the rules for when writes are blocked (409 Conflict)

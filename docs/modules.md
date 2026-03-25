@@ -126,7 +126,7 @@ import { getProjectDir } from './projects.js';
 
 const dir = await getProjectDir('550e8400-e29b-41d4-a716-446655440000');
 console.log(dir);
-// '/Users/dev/sf-project-service/projects/550e8400-e29b-41d4-a716-446655440000'
+// '/Users/dev/sfdx-project-service/projects/550e8400-e29b-41d4-a716-446655440000'
 ```
 
 **Throws:**
@@ -341,7 +341,7 @@ import { getProjectPath } from './config.js';
 
 const projectPath = getProjectPath();
 console.log(projectPath);
-// '/Users/dev/sf-project-service'
+// '/Users/dev/sfdx-project-service'
 ```
 
 #### `function getProjectsRoot(): string`
@@ -356,7 +356,7 @@ import { getProjectsRoot } from './config.js';
 
 const projectsRoot = getProjectsRoot();
 console.log(projectsRoot);
-// '/Users/dev/sf-project-service/projects'
+// '/Users/dev/sfdx-project-service/projects'
 ```
 
 #### `function getTemplatesDir(): string`
@@ -371,7 +371,7 @@ import { getTemplatesDir } from './config.js';
 
 const templatesDir = getTemplatesDir();
 console.log(templatesDir);
-// '/Users/dev/sf-project-service/templates'
+// '/Users/dev/sfdx-project-service/templates'
 ```
 
 **Note:** This path is resolved relative to the package root at runtime (one level up from `dist/`).

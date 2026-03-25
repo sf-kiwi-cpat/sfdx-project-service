@@ -34,7 +34,7 @@ When spawning each agent, prepend this context to their prompt:
 ```
 Mode: [landscape | context]
 User intent: [the $ARGUMENTS value, or "none — show me the landscape"]
-Repository: sf-project-service
+Repository: sfdx-project-service
 ```
 
 Launch all three agents in parallel in a single message. Do NOT run them

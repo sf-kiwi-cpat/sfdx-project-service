@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) 2026, Salesforce, Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
@@ -6,7 +23,7 @@
  *
  * Acceptance criteria (from issue #80):
  * - npm pack produces a tarball containing only dist/, package.json, and README.md
- * - npx sf-project-service starts the server after npm install ./sf-project-service-<version>.tgz
+ * - npx sfdx-project-service starts the server after npm install ./sfdx-project-service-<version>.tgz
  *
  * These tests are the source of truth for this feature's external behavior.
  * The AI implementation agent must NOT modify this file.
@@ -28,9 +45,9 @@ describe('npm package shape', () => {
       expect(pkg.files).toContain('README.md');
     });
 
-    it('has a bin field mapping sf-project-service to ./dist/index.js', () => {
+    it('has a bin field mapping sfdx-project-service to ./dist/index.js', () => {
       expect(pkg.bin).toBeDefined();
-      expect(pkg.bin['sf-project-service']).toBe('./dist/index.js');
+      expect(pkg.bin['sfdx-project-service']).toBe('./dist/index.js');
     });
   });
 

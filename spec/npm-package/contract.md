@@ -8,7 +8,7 @@
 
 ## Overview
 
-The sf-project-service package must be consumable as an npm tarball.
+The @salesforce/sfdx-project-service package must be consumable as an npm tarball.
 Consumers install the tarball into a Docker image and start the service via `npx`.
 
 ## Contract
@@ -18,7 +18,7 @@ Consumers install the tarball into a Docker image and start the service via `npx
 | Field | Value | Purpose |
 |-------|-------|---------|
 | `files` | `["dist", "templates", "README.md"]` | Restrict `npm pack` to production artifacts only |
-| `bin.sf-project-service` | `"./dist/index.js"` | Enable `npx sf-project-service` |
+| `bin.sfdx-project-service` | `"./dist/index.js"` | Enable `npx sfdx-project-service` |
 
 ### Entry point
 
