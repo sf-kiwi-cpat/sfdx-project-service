@@ -29,6 +29,7 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
             Type.Object({
               id: Type.String(),
               name: Type.String(),
+              description: Type.String(),
             })
           ),
         },
