@@ -149,5 +149,6 @@ from the PR, re-add `spec:approved`. Loop 2 picks it up next cycle.
 back to `impl:ready`.
 
 **Worktree problems.** Git worktrees share source files but not
-`node_modules`. Run `npm install` in any new worktree. The `SessionStart`
-hook handles this automatically for Claude Code sessions.
+`node_modules`. The `SessionStart` hook runs `npm install` automatically
+for Claude Code sessions. If deps are missing, the hook may not have
+fired — run `npm install` manually.
