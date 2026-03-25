@@ -1,6 +1,7 @@
 ---
 description: When posting comments to GitHub PRs, use the /gh-comment skill for standard agent branding
-alwaysApply: true
+globs:
+alwaysApply: false
 ---
 
 # GitHub PR Comments

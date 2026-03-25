@@ -1,7 +1,6 @@
 ---
 name: gh-comment
 description: Post or update a comment on a GitHub PR with standard agent branding. Use this skill anytime an agent needs to leave a comment on a PR.
-argument-hint: <pr-number> <comment-type> <body>
 disable-model-invocation: false
 allowed-tools: Bash, Read
 ---
@@ -93,9 +92,10 @@ else
 fi
 ```
 
-## Example: Full Posting Flow
+## Example
 
-A CDD Code Review posts its findings:
+A CDD Code Review posting its findings — set the variables, then follow
+the posting procedure above:
 
 ```bash
 COMMENT_NAME="CDD Code Review"
@@ -103,39 +103,12 @@ BODY="## Contract Verification
 Zero discrepancies found.
 
 ## Quality Findings
-
-### Must Fix (blocks merge)
-- None
-
-### Should Fix
-- Generic variable name \`data\` in \`src/routes/deploy.ts:42\` — rename to \`deployResult\`
+...
 
 ## Verdict
 PASS — ready for human merge"
 
-PR_NUMBER=$(gh pr list --head "$(git branch --show-current)" --json number -q '.[0].number')
-
-COMMENT_BODY="$(cat <<EOF
-🤖 ${COMMENT_NAME}
-
----
-
-${BODY}
-EOF
-)"
-
-DEDUP_KEY="🤖 ${COMMENT_NAME}"
-EXISTING_URL=$(gh pr view "$PR_NUMBER" --json comments \
-  --jq ".comments[] | select(.body | startswith(\"${DEDUP_KEY}\")) | .url" \
-  | tail -1)
-COMMENT_ID=$(echo "$EXISTING_URL" | grep -oE '[0-9]+$')
-
-if [ -n "$COMMENT_ID" ]; then
-  gh api "repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
-    -X PATCH -f body="$COMMENT_BODY"
-else
-  gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
-fi
+# Then: steps 1-3 from Posting Procedure above
 ```
 
 ## Key Rules
