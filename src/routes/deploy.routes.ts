@@ -55,7 +55,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       // Start async deployment in background
       const deploymentPromise = deployMetadataAsync(deploymentId, projectDir, credentials);
 
-      // Store the promise to prevent concurrent polls
+      // Store the promise for test observability
       setDeploymentPollPromise(deploymentId, deploymentPromise);
 
       // Return 202 Accepted immediately
@@ -63,41 +63,6 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         deploymentId,
         status: 'Queued',
       });
-    }
-  );
-
-  app.get(
-    '/projects/:id/deployments/:deploymentId',
-    {
-      schema: {
-        params: DeploymentParams,
-      },
-    },
-    async (request, reply) => {
-      const { id, deploymentId } = request.params as { id: string; deploymentId: string };
-
-      // Verify project exists
-      await getProjectDir(id);
-
-      // Check if deployment exists
-      if (!deploymentExists(deploymentId)) {
-        return reply
-          .status(404)
-          .type(PROBLEM_JSON)
-          .send(problemDetail(404, 'Deployment Not Found', `Deployment ${deploymentId} not found`));
-      }
-
-      // Get deployment result (don't wait - polling should return current state)
-      const result = getDeploymentResult(deploymentId);
-      if (!result) {
-        // Deployment still in progress
-        return reply.status(200).send({
-          deploymentId,
-          status: 'InProgress',
-        });
-      }
-
-      return reply.status(200).send(result);
     }
   );
 
