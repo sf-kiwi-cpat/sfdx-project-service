@@ -73,7 +73,7 @@ If a specific intent or issue number is provided:
 - Stashes: none
 
 ### Worktrees
-- /Users/ydarar/development/app-studio/sf-project-service (main worktree, branch: t/ydarar/prototype)
+- /Users/ydarar/development/app-studio/sfdx-project-service (main worktree, branch: t/ydarar/prototype)
 - (no other worktrees)
 
 ### Test Health

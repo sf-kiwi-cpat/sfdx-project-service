@@ -140,7 +140,7 @@ To manually trigger or debug:
   - All endpoints match code
   - 1 example needs update (noted in PR)
 
-✓ PR created: https://github.com/forcedotcom/sf-project-service/pull/71
+✓ PR created: https://github.com/forcedotcom/sfdx-project-service/pull/71
   - Branch: docs-sync-1710705600
   - Label: automated
 ```
@@ -169,4 +169,4 @@ To manually trigger or debug:
 
 - **Cron job**: `/loop 24h [docs-sync-prompt]`
 - **Memory**: `/memory/docs-sync.md`
-- **PR**: https://github.com/forcedotcom/sf-project-service/pull/70 (initial docs)
+- **PR**: https://github.com/forcedotcom/sfdx-project-service/pull/70 (initial docs)

@@ -99,10 +99,10 @@ Return PR URL
 
 ## Project Integration
 
-This skill was created for **SF Project Service** but is designed to be reusable for any project.
+This skill was created for **SFDX Project Service** but is designed to be reusable for any project.
 
 ### Current Implementation
-- **Project**: https://github.com/forcedotcom/sf-project-service
+- **Project**: https://github.com/forcedotcom/sfdx-project-service
 - **Initial PR**: #70 (created March 2026)
 - **Cron Job**: Daily at midnight
 - **Memory**: `.claude/projects/.../memory/docs-sync.md`
@@ -169,4 +169,4 @@ To improve this skill:
 
 ## License
 
-This skill is part of SF Project Service (Apache 2.0)
+This skill is part of SFDX Project Service (Apache 2.0)

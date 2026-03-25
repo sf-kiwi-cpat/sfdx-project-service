@@ -1,6 +1,6 @@
 # Development Guide
 
-Instructions for developing, testing, and deploying SF Project Service.
+Instructions for developing, testing, and deploying SFDX Project Service.
 
 ## Setup
 
@@ -14,7 +14,7 @@ Instructions for developing, testing, and deploying SF Project Service.
 
 ```bash
 git clone <repo>
-cd sf-project-service
+cd sfdx-project-service
 npm install
 ```
 
@@ -130,13 +130,13 @@ Blocks push if build fails, tests fail, or coverage is insufficient.
 
 ```bash
 npm run build
-docker build -t sf-project-service .
+docker build -t sfdx-project-service .
 ```
 
 ### Run Container
 
 ```bash
-docker run -p 3000:3000 sf-project-service
+docker run -p 3000:3000 sfdx-project-service
 ```
 
 ### Environment Variables in Docker
@@ -147,7 +147,7 @@ docker run \
   -e PORT=3000 \
   -e PROJECTS_ROOT=/data/projects \
   -v /mnt/efs:/data \
-  sf-project-service
+  sfdx-project-service
 ```
 
 ### Dockerfile
@@ -168,7 +168,7 @@ CMD ["node", "dist/index.js"]
 To build:
 ```bash
 npm run build  # Must build before docker build
-docker build -t sf-project-service .
+docker build -t sfdx-project-service .
 ```
 
 ## Git Worktrees
@@ -361,7 +361,7 @@ Run `npm run test:coverage` locally to see full coverage report. Coverage thresh
 Ensure TypeScript is compiled first:
 ```bash
 npm run build
-docker build -t sf-project-service .
+docker build -t sfdx-project-service .
 ```
 
 ### Port 3000 already in use

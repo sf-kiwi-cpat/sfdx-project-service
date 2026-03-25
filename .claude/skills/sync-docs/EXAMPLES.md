@@ -58,7 +58,7 @@ Scheduled daily at midnight:
 ✓ Phase 4: Commit & PR
   Committed: docs: keep in sync with codebase
   Updated PR #70 with new changes
-  Result: https://github.com/forcedotcom/sf-project-service/pull/70
+  Result: https://github.com/forcedotcom/sfdx-project-service/pull/70
 
 ✓ Complete: PR ready for review
 ```
@@ -312,4 +312,4 @@ gh pr merge [pr-number]
 - [Skill Definition](./SKILL.md)
 - [Implementation Guide](./IMPLEMENTATION.md)
 - [Project Memory](../../memory/docs-sync.md)
-- [PR #70 Example](https://github.com/forcedotcom/sf-project-service/pull/70)
+- [PR #70 Example](https://github.com/forcedotcom/sfdx-project-service/pull/70)

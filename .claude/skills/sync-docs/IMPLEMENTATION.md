@@ -406,4 +406,4 @@ git diff docs/ # see what would change
 - [Skill Definition](./SKILL.md)
 - [Cron Job Setup](#)
 - [Memory: docs-sync.md](#)
-- [PR #70: Initial docs](https://github.com/forcedotcom/sf-project-service/pull/70)
+- [PR #70: Initial docs](https://github.com/forcedotcom/sfdx-project-service/pull/70)

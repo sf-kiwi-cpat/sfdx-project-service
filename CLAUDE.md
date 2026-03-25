@@ -1,4 +1,4 @@
-# SF Project Service
+# SFDX Project Service
 
 Fastify REST API wrapping SFDX project operations. AI-native development
 using Contract-Driven Development (CDD).
