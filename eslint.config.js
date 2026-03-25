@@ -11,7 +11,7 @@ export default tseslint.config(
     rules: {
       'notice/notice': ['error', {
         templateFile: './license-header.js',
-        onNonMatchingHeader: 'prepend',
+        onNonMatchingHeader: 'replace',
         varRegexps: { YEAR: /20[0-9]{2}/ },
       }],
     },

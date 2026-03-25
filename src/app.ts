@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026, Salesforce, Inc.
- * SPDX-License-Identifier: Apache-2
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { logger } from './logger.js';
 import { routes } from './routes/index.js';
 import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
+
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
 
 /**
  * Create and configure the Fastify app. Exported for testing.
@@ -32,7 +36,7 @@ export function createApp() {
       openapi: '3.0.0',
       info: {
         title: 'SFDX Project Service',
-        version: '0.1.0',
+        version: pkg.version,
         description: 'REST API wrapping an SFDX project for remote IDE-like operations',
       },
     },
