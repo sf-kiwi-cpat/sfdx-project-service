@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
-import { DeploymentError } from '../errors.js';
 import { logger } from '../logger.js';
 import { type OrgCredentials } from '../utils/auth.js';
 import {
@@ -13,6 +12,7 @@ import {
   type ProgressEvent,
   type DeploymentComponentResult,
 } from '../deployments.js';
+import { hasReactFiles, runViteBuild } from './build.js';
 
 export async function buildConnection(credentials: OrgCredentials): Promise<Connection> {
   const authInfo = await AuthInfo.create({
@@ -68,6 +68,12 @@ export async function deployMetadataAsync(
     logger.info({ deploymentId, projectDir }, 'Starting async deployment');
 
     const connection = await buildConnection(credentials);
+
+    // Build React projects before deploying
+    if (await hasReactFiles(projectDir)) {
+      await runViteBuild(projectDir);
+    }
+
     const components = await buildComponentSet(projectDir);
 
     const deploy = await components.deploy({

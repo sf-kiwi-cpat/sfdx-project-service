@@ -168,46 +168,4 @@ describe('deploy routes integration', () => {
       expect(res.body.deploymentId).toBeDefined();
     });
   });
-
-  describe('GET deployment status', () => {
-    it('returns InProgress when result not yet available', async () => {
-      const credentials = {
-        accessToken: 'test-token',
-        instanceUrl: 'https://test.salesforce.com',
-      };
-
-      // Make deployment take a long time
-      let pollCalls = 0;
-      mockPollStatus.mockImplementation(async () => {
-        pollCalls++;
-        // Never return (simulate hanging)
-        if (pollCalls > 1000) {
-          return {
-            response: {
-              status: 'Succeeded',
-              numberComponentsDeployed: 3,
-              numberComponentsTotal: 3,
-            },
-            getFileResponses: () => [],
-          };
-        }
-        await new Promise(() => {}); // hang forever
-      });
-
-      const deployRes = await request(app.server)
-        .post(`/v1/projects/${projectId}/deployments`)
-        .set('Authorization', `Bearer ${credentials.accessToken}`)
-        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
-        .expect(202);
-
-      const deploymentId = deployRes.body.deploymentId;
-
-      // Immediately check status (before deployment completes)
-      const statusRes = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
-        .expect(200);
-
-      expect(statusRes.body.status).toBe('InProgress');
-    });
-  });
 });

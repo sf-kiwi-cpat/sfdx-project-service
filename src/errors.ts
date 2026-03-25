@@ -8,6 +8,14 @@ export class DeploymentError extends Error {
   }
 }
 
+/** Thrown when a Vite build step fails or times out. */
+export class BuildError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BuildError';
+  }
+}
+
 /**
  * RFC 9457 Problem Details for HTTP APIs
  * https://www.rfc-editor.org/rfc/rfc9457.html
@@ -93,6 +101,9 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof PathTooLongError) {
     return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof BuildError) {
+    return problemDetail(502, 'Build Failed', err.message);
   }
   if (err instanceof DeploymentError) {
     return problemDetail(502, 'Deployment Failed', err.message);

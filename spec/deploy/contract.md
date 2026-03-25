@@ -2,20 +2,16 @@
 
 ## Overview
 
-The deployment system implements an **asynchronous deployment workflow** using HTTP polling and Server-Sent Events (SSE) streaming. Deployments no longer block; clients initiate deployment and receive a unique deployment ID for tracking progress.
+The deployment system implements an **asynchronous deployment workflow** using Server-Sent Events (SSE) streaming. Deployments are non-blocking: clients initiate a deployment and receive a unique deployment ID, then connect to the SSE stream for real-time progress updates. There is no polling endpoint — SSE is the single channel for deployment status.
 
 ## Endpoints
 
 ### 1. POST `/v1/projects/:id/deployments`
 **Initiate a deployment**
 
-**Request:**
-```json
-{
-  "accessToken": "string (required)",
-  "instanceUrl": "string (required, valid URL)"
-}
-```
+**Request Headers:**
+- `Authorization` (required): OAuth 2.0 access token in Bearer scheme
+- `X-Salesforce-Instance-Url` (required): Salesforce org instance URL (must be valid URI)
 
 **Responses:**
 
@@ -23,12 +19,12 @@ The deployment system implements an **asynchronous deployment workflow** using H
   ```json
   {
     "deploymentId": "deploy_<unique>",
-    "status": "InProgress"
+    "status": "Queued"
   }
   ```
 
 - **400 Bad Request** — Invalid input
-  - Missing `accessToken` or `instanceUrl`
+  - Missing `Authorization` or `X-Salesforce-Instance-Url`
   - `instanceUrl` is not a valid URL
   - Response: RFC 9457 Problem Detail
 
@@ -40,36 +36,7 @@ The deployment system implements an **asynchronous deployment workflow** using H
 
 ---
 
-### 2. GET `/v1/projects/:id/deployments/:deploymentId`
-**Poll deployment status**
-
-**Responses:**
-
-- **200 OK** — Returns current deployment state (works at any point in deployment lifecycle)
-  ```json
-  {
-    "deploymentId": "deploy_<unique>",
-    "status": "InProgress | Succeeded | Failed",
-    "numberComponentsDeployed": 3,
-    "numberComponentsTotal": 5,
-    "components": [
-      {
-        "fullName": "Hello_World__c",
-        "type": "CustomObject",
-        "state": "Created"
-      },
-      ...
-    ],
-    "errorMessage": "string (optional, only if Failed)"
-  }
-  ```
-
-- **404 Not Found** — Project or deployment does not exist
-  - Response: RFC 9457 Problem Detail
-
----
-
-### 3. GET `/v1/projects/:id/deployments/:deploymentId/events`
+### 2. GET `/v1/projects/:id/deployments/:deploymentId/events`
 **Stream deployment events in real-time (SSE)**
 
 **Response:**
@@ -88,42 +55,36 @@ data: <JSON>
 - `start` — Deployment initiated
   ```json
   {
-    "status": "InProgress",
-    "message": "Deployment started"
+    "deploymentId": "deploy_<unique>"
   }
   ```
 
 - `progress` — Component deployed
   ```json
   {
+    "deploymentId": "deploy_<unique>",
+    "timestamp": "2026-03-25T10:00:00.000Z",
     "status": "InProgress",
     "numberComponentsDeployed": 2,
     "numberComponentsTotal": 5,
-    "component": {
-      "fullName": "Hello_World__c",
-      "type": "CustomObject",
-      "state": "Created"
-    }
+    "components": [
+      {
+        "fullName": "Hello_World__c",
+        "type": "CustomObject",
+        "state": "Created"
+      }
+    ]
   }
   ```
 
-- `complete` — Deployment finished (success)
+- `complete` — Deployment finished (success or failure)
   ```json
   {
+    "deploymentId": "deploy_<unique>",
     "status": "Succeeded",
     "numberComponentsDeployed": 5,
     "numberComponentsTotal": 5,
     "components": [...]
-  }
-  ```
-
-- `error` — Deployment failed
-  ```json
-  {
-    "status": "Failed",
-    "errorMessage": "...",
-    "numberComponentsDeployed": 0,
-    "numberComponentsTotal": 5
   }
   ```
 
@@ -137,8 +98,13 @@ data: <JSON>
 
 ### Async-First
 - POST returns immediately (202 Accepted) with a deployment ID
-- Deployment continues in the background
-- Client can poll status or stream events
+- Deployment continues in the background (build + deploy pipeline)
+- Client connects to SSE stream for real-time updates
+
+### Single Event Channel
+- All deployment events (build, deploy, completion, errors) flow through one SSE endpoint
+- No separate polling endpoint — SSE is the only way to track deployment status
+- Simplifies client implementation and reduces API surface
 
 ### Data Fidelity
 - All SDR (Salesforce Deployment Retrieve) response data is echoed through SSE events
@@ -147,80 +113,59 @@ data: <JSON>
 
 ### Error Clarity
 - Input validation errors (400) are distinguished from connection/deployment errors (502)
-- Missing `sfdx-project.json` returns 400 (not 502)
 - `instanceUrl` format is validated before attempting connection
+- Build and deploy errors surface as deployment results in the SSE stream
 
 ### No Persistence Guarantee
 - Deployments are tracked in-memory during their lifecycle
 - After completion, deployment state may be dropped from the registry
-- Clients should poll/stream during active deployments; long-lived polling not supported
+- Clients should stream during active deployments
 
 ---
 
 ## Implementation Notes
 
 ### Deployment ID Format
-- Format: `deploy_<random>` (e.g., `deploy_a1b2c3d4`)
+- Format: `deploy_<timestamp>_<random>` (e.g., `deploy_1711353600000_a1b2c3d`)
 - Uniqueness: Per project, per deployment
-- Used for polling and streaming endpoints
+- Used for the SSE streaming endpoint
 
 ### State Machine
 ```
 Request → 202 Accepted (deploymentId issued)
   ↓
-Deployment starts (status: InProgress)
+[async] Build step (if React project)
   ↓
-Components deployed progressively (progress events)
+[async] Metadata deployment (SDR)
   ↓
 Either:
   - Succeeded (all components deployed)
-  - Failed (deployment aborted, error message provided)
+  - Failed (build error, deployment error, or timeout)
 ```
-
-### Timeout Behavior
-**Note:** Timeout behavior is **out of scope** pending product guidance.
-- What is the acceptable maximum deployment duration?
-- Should it be configurable per-environment?
-- What should happen on timeout (cancel, disconnect, retry)?
 
 ---
 
 ## Examples
 
-### Example 1: Initiate and Poll
+### Initiate and Stream
 ```bash
 # 1. Initiate deployment
 POST /v1/projects/proj-123/deployments
-{ "accessToken": "...", "instanceUrl": "https://test.salesforce.com" }
-# Response: 202 { deploymentId: "deploy_abc123", status: "InProgress" }
-
-# 2. Poll status
-GET /v1/projects/proj-123/deployments/deploy_abc123
-# Response: 200 { status: "InProgress", numberComponentsDeployed: 2, ... }
-
-# 3. Poll again later
-GET /v1/projects/proj-123/deployments/deploy_abc123
-# Response: 200 { status: "Succeeded", numberComponentsDeployed: 5, components: [...] }
-```
-
-### Example 2: Initiate and Stream
-```bash
-# 1. Initiate deployment
-POST /v1/projects/proj-123/deployments
-{ "accessToken": "...", "instanceUrl": "https://test.salesforce.com" }
-# Response: 202 { deploymentId: "deploy_abc123" }
+Authorization: Bearer <token>
+X-Salesforce-Instance-Url: https://test.salesforce.com
+# Response: 202 { deploymentId: "deploy_abc123", status: "Queued" }
 
 # 2. Connect to SSE stream
 GET /v1/projects/proj-123/deployments/deploy_abc123/events
 # Receive events in real-time as deployment progresses
 event: start
-data: { "status": "InProgress", "message": "Deployment started" }
+data: {"deploymentId":"deploy_abc123"}
 
 event: progress
-data: { "status": "InProgress", "numberComponentsDeployed": 1, ... }
+data: {"deploymentId":"deploy_abc123","status":"InProgress","numberComponentsDeployed":1,...}
 
 event: complete
-data: { "status": "Succeeded", "components": [...] }
+data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...]}
 ```
 
 ---
@@ -230,7 +175,7 @@ data: { "status": "Succeeded", "components": [...] }
 ### Input Validation
 | Error | HTTP | Title | Detail |
 |-------|------|-------|--------|
-| Missing `accessToken` or `instanceUrl` | 400 | Bad Request | accessToken and instanceUrl are required |
+| Missing credentials | 400 | Bad Request | Authorization header is missing |
 | `instanceUrl` not a valid URL | 400 | Bad Request | instanceUrl must be a valid URL |
 | Project does not exist | 404 | Not Found | Project not found |
 
@@ -238,6 +183,5 @@ data: { "status": "Succeeded", "components": [...] }
 | Error | HTTP | Title | Detail |
 |-------|------|-------|--------|
 | Connection fails (invalid token) | 502 | Deployment Failed | (error from Salesforce) |
-| Deployment fails (invalid metadata) | 200* | (included in polling response) | status: Failed, errorMessage: ... |
-
-*Note: Polling endpoint returns 200 even when deployment failed; failure is indicated in the `status` field, not HTTP status.
+| Build fails | — | — | Surfaces in SSE complete event as deployment error |
+| Deploy fails | — | — | Surfaces in SSE complete event with status: Failed |

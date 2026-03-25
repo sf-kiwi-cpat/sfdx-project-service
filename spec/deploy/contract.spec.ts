@@ -3,11 +3,11 @@
  *
  * These tests define the contract for:
  * - POST /v1/projects/:id/deployments — initiate deployment
- * - GET /v1/projects/:id/deployments/:deploymentId — poll deployment status
  * - GET /v1/projects/:id/deployments/:deploymentId/events — stream SSE events
  *
  * The contract is async: POST returns 202 Accepted with a deploymentId,
- * then the client polls status or streams events in real-time.
+ * then the client streams events via SSE in real-time.
+ * There is no polling endpoint — SSE is the single channel for deployment status.
  *
  * These tests are the source of truth for this endpoint's external behavior.
  * The AI implementation agent must NOT modify this file.
@@ -40,8 +40,6 @@ import {
   cleanupTempProject,
   setupDefaultMocks,
   createSuccessDeployResponse,
-  createInProgressDeployResponse,
-  createFailedDeployResponse,
   setupDeployMock,
 } from './fixtures.js';
 
@@ -148,124 +146,6 @@ describe('POST /v1/projects/:id/deployments', () => {
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body.status).toBe(502);
     expect(res.body.title).toBe('Deployment Failed');
-  });
-});
-
-describe('GET /v1/projects/:id/deployments/:deploymentId', () => {
-  let app: ReturnType<typeof createApp>;
-  let tmpDir: string;
-  let projectId: string;
-  let deploymentId: string;
-  const mockPollStatus = vi.fn();
-
-  beforeAll(async () => {
-    const setup = await setupTempProject();
-    tmpDir = setup.tmpDir;
-    projectId = setup.projectId;
-  });
-
-  afterAll(async () => {
-    await cleanupTempProject(tmpDir);
-  });
-
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    app = createApp();
-    await app.ready();
-
-    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
-    setupDeployMock(mockPollStatus);
-    mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
-
-    // Initiate deployment
-    const deployRes = await request(app.server)
-      .post(`/v1/projects/${projectId}/deployments`)
-      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
-    deploymentId = deployRes.body.deploymentId;
-
-    // Wait for deployment to complete (async operation)
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    await app.close();
-  });
-
-  it('returns 200 with deployment status when deployment is in progress', async () => {
-    // Create a new deployment with InProgress mock
-    mockPollStatus.mockResolvedValue(createInProgressDeployResponse());
-
-    const deployRes = await request(app.server)
-      .post(`/v1/projects/${projectId}/deployments`)
-      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
-      .expect(202);
-
-    const inProgressDeploymentId = deployRes.body.deploymentId;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const res = await request(app.server)
-      .get(`/v1/projects/${projectId}/deployments/${inProgressDeploymentId}`)
-      .expect(200);
-
-    expect(res.body).toHaveProperty('deploymentId');
-    expect(res.body).toHaveProperty('status');
-    expect(res.body.status).toBe('InProgress');
-  });
-
-  it('returns 200 with full deployment result when deployment succeeds', async () => {
-    const res = await request(app.server)
-      .get(`/v1/projects/${projectId}/deployments/${deploymentId}`)
-      .expect(200);
-
-    expect(res.body.deploymentId).toBe(deploymentId);
-    expect(res.body.status).toBe('Succeeded');
-    expect(res.body.numberComponentsDeployed).toBe(3);
-    expect(res.body.numberComponentsTotal).toBe(3);
-    expect(res.body.components).toEqual([
-      { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
-      { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
-      { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-    ]);
-  });
-
-  it('returns 200 with error details when deployment fails', async () => {
-    // Create a new deployment with Failed mock
-    mockPollStatus.mockResolvedValue(createFailedDeployResponse());
-
-    const deployRes = await request(app.server)
-      .post(`/v1/projects/${projectId}/deployments`)
-      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
-      .expect(202);
-
-    const failedDeploymentId = deployRes.body.deploymentId;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const res = await request(app.server)
-      .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}`)
-      .expect(200);
-
-    expect(res.body.status).toBe('Failed');
-    expect(res.body).toHaveProperty('errorMessage');
-  });
-
-  it('returns 404 when project ID does not exist', async () => {
-    const res = await request(app.server)
-      .get(`/v1/projects/00000000-0000-0000-0000-000000000000/deployments/${deploymentId}`)
-      .expect(404);
-
-    expect(res.body.status).toBe(404);
-  });
-
-  it('returns 404 when deployment ID does not exist', async () => {
-    const res = await request(app.server)
-      .get(`/v1/projects/${projectId}/deployments/deploy_nonexistent`)
-      .expect(404);
-
-    expect(res.body.status).toBe(404);
   });
 });
 
