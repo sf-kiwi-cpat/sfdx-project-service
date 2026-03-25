@@ -133,8 +133,6 @@ Can an implementation agent satisfy these tests without modifying the spec?
 Present findings organized by impact:
 
 ```
-**[CDD Spec Review]**
-
 ## Spec Summary
 [Brief description of what the spec covers — endpoints, behaviors, test count]
 
@@ -161,23 +159,10 @@ mock boundary issues, missing scenarios]
 before approving]
 ```
 
-**Post the report to the PR** so the human reviewer sees it alongside the
-spec itself. Edit an existing review comment if one exists to avoid duplicates:
-
-```bash
-PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
-if [ -n "$PR_NUMBER" ]; then
-  EXISTING=$(gh pr view $PR_NUMBER --json comments \
-    --jq '.comments[] | select(.body | startswith("**[CDD Spec Review]**")) | .url' | tail -1)
-  COMMENT_ID=$(echo "$EXISTING" | grep -oE '[0-9]+$')
-  if [ -n "$COMMENT_ID" ]; then
-    gh api repos/{owner}/{repo}/issues/comments/$COMMENT_ID \
-      -X PATCH -f body="$REVIEW_BODY"
-  else
-    gh pr comment $PR_NUMBER --body "$REVIEW_BODY"
-  fi
-fi
-```
+**Post the report to the PR** using the `/gh-comment` skill with comment
+name `CDD Spec Review`. Read `.claude/skills/gh-comment/SKILL.md` and
+follow its posting procedure. The body is the review report above (without
+the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
@@ -243,6 +228,7 @@ separation ensures the critic stays independent.
 - **`/cdd-implement`** — Implements code to satisfy the spec
 - **`/cdd-code-review`** — Reviews implementation quality after coding
 - **`/cdd-brief`** — Gathers context (not needed for spec review)
+- **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
 **Automation:** Loop 3 detects `spec:ready-for-review` PRs and runs
 `/cdd-spec-review` automatically. Findings are posted to the PR. If gaps
