@@ -36,7 +36,7 @@ Projects are deployed using Salesforce credentials (access token + instance URL)
 ## Technology Stack
 
 - **Runtime**: Node.js ≥ 20 (ESM)
-- **Framework**: Express 4
+- **Framework**: Fastify
 - **Language**: TypeScript (strict mode)
 - **Dependencies**:
   - `@salesforce/core` — Salesforce API

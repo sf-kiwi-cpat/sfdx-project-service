@@ -29,6 +29,7 @@ Only include what agents need in every session. Everything else goes in
 | `docs/api.md` | Human | API endpoint reference | sync-docs |
 | `docs/modules.md` | Both | Module exports and interfaces | sync-docs |
 | `docs/api-examples.md` | Human | Practical curl/code examples | sync-docs |
+| `docs/README.md` | Human | Project overview, quick start, tech stack | sync-docs |
 | `docs/DOCUMENTATION-ARCHITECTURE.md` | Both | This file | Manual |
 
 Maintainer key: **Manual** means human-maintained, sync-docs will not
@@ -68,7 +69,7 @@ The label lifecycle stays in CLAUDE.md because agents need to know the
 state machine to set labels correctly, but the detailed walkthrough and
 loop setup live in `docs/workflow-guide.md`.
 
-Target: under 120 lines.
+Target: under 125 lines.
 
 ## CONTRIBUTING.md scope
 

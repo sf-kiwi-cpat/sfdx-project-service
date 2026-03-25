@@ -4,10 +4,21 @@ This repo uses a contract-driven development process. You write specs that
 describe what the system should do, and agents write the code that makes those
 specs pass. Automation handles the handoffs between steps.
 
-You don't have to use this workflow for everything. Bug fixes, chores, doc
-changes, and small refactors can skip it entirely. It's meant for new features
-and changes to observable behavior where you want a spec to exist before code
-gets written.
+You don't have to use this workflow for everything. It's meant for new
+features and changes to observable behavior where you want a spec to exist
+before code gets written.
+
+| Work type | Use CDD? | Why |
+|-----------|----------|-----|
+| New endpoint or feature | Yes | New observable behavior needs a contract |
+| Changing existing behavior | Yes | Contract should update before code does |
+| Bug fix with clear repro | No | Just fix it, add a regression test |
+| Refactor (no behavior change) | No | Existing specs already cover it |
+| Docs, chores, dependency bumps | No | No observable behavior to contract |
+| Test improvements | No | Tests are agent-mutable, no spec needed |
+
+When in doubt: if the commit type would be `feat` or the change affects
+what the API returns, use CDD. Everything else, just start coding.
 
 ## How it works
 
@@ -114,18 +125,19 @@ wait for the Slack ping.
 
 ## Rules
 
-`spec/` is human-guarded. Agents cannot modify contract files. If a spec
-seems wrong, the agent flags it for you.
+The guardrails are in `CLAUDE.md` (agents read them every session). The
+short version: `spec/` is human-guarded, `tests/` is agent-mutable, test
+code is source of truth.
 
-`tests/` is agent-mutable. Unit and integration tests are tools the agent
-creates and maintains.
+Two things worth expanding on here:
 
-Test code is the source of truth. The prose spec (`contract.md`) is always
-derived from `contract.spec.ts`. Never edit the markdown directly. Edit
-the test code and regenerate with `/cdd-spec --refresh <feature>`.
+Never edit `contract.md` directly. It's derived from `contract.spec.ts`.
+If you need to update it, edit the test code and run
+`/cdd-spec --refresh <feature>`.
 
 To change a contract during implementation: stop, go back to `/cdd-spec`,
-make the change, get it approved, then resume.
+make the change, get it approved, then resume. Don't hack around a spec
+that feels wrong.
 
 ## Troubleshooting
 

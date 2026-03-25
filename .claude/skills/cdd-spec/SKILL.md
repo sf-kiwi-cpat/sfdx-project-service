@@ -34,7 +34,7 @@ change, suggest skipping the contract workflow: "This looks like a
 Want to proceed with /cdd-spec anyway?" Only continue if the user
 confirms.
 
-### Step 0.5: Environment Setup (auto-detected)
+### Step 1: Environment Setup (auto-detected)
 
 Check the current environment and set up what's missing:
 
@@ -54,14 +54,14 @@ if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)"
 fi
 ```
 
-### Step 1: Gather Context
+### Step 2: Gather Context
 - If an issue number is provided, fetch details using `gh issue view`
 - If description is provided, use it directly
 - If no arguments, ask the user interactively for feature name and intent
 - Check for existing specs in `spec/` that might overlap or relate
 - Look at related source files to understand current implementation state
 
-### Step 2: AI Drafts Both Artifacts Simultaneously
+### Step 3: AI Drafts Both Artifacts Simultaneously
 
 **Generate `spec/<feature>/contract.spec.ts`:**
 - Executable test file using vitest
@@ -77,14 +77,14 @@ fi
 - Includes examples
 - Never manually edited (always regenerated from code)
 
-### Step 3: Present Both to Human
+### Step 4: Present Both to Human
 Show side-by-side or sequentially:
 1. The natural language spec (easier to review)
 2. The code spec (executable assertions)
 
 Ask: "Do these contracts match your intent? Any changes needed?"
 
-### Step 4: Discussion & Refinement
+### Step 5: Discussion & Refinement
 
 **Enter plan mode** to discuss contracts with the human:
 - Use `EnterPlanMode` to signal that you're ready for collaborative design discussion
@@ -99,7 +99,7 @@ Ask: "Do these contracts match your intent? Any changes needed?"
 - Return to discussion as needed
 - Repeat until both artifacts are approved
 
-### Step 5: Push for Review & Commit
+### Step 6: Push for Review & Commit
 
 Once human approves both artifacts:
 - Commit both `contract.spec.ts` and `contract.md` to the branch

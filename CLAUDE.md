@@ -25,8 +25,8 @@ Do not skip hooks with `--no-verify`.
 
 ## CDD — Contract-Driven Development
 
-Humans define *what* (contracts in `spec/`). Agents implement *how* (code in `src/`).
-Code is a derived artifact; contracts are the durable source of truth.
+Humans define *what* (contracts in `spec/`). Agents implement *how* (code in
+`src/`). Code is a derived artifact; contracts are the durable source of truth.
 
 ### Skills (each works standalone)
 
@@ -36,24 +36,9 @@ Code is a derived artifact; contracts are the durable source of truth.
 - **`/cdd-implement`** — Write code to satisfy contracts. Auto-discovers specs.
 - **`/cdd-code-review`** — Blind contract verification and quality audit
 
-Use in any order. Not everything needs a spec. The CDD workflow exists for
-new features and changes to observable behavior. Most other work should
-skip it.
-
-### When to use CDD
-
-| Work type | Use CDD? | Why |
-|-----------|----------|-----|
-| New endpoint or feature | Yes | New observable behavior needs a contract |
-| Changing existing behavior | Yes | Contract should update before code does |
-| Bug fix with clear repro | No | Just fix it, add a regression test |
-| Refactor (no behavior change) | No | Existing specs already cover it |
-| Docs, chores, dependency bumps | No | No observable behavior to contract |
-| Test improvements | No | Tests are agent-mutable, no spec needed |
-
-When in doubt: if the commit type would be `feat` or the change affects
-what the API returns, use CDD. For `fix`, `refactor`, `chore`, `docs`,
-or `test`, just start coding.
+Use CDD for `feat` commits and changes to observable behavior (new endpoints,
+response shape changes). Skip it for `fix`, `refactor`, `chore`, `docs`, and
+`test` work — just start coding.
 
 ### Label lifecycle
 
@@ -71,23 +56,14 @@ Loop 2           → /cdd-code-review:
 Human merges PR
 ```
 
-See [docs/workflow-guide.md](docs/workflow-guide.md) for the full workflow
-walkthrough, monitor loop setup, and troubleshooting.
-
 ### The rules
 
-- `spec/` is human-guarded. Agents cannot modify contract files.
-- `tests/` is agent-mutable. Unit and integration tests are quality tools.
-- Test code is the source of truth. `contract.md` is always derived from
-  `contract.spec.ts`, never the other way around.
+`spec/` is human-guarded (agents cannot modify). `tests/` is agent-mutable.
+Test code (`contract.spec.ts`) is source of truth; `contract.md` is always
+derived from it.
 
-### Automated loops
-
-Three `/loop` commands run in separate Claude Code terminals. Copy the
-command from each file:
-- `.claude/loops/spec-review-monitor.md` — polls for `spec:ready-for-review`
-- `.claude/loops/implement-monitor.md` — polls for `spec:approved`
-- `.claude/loops/review-monitor.md` — polls for `impl:ready`
+See [docs/workflow-guide.md](docs/workflow-guide.md) for the full workflow,
+loop setup, and troubleshooting. Loop prompts live in `.claude/loops/`.
 
 ## Directory layout
 

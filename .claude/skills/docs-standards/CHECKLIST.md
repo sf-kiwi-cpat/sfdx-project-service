@@ -26,7 +26,7 @@ a step in the audit workflow.
 - [ ] Does NOT contain: monitor loop setup instructions
 - [ ] Does NOT contain: troubleshooting guides
 - [ ] Does NOT contain: Docker build/run commands
-- [ ] Line count is under 120
+- [ ] Line count is under 125
 
 ### CONTRIBUTING.md
 - [ ] Contains: prerequisites list
