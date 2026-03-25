@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, Salesforce, Inc.
+ * Copyright (c) <%= YEAR %>, Salesforce, Inc.
  * SPDX-License-Identifier: Apache-2
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +14,3 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { FastifyInstance } from 'fastify';
-import { templateRoutes } from './templates.routes.js';
-import { projectRoutes } from './projects.routes.js';
-import { deployRoutes } from './deploy.routes.js';
-
-export async function routes(app: FastifyInstance): Promise<void> {
-  app.register(templateRoutes);
-  app.register(projectRoutes);
-  app.register(deployRoutes);
-}
