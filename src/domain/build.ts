@@ -65,6 +65,7 @@ async function doBuild(projectDir: string): Promise<void> {
   try {
     const buildPromise = build({
       root: projectDir,
+      base: './',
       build: {
         outDir,
         emptyOutDir: true,
