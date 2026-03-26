@@ -5,8 +5,15 @@ Detects `impl:agent-comments` PRs assigned to the local user, reads code review 
 ## Start
 
 ```
-/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the impl:agent-comments label assigned to $ME using gh pr list --state open --label impl:agent-comments --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing. Read the most recent CDD Code Review comment on the PR to understand what needs fixing. Address each finding from the review — fix correctness issues, address architecture concerns, clean up AI slop. Run all tests (npm test) to confirm they pass. Commit the fixes, push, then transition labels: remove impl:agent-comments and add impl:ready-for-agent-review on both the issue and PR. Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Implementation fixes pushed — ready for re-review".
+/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the impl:agent-comments label assigned to $ME using gh pr list --state open --label impl:agent-comments --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing. Count how many CDD Code Review comments exist on the PR — if 3 or more, do NOT fix; instead post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Impl fix loop hit max retries (3) — human intervention needed" and skip this PR. Otherwise: read the most recent CDD Code Review comment on the PR to understand what needs fixing. Address each finding from the review — fix correctness issues, address architecture concerns, clean up AI slop. Run all tests (npm test) to confirm they pass. Commit the fixes, push, then transition labels: remove impl:agent-comments and add impl:ready-for-agent-review on both the issue and PR. Post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Implementation fixes pushed — ready for re-review".
 ```
+
+## Max retry safety
+
+Before fixing, count how many `CDD Code Review` comments exist on the PR
+(each review→fix cycle adds one). If there are already **3 or more**, stop
+auto-fixing: leave the label as `impl:agent-comments` and post to the PR's
+Slack thread asking the human to intervene.
 
 ## What happens each cycle
 
@@ -18,6 +25,7 @@ Detects `impl:agent-comments` PRs assigned to the local user, reads code review 
    - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
    - Enter worktree via `EnterWorktree`
    - `npm install` if `node_modules/` missing
+   - Count `CDD Code Review` comments on the PR — if ≥ 3, skip and notify human
    - Read the most recent `CDD Code Review` comment on the PR for findings
    - Address each finding from the review
    - Run all tests: `npm test`
