@@ -1,6 +1,6 @@
 ---
 name: cdd-spec-review
-description: Evaluate spec quality before human approval. Independent agent critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Transitions to spec:comments when gaps are found.
+description: Evaluate spec quality before human approval. Independent agent critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Transitions to spec:agent-comments when gaps are found.
 argument-hint: [optional: path to contract.spec.ts, feature name, or PR number]
 disable-model-invocation: false
 allowed-tools: Agent, Read, Glob, Bash, AskUserQuestion
@@ -184,7 +184,7 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
-**If SOLID** — transition to `spec:agent-reviewed` and mark the PR as
+**If SOLID** — transition to `spec:agent-approved` and mark the PR as
 ready for review (undraft). This is the signal to humans that the agent
 has cleared the spec and it's ready for their approval.
 
@@ -192,31 +192,31 @@ has cleared the spec and it's ready for their approval.
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-approved
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+    gh pr edit $PR_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-approved
     gh pr ready $PR_NUMBER
   fi
 fi
 ```
 
-**If HAS GAPS** — transition to `spec:comments` so the state machine
-reflects that feedback exists. The spec author addresses findings and
-re-pushes, which moves the label back to `spec:ready-for-review`.
+**If HAS GAPS** — transition to `spec:agent-comments` so the state machine
+reflects that feedback exists. The fix monitor addresses findings and
+re-pushes, which moves the label back to `spec:ready-for-agent-review`.
 
 ```bash
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-comments
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+    gh pr edit $PR_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-comments
   fi
 fi
 ```
 
 The human can still approve a spec regardless of the agent's assessment —
-just add `spec:approved` directly.
+just add `spec:human-approved` directly.
 
 ---
 
@@ -228,11 +228,11 @@ derivation agent reads only spec files and derives what an implementation
 would need. If the derivation is ambiguous, the spec is ambiguous.
 
 ### Gating, Not Blocking
-When SOLID, labels transition to `spec:agent-reviewed` — signaling the
+When SOLID, labels transition to `spec:agent-approved` — signaling the
 human that the agent has cleared the spec. When HAS GAPS, labels transition
-to `spec:comments`. The human can override either by moving directly to
-`spec:approved`. The spec review loop re-runs when the spec returns to
-`spec:ready-for-review`.
+to `spec:agent-comments`. The human can override either by moving directly
+to `spec:human-approved`. The spec review loop re-runs when the spec
+returns to `spec:ready-for-agent-review`.
 
 ### Concrete over Abstract
 "Consider adding error handling tests" is useless feedback. "What happens
@@ -260,6 +260,6 @@ separation ensures the critic stays independent.
 - **`/cdd-brief`** — Gathers context (not needed for spec review)
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
-**Automation:** Loop 3 detects `spec:ready-for-review` PRs and runs
-`/cdd-spec-review` automatically. Findings are posted to the PR. If gaps
-are found, labels transition to `spec:comments`.
+**Automation:** `cdd-spec-review-monitor` detects `spec:ready-for-agent-review`
+PRs and runs `/cdd-spec-review` automatically. Findings are posted to the PR.
+If gaps are found, labels transition to `spec:agent-comments`.

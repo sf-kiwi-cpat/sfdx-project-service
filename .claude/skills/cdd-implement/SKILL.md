@@ -35,10 +35,10 @@ to create a worktree first.
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:approved --add-label impl:in-progress
+  gh issue edit $ISSUE_NUMBER --remove-label spec:human-approved --add-label impl:agent-in-progress
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:approved --add-label impl:in-progress
+    gh pr edit $PR_NUMBER --remove-label spec:human-approved --add-label impl:agent-in-progress
   fi
 fi
 ```
@@ -88,11 +88,11 @@ fi
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 
   if [ -n "$ISSUE_NUMBER" ]; then
-    gh issue edit $ISSUE_NUMBER --remove-label impl:in-progress --add-label impl:ready
+    gh issue edit $ISSUE_NUMBER --remove-label impl:agent-in-progress --add-label impl:ready-for-agent-review
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:in-progress --add-label impl:ready
+    gh pr edit $PR_NUMBER --remove-label impl:agent-in-progress --add-label impl:ready-for-agent-review
   fi
   ```
 
@@ -100,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (Loop 2 will detect `impl:ready` and run `/cdd-code-review`)
+- Notify that code is ready for review (`cdd-code-review-monitor` will detect `impl:ready-for-agent-review` and run `/cdd-code-review`)
 
 ---
 
@@ -177,9 +177,10 @@ These skills complement `/cdd-implement`, but none are prerequisites:
 - **`/cdd-code-review`** — Verifies correctness and code quality after implementation
 - **`/cdd-spec-review`** — Evaluates spec quality before human approval
 
-**Automation:** Loop 1 can detect `spec:approved` PRs and run `/cdd-implement`
-automatically. After implementation completes (`impl:ready`), Loop 2 can
-run `/cdd-code-review` for automated verification.
+**Automation:** `cdd-implement-monitor` detects `spec:human-approved` PRs and
+runs `/cdd-implement` automatically. After implementation completes
+(`impl:ready-for-agent-review`), `cdd-code-review-monitor` runs
+`/cdd-code-review` for automated verification.
 
 ---
 

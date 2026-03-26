@@ -42,18 +42,23 @@ use CDD. Everything else, just start coding.
 ### Label lifecycle
 
 ```
-/cdd-brief       → spec:in-progress
-/cdd-spec        → spec:ready-for-review (draft PR)
-Loop 1           → /cdd-spec-review:
-                      SOLID    → spec:agent-reviewed (PR marked ready)
-                      HAS GAPS → spec:comments (fix → spec:ready-for-review)
-Human approves   → spec:approved
-Loop 2           → impl:in-progress → impl:ready
-Loop 3           → /cdd-code-review:
-                      PASS       → impl:ready-to-merge
-                      NEEDS WORK → impl:comments (fix → impl:ready)
+/cdd-brief or /cdd-spec    → assign user to issue
+/cdd-spec                   → spec:ready-for-agent-review (draft PR)
+cdd-spec-review-monitor     → /cdd-spec-review:
+                                 SOLID    → spec:agent-approved (PR marked ready)
+                                 HAS GAPS → spec:agent-comments
+cdd-spec-fix-monitor        → fixes spec → spec:ready-for-agent-review (re-review)
+Human approves              → spec:human-approved
+cdd-implement-monitor       → impl:agent-in-progress → impl:ready-for-agent-review
+cdd-code-review-monitor     → /cdd-code-review:
+                                 PASS       → impl:agent-approved
+                                 NEEDS WORK → impl:agent-comments
+cdd-impl-fix-monitor        → fixes code → impl:ready-for-agent-review (re-review)
 Human merges PR
 ```
+
+Loops are **assignee-scoped** — each local loop only picks up issues/PRs
+assigned to the machine's `gh` user. See `.claude/loops/` for setup.
 
 ### Guardrails
 
