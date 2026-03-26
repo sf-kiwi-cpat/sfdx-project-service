@@ -1,0 +1,11 @@
+{
+  "productTag": "a1aEE000002DAq1YAG",
+  "defaultBuild": "",
+  "issueTypeLabels": {
+    "feature": "USER STORY",
+    "spec:ready-for-agent-review": "USER STORY"
+    "bug": "BUG P2",
+    "dependencies": "BUG P2"
+  },
+ "statusWhenClosed": "Fixed"
+}
