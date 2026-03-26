@@ -77,11 +77,27 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 400 when template field is missing', async () => {
-      const res = await request(app.server).post('/v1/projects').send({}).expect(400);
+    it('returns 201 with a project id when no template is provided', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(400);
+      expect(res.body).toHaveProperty('id');
+      expect(typeof res.body.id).toBe('string');
+      // UUID format
+      expect(res.body.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
+    });
+
+    it('blank project contains sfdx-project.json', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const projectDir = path.join(tmpDir, res.body.id);
+      const stat = await fs.stat(projectDir);
+      expect(stat.isDirectory()).toBe(true);
+
+      const configPath = path.join(projectDir, 'sfdx-project.json');
+      const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+      expect(config.packageDirectories).toBeDefined();
     });
 
     it('creates a project directory with sfdx-project.json', async () => {
