@@ -72,7 +72,7 @@ export async function createProject(templateId: string): Promise<string> {
   }
 
   // Validate template exists
-  const templatePath = path.join(getTemplatesDir(), `${templateId}.zip`);
+  const templatePath = path.join(getTemplatesDir(), templateId, 'content.zip');
   try {
     await fs.access(templatePath);
   } catch {

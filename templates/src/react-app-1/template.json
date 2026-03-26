@@ -1,3 +1,5 @@
 {
+  "id": "react-app-1",
+  "name": "React App",
   "description": "A React web application with TypeScript and Vite bundling"
 }
