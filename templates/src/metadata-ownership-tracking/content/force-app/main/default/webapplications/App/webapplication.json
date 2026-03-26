@@ -1,0 +1,6 @@
+{
+  "outputDir": "dist",
+  "routing": {
+    "fallback": "index.html"
+  }
+}
