@@ -6,7 +6,7 @@
  * zip includes node_modules (self-contained, like npm pack).
  */
 
-import { readdirSync, mkdirSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, mkdirSync, statSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import AdmZip from 'adm-zip';
@@ -21,8 +21,19 @@ const templates = readdirSync(srcDir).filter((name) =>
   statSync(join(srcDir, name)).isDirectory()
 );
 
+const metadata = {};
+
 for (const name of templates) {
   const templateDir = join(srcDir, name);
+
+  // Read template.json for metadata (description, etc.)
+  const templateJsonPath = join(templateDir, 'template.json');
+  if (existsSync(templateJsonPath)) {
+    const meta = JSON.parse(readFileSync(templateJsonPath, 'utf-8'));
+    metadata[name] = { description: meta.description ?? '' };
+  } else {
+    metadata[name] = { description: '' };
+  }
 
   // Install deps so the zip is self-contained
   if (existsSync(join(templateDir, 'package.json'))) {
@@ -37,4 +48,5 @@ for (const name of templates) {
   console.log(`  ${name} → ${outPath}`);
 }
 
+writeFileSync(join(distDir, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n');
 console.log(`Zipped ${templates.length} template(s).`);

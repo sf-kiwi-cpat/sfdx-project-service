@@ -130,14 +130,18 @@ Review the implementation diff (`git diff main -- src/ tests/`) for:
 
 Present findings organized by severity:
 
+**When PASS** — verdict first, details collapsed:
+
 ```
+**🤖 CDD Agent · code-review**
+✅ **PASS** — [one-line summary: e.g. "zero contract discrepancies, clean diff"]
+
+<details><summary>Full analysis</summary>
+
 ## Contract Verification
-[Zero discrepancies | List of under/over/drift findings]
+[Zero discrepancies or minor notes]
 
 ## Quality Findings
-
-### Must Fix (blocks merge)
-- [Critical issues: missing functionality, security problems, broken contracts]
 
 ### Should Fix (improves quality)
 - [AI slop, naming issues, architecture misalignment]
@@ -145,8 +149,30 @@ Present findings organized by severity:
 ### Nits (optional)
 - [Style preferences, minor improvements]
 
-## Verdict
-[PASS — ready for human merge | NEEDS WORK — fix listed issues first]
+</details>
+```
+
+**When NEEDS WORK** — verdict first, details expanded (no collapse):
+
+```
+**🤖 CDD Agent · code-review**
+⚠️ **NEEDS WORK** — [one-line summary of what blocks merge]
+
+## Must Fix
+- [Critical issues: missing functionality, security problems, broken contracts]
+
+## Contract Verification
+[List of under/over/drift findings]
+
+<details><summary>Additional findings</summary>
+
+### Should Fix (improves quality)
+- [AI slop, naming issues]
+
+### Nits (optional)
+- [Style preferences]
+
+</details>
 ```
 
 If the verdict is NEEDS WORK, transition labels to `impl:comments` so the
@@ -166,10 +192,10 @@ Update labels based on verdict:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label impl:ready --add-label review:complete
+  gh issue edit $ISSUE_NUMBER --remove-label impl:ready --add-label impl:ready-to-merge
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:ready --add-label review:complete
+    gh pr edit $PR_NUMBER --remove-label impl:ready --add-label impl:ready-to-merge
   fi
 fi
 ```
@@ -221,5 +247,5 @@ is real, not advisory.
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
 **Automation:** Loop 2 detects `impl:ready` PRs and runs `/cdd-code-review`
-automatically. If review passes, labels transition to `review:complete` and
+automatically. If review passes, labels transition to `impl:ready-to-merge` and
 Slack is notified. If review fails, labels transition to `impl:comments`.

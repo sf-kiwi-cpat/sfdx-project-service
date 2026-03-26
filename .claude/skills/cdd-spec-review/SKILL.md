@@ -132,31 +132,49 @@ Can an implementation agent satisfy these tests without modifying the spec?
 
 Present findings organized by impact:
 
+**When SOLID** — verdict first, details collapsed:
+
 ```
+**🤖 CDD Agent · spec-review**
+✅ **SOLID** — [one-line summary of what the spec covers]
+
+<details><summary>Full analysis (N describe blocks, M tests)</summary>
+
 ## Spec Summary
 [Brief description of what the spec covers — endpoints, behaviors, test count]
 
 ## Blind Derivation Findings
-[Key findings from the implementation derivation agent — ambiguities,
-mock boundary issues, missing scenarios]
+[Key findings from the implementation derivation agent]
 
 ## Critique
 
-### Must Address (spec is unclear or incomplete)
-- [Ambiguities that would force the implementation agent to guess]
-- [Missing error cases that are likely to matter in production]
-
 ### Worth Considering (improves spec quality)
-- [Coverage gaps for edge cases]
-- [Mock boundary adjustments]
-- [Assertion tightness improvements]
+- [Coverage gaps, mock boundary adjustments, assertion tightness]
 
 ### Observations (no action needed)
 - [Notes on spec structure, style, patterns]
 
-## Assessment
-[SOLID — spec is clear and complete | HAS GAPS — address listed items
-before approving]
+</details>
+```
+
+**When HAS GAPS** — verdict first, details expanded (no collapse):
+
+```
+**🤖 CDD Agent · spec-review**
+⚠️ **HAS GAPS** — [one-line summary of what needs attention]
+
+## Must Address
+- [Ambiguities that would force the implementation agent to guess]
+- [Missing error cases that are likely to matter in production]
+
+## Worth Considering
+- [Coverage gaps, mock boundary adjustments]
+
+<details><summary>Blind derivation findings</summary>
+
+[Key findings from the implementation derivation agent]
+
+</details>
 ```
 
 **Post the report to the PR** using the `/gh-comment` skill with comment
@@ -166,8 +184,21 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
-**If SOLID** — no label change. The spec stays at `spec:ready-for-review`
-for human approval.
+**If SOLID** — transition to `spec:agent-reviewed` and mark the PR as
+ready for review (undraft). This is the signal to humans that the agent
+has cleared the spec and it's ready for their approval.
+
+```bash
+PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
+if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
+  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+  if [ -n "$PR_NUMBER" ]; then
+    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+    gh pr ready $PR_NUMBER
+  fi
+fi
+```
 
 **If HAS GAPS** — transition to `spec:comments` so the state machine
 reflects that feedback exists. The spec author addresses findings and
@@ -184,9 +215,8 @@ if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)"
 fi
 ```
 
-The human can still approve a spec with `spec:comments` if they disagree
-with the agent's assessment — just remove `spec:comments` and add
-`spec:approved` directly.
+The human can still approve a spec regardless of the agent's assessment —
+just add `spec:approved` directly.
 
 ---
 
@@ -198,10 +228,10 @@ derivation agent reads only spec files and derives what an implementation
 would need. If the derivation is ambiguous, the spec is ambiguous.
 
 ### Gating, Not Blocking
-When the assessment is HAS GAPS, this skill transitions labels to
-`spec:comments` — making it clear that feedback exists. The human can
-override this by moving directly to `spec:approved` if they disagree.
-The spec review loop re-runs when the spec returns to
+When SOLID, labels transition to `spec:agent-reviewed` — signaling the
+human that the agent has cleared the spec. When HAS GAPS, labels transition
+to `spec:comments`. The human can override either by moving directly to
+`spec:approved`. The spec review loop re-runs when the spec returns to
 `spec:ready-for-review`.
 
 ### Concrete over Abstract
