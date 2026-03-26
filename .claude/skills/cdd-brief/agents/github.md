@@ -17,7 +17,7 @@ gh issue list --state open --limit 20 \
   --json number,title,labels,assignees,createdAt,updatedAt,comments | \
   jq 'map(select(
     (.labels | map(.name) |
-      any(. == "spec:ready-for-agent-review" or . == "spec:agent-comments" or . == "spec:agent-approved" or . == "spec:human-approved" or . == "impl:agent-in-progress" or . == "impl:ready-for-agent-review" or . == "impl:agent-comments" or . == "impl:agent-approved"))
+      any(. == "spec:agent-reviewing" or . == "spec:agent-comments" or . == "spec:agent-approved" or . == "spec:human-approved" or . == "impl:agent-in-progress" or . == "impl:agent-reviewing" or . == "impl:agent-comments" or . == "impl:agent-approved"))
     | not
   ))'
 ```
@@ -27,7 +27,7 @@ gh issue list --state open --limit 20 \
 - Note priority labels if they exist (priority:high, priority:medium, etc.)
 - Look for dependency signals: issues that reference other issue numbers
   in their title or body
-- Skip issues with workflow labels: `spec:ready-for-agent-review`, `spec:agent-comments`, `spec:agent-approved`, `spec:human-approved`, `impl:agent-in-progress`, `impl:ready-for-agent-review`, `impl:agent-comments`, `impl:agent-approved`
+- Skip issues with workflow labels: `spec:agent-reviewing`, `spec:agent-comments`, `spec:agent-approved`, `spec:human-approved`, `impl:agent-in-progress`, `impl:agent-reviewing`, `impl:agent-comments`, `impl:agent-approved`
 
 ### Open Pull Requests
 ```bash

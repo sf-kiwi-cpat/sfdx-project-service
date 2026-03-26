@@ -192,10 +192,10 @@ Update labels based on verdict:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label impl:ready-for-agent-review --add-label impl:agent-approved
+  gh issue edit $ISSUE_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-approved
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:ready-for-agent-review --add-label impl:agent-approved
+    gh pr edit $PR_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-approved
   fi
 fi
 ```
@@ -204,10 +204,10 @@ fi
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label impl:ready-for-agent-review --add-label impl:agent-comments
+  gh issue edit $ISSUE_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-comments
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:ready-for-agent-review --add-label impl:agent-comments
+    gh pr edit $PR_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-comments
   fi
 fi
 ```
@@ -233,7 +233,7 @@ ensures the reviewer stays independent.
 ### Verdict Has Teeth
 If the verdict is NEEDS WORK, labels transition to `impl:agent-comments`. The
 review loop ignores PRs with this label — fixes must be applied and the
-label moved back to `impl:ready-for-agent-review` before re-review occurs. The review gate
+label moved back to `impl:agent-reviewing` before re-review occurs. The review gate
 is real, not advisory.
 
 ---
@@ -246,7 +246,7 @@ is real, not advisory.
 - **`/cdd-brief`** — Gathers context (not needed for review)
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
-**Automation:** `cdd-code-review-monitor` detects `impl:ready-for-agent-review`
+**Automation:** `cdd-code-review-monitor` detects `impl:agent-reviewing`
 PRs and runs `/cdd-code-review` automatically. If review passes, labels
 transition to `impl:agent-approved` and Slack is notified. If review fails,
 labels transition to `impl:agent-comments` and `cdd-impl-fix-monitor` picks

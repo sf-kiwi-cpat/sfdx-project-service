@@ -147,9 +147,9 @@ has cleared the spec and it's ready for their approval.
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-approved
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-approved
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
     gh pr ready $PR_NUMBER
   fi
 fi
@@ -157,15 +157,15 @@ fi
 
 **If HAS GAPS** — transition to `spec:agent-comments` so the state machine
 reflects that feedback exists. The fix monitor addresses findings and
-re-pushes, which moves the label back to `spec:ready-for-agent-review`.
+re-pushes, which moves the label back to `spec:agent-reviewing`.
 
 ```bash
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-comments
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-agent-review --add-label spec:agent-comments
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   fi
 fi
 ```
@@ -188,7 +188,7 @@ When SOLID, labels transition to `spec:agent-approved` — signaling the
 human that the agent has cleared the spec. When HAS GAPS, labels transition
 to `spec:agent-comments`. The human can override either by moving directly
 to `spec:human-approved`. The spec review loop re-runs when the spec
-returns to `spec:ready-for-agent-review`.
+returns to `spec:agent-reviewing`.
 
 ### Concrete over Abstract
 "Consider adding error handling tests" is useless feedback. "What happens
@@ -215,6 +215,6 @@ author (human or `/cdd-spec`) addresses findings and re-pushes.
 - **`/cdd-brief`** — Gathers context (not needed for spec review)
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
-**Automation:** `cdd-spec-review-monitor` detects `spec:ready-for-agent-review`
+**Automation:** `cdd-spec-review-monitor` detects `spec:agent-reviewing`
 PRs and runs `/cdd-spec-review` automatically. Findings are posted to the PR.
 If gaps are found, labels transition to `spec:agent-comments`.

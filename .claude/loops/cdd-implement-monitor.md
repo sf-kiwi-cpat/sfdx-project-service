@@ -20,11 +20,11 @@ Detects `spec:human-approved` PRs assigned to the local user and runs `/cdd-impl
    - `npm install` if `node_modules/` missing
    - Find spec: `find spec -name "contract.spec.ts" -type f | head -1`
    - Run `/cdd-implement <path>`
-5. `/cdd-implement` handles: `spec:human-approved` → `impl:agent-in-progress` → `impl:ready-for-agent-review`
+5. `/cdd-implement` handles: `spec:human-approved` → `impl:agent-in-progress` → `impl:agent-reviewing`
 
 ## Label transitions
 
 ```
 spec:human-approved       →  impl:agent-in-progress       (at /cdd-implement start)
-impl:agent-in-progress    →  impl:ready-for-agent-review  (at /cdd-implement end)
+impl:agent-in-progress    →  impl:agent-reviewing  (at /cdd-implement end)
 ```

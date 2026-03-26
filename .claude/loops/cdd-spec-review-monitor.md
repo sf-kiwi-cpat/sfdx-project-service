@@ -1,17 +1,17 @@
 # CDD Spec Review Monitor Loop
 
-Detects `spec:ready-for-agent-review` PRs assigned to the local user, runs `/cdd-spec-review`, and sends Slack notification.
+Detects `spec:agent-reviewing` PRs assigned to the local user, runs `/cdd-spec-review`, and sends Slack notification.
 
 ## Start
 
 ```
-/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the spec:ready-for-agent-review label assigned to $ME using gh pr list --state open --label spec:ready-for-agent-review --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings to the PR as a comment. If assessment is SOLID: transition labels to spec:agent-approved, mark the draft PR as ready for review using gh pr ready, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Spec review passed — ready for human approval" and links. If assessment is HAS GAPS: labels transition to spec:agent-comments, post findings summary in the PR's thread.
+/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the spec:agent-reviewing label assigned to $ME using gh pr list --state open --label spec:agent-reviewing --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings to the PR as a comment. If assessment is SOLID: transition labels to spec:agent-approved, mark the draft PR as ready for review using gh pr ready, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Spec review passed — ready for human approval" and links. If assessment is HAS GAPS: labels transition to spec:agent-comments, post findings summary in the PR's thread.
 ```
 
 ## What happens each cycle
 
 1. Get current user: `ME=$(gh api user -q '.login')`
-2. Query: `gh pr list --state open --label spec:ready-for-agent-review --assignee "$ME" --json number,headRefName,title`
+2. Query: `gh pr list --state open --label spec:agent-reviewing --assignee "$ME" --json number,headRefName,title`
 3. If no results, do nothing (wait for next cycle)
 4. For each PR found:
    - Extract issue number: `echo "$branch" | sed 's/.*issue-\([0-9]*\).*/\1/'`
@@ -40,6 +40,6 @@ Each PR gets its own thread in channel C0ANF2KL5HT:
 ## Label transitions
 
 ```
-spec:ready-for-agent-review  →  spec:agent-approved   (if /cdd-spec-review passes)
-spec:ready-for-agent-review  →  spec:agent-comments   (if /cdd-spec-review finds gaps)
+spec:agent-reviewing  →  spec:agent-approved   (if /cdd-spec-review passes)
+spec:agent-reviewing  →  spec:agent-comments   (if /cdd-spec-review finds gaps)
 ```

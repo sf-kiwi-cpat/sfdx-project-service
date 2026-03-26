@@ -43,17 +43,17 @@ use CDD. Everything else, just start coding.
 
 ```
 /cdd-brief or /cdd-spec    → assign user to issue
-/cdd-spec                   → spec:ready-for-agent-review (draft PR)
+/cdd-spec                   → spec:agent-reviewing (draft PR)
 cdd-spec-review-monitor     → /cdd-spec-review:
                                  SOLID    → spec:agent-approved (PR marked ready)
                                  HAS GAPS → spec:agent-comments
-cdd-spec-fix-monitor        → fixes spec → spec:ready-for-agent-review (re-review)
+cdd-spec-fix-monitor        → fixes spec → spec:agent-reviewing (re-review)
 Human approves              → spec:human-approved
-cdd-implement-monitor       → impl:agent-in-progress → impl:ready-for-agent-review
+cdd-implement-monitor       → impl:agent-in-progress → impl:agent-reviewing
 cdd-code-review-monitor     → /cdd-code-review:
                                  PASS       → impl:agent-approved
                                  NEEDS WORK → impl:agent-comments
-cdd-impl-fix-monitor        → fixes code → impl:ready-for-agent-review (re-review)
+cdd-impl-fix-monitor        → fixes code → impl:agent-reviewing (re-review)
 Human merges PR
 ```
 

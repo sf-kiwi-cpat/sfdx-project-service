@@ -88,11 +88,11 @@ fi
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 
   if [ -n "$ISSUE_NUMBER" ]; then
-    gh issue edit $ISSUE_NUMBER --remove-label impl:agent-in-progress --add-label impl:ready-for-agent-review
+    gh issue edit $ISSUE_NUMBER --remove-label impl:agent-in-progress --add-label impl:agent-reviewing
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:agent-in-progress --add-label impl:ready-for-agent-review
+    gh pr edit $PR_NUMBER --remove-label impl:agent-in-progress --add-label impl:agent-reviewing
   fi
   ```
 
@@ -100,7 +100,7 @@ fi
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues
-- Notify that code is ready for review (`cdd-code-review-monitor` will detect `impl:ready-for-agent-review` and run `/cdd-code-review`)
+- Notify that code is ready for review (`cdd-code-review-monitor` will detect `impl:agent-reviewing` and run `/cdd-code-review`)
 
 ---
 
@@ -179,7 +179,7 @@ These skills complement `/cdd-implement`, but none are prerequisites:
 
 **Automation:** `cdd-implement-monitor` detects `spec:human-approved` PRs and
 runs `/cdd-implement` automatically. After implementation completes
-(`impl:ready-for-agent-review`), `cdd-code-review-monitor` runs
+(`impl:agent-reviewing`), `cdd-code-review-monitor` runs
 `/cdd-code-review` for automated verification.
 
 ---
