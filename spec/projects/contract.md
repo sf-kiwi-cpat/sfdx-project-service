@@ -36,10 +36,10 @@ The projects system manages SFDX project creation and file tree browsing. Projec
 
 | Scenario | Contents |
 |----------|----------|
-| Template-based | Full template contents (unzipped from disk) |
-| Blank | Minimal `sfdx-project.json` with `packageDirectories` + empty `force-app/main/default/` |
+| Template-based | Full template contents (unzipped from disk), including `sfdx-project.json` with `packageDirectories` (array, at least one entry) |
+| Blank | Minimal `sfdx-project.json` with `packageDirectories` (array, at least one entry) + empty `force-app/main/default/` directory tree |
 
-Both scenarios produce a valid SFDX project with `sfdx-project.json` containing `packageDirectories`.
+Both scenarios produce a valid SFDX project with `sfdx-project.json` containing a non-empty `packageDirectories` array.
 
 ---
 
@@ -58,6 +58,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   }
   ```
   - `children` is an array of nested file/directory entries
+  - Works identically for both template-based and blank projects
 
 - **404 Not Found** — Project does not exist
   - Response: RFC 9457 Problem Detail (`application/problem+json`)
@@ -95,5 +96,5 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 ## Test Summary
 
 - **POST /projects**: 4 tests (2 template-based, 2 blank)
-- **GET /projects/:id/tree**: 2 tests (existing project, nonexistent project)
-- **Total**: 7 contract tests, 2 describe blocks
+- **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent project)
+- **Total**: 8 contract tests, 2 describe blocks

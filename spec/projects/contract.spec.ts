@@ -97,7 +97,13 @@ describe('Projects API', () => {
 
       const configPath = path.join(projectDir, 'sfdx-project.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
-      expect(config.packageDirectories).toBeDefined();
+      expect(config.packageDirectories).toBeInstanceOf(Array);
+      expect(config.packageDirectories.length).toBeGreaterThan(0);
+
+      // Blank scaffold includes the default package directory
+      const defaultDir = path.join(projectDir, 'force-app', 'main', 'default');
+      const dirStat = await fs.stat(defaultDir);
+      expect(dirStat.isDirectory()).toBe(true);
     });
 
     it('creates a project directory with sfdx-project.json', async () => {
@@ -112,7 +118,8 @@ describe('Projects API', () => {
 
       const configPath = path.join(projectDir, 'sfdx-project.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
-      expect(config.packageDirectories).toBeDefined();
+      expect(config.packageDirectories).toBeInstanceOf(Array);
+      expect(config.packageDirectories.length).toBeGreaterThan(0);
     });
   });
 
@@ -123,6 +130,19 @@ describe('Projects API', () => {
         .post('/v1/projects')
         .send({ template: 'hello-world-1' })
         .expect(201);
+
+      const res = await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}/tree`)
+        .expect(200);
+
+      expect(res.body).toHaveProperty('name');
+      expect(res.body).toHaveProperty('type', 'directory');
+      expect(res.body).toHaveProperty('children');
+      expect(Array.isArray(res.body.children)).toBe(true);
+    });
+
+    it('returns 200 with tree structure for a blank project', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       const res = await request(app.server)
         .get(`/v1/projects/${createRes.body.id}/tree`)
