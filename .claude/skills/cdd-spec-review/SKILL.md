@@ -1,9 +1,9 @@
 ---
 name: cdd-spec-review
-description: Evaluate spec quality before human approval. Independent agent critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Transitions to spec:comments when gaps are found.
+description: Evaluate spec quality before human approval. Critiques test-intent alignment, coverage gaps, mock boundaries, and testability. Posts findings to the PR. Transitions to spec:agent-comments when gaps are found.
 argument-hint: [optional: path to contract.spec.ts, feature name, or PR number]
 disable-model-invocation: false
-allowed-tools: Agent, Read, Glob, Bash, AskUserQuestion
+allowed-tools: Read, Glob, Bash, AskUserQuestion
 ---
 
 # /cdd-spec-review — Spec Quality Evaluation
@@ -12,10 +12,10 @@ You are the spec critic. Your job is to evaluate whether a contract spec is
 **clear, complete, and testable** — before a human approves it and before an
 implementation agent tries to satisfy it.
 
-The core insight: the spec author and the spec critic must be independent.
-The author knows what they *intended*; the critic checks what they *wrote*.
-A spec that looks right to its author may be ambiguous, incomplete, or
-untestable to a fresh reader.
+The core insight: the spec is the source of truth. The `contract.spec.ts` is
+the executable contract; the `contract.md` is an orientation aid for human
+reviewers. Your job is to verify the spec is unambiguous and implementable,
+not to re-derive it from another source.
 
 ## Modes
 
@@ -50,48 +50,12 @@ Read all spec files for the feature. Understand the full contract:
 - What fixtures are used?
 - What assertions are made?
 
-### Step 2: Blind Implementation Derivation (separate agent)
+Also read any existing implementation in `src/` for context on what already
+exists — this helps you assess whether the spec covers real behavior.
 
-Spawn an agent with these **strict constraints**:
+### Step 2: Critique
 
-```
-You are a spec analyst. Your job is to read ONLY the contract spec test
-code and derive what an implementation agent would need to build.
-
-RULES:
-- You may ONLY read files in spec/
-- You must NOT read any files in src/
-- You must NOT read any existing implementation
-
-Read the contract spec and derive:
-
-1. REQUIREMENTS — What must the implementation do? List each behavior
-   that a test asserts.
-2. AMBIGUITIES — Where is the spec unclear? What could be interpreted
-   multiple ways? What would an implementation agent have to guess about?
-3. MOCK BOUNDARIES — What is mocked vs real? Does the test mock too much
-   (testing nothing real) or too little (requiring real infrastructure)?
-4. ASSERTION STRENGTH — For each test, is the assertion tight enough to
-   catch bugs but loose enough to allow valid implementations? Flag
-   assertions that are trivially satisfiable or impossibly brittle.
-5. MISSING SCENARIOS — What obvious error conditions, edge cases, or
-   concurrency scenarios are NOT tested? List up to 5 concrete gaps.
-
-Be specific. Reference actual test names, mock setups, and assertion calls.
-Do not suggest what the spec *should* test — only analyze what it *does* test
-and what it *doesn't*.
-
-Return your findings as a structured list under each heading.
-```
-
-Use `subagent_type: "general-purpose"` for this agent. The agent must work
-from the spec alone — this tests whether the spec is self-contained and
-unambiguous.
-
-### Step 3: Critique
-
-Using the blind derivation and your own reading, evaluate the spec across
-five dimensions:
+Evaluate the spec across five dimensions:
 
 **1. Test-intent alignment**
 Does each test actually test what its `it()` description claims? Read the
@@ -128,7 +92,7 @@ Can an implementation agent satisfy these tests without modifying the spec?
 - Any shared mutable state between tests that could cause order-dependence?
 - Are test descriptions consistent in style and specificity?
 
-### Step 4: Report & Post to PR
+### Step 3: Report & Post to PR
 
 Present findings organized by impact:
 
@@ -142,9 +106,6 @@ Present findings organized by impact:
 
 ## Spec Summary
 [Brief description of what the spec covers — endpoints, behaviors, test count]
-
-## Blind Derivation Findings
-[Key findings from the implementation derivation agent]
 
 ## Critique
 
@@ -169,12 +130,6 @@ Present findings organized by impact:
 
 ## Worth Considering
 - [Coverage gaps, mock boundary adjustments]
-
-<details><summary>Blind derivation findings</summary>
-
-[Key findings from the implementation derivation agent]
-
-</details>
 ```
 
 **Post the report to the PR** using the `/gh-comment` skill with comment
@@ -184,7 +139,7 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
-**If SOLID** — transition to `spec:agent-reviewed` and mark the PR as
+**If SOLID** — transition to `spec:agent-approved` and mark the PR as
 ready for review (undraft). This is the signal to humans that the agent
 has cleared the spec and it's ready for their approval.
 
@@ -192,47 +147,48 @@ has cleared the spec and it's ready for their approval.
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:agent-reviewed
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
     gh pr ready $PR_NUMBER
   fi
 fi
 ```
 
-**If HAS GAPS** — transition to `spec:comments` so the state machine
-reflects that feedback exists. The spec author addresses findings and
-re-pushes, which moves the label back to `spec:ready-for-review`.
+**If HAS GAPS** — transition to `spec:agent-comments` so the state machine
+reflects that feedback exists. The fix monitor addresses findings and
+re-pushes, which moves the label back to `spec:agent-reviewing`.
 
 ```bash
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:ready-for-review --add-label spec:comments
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   fi
 fi
 ```
 
 The human can still approve a spec regardless of the agent's assessment —
-just add `spec:approved` directly.
+just add `spec:human-approved` directly.
 
 ---
 
 ## Key Principles
 
-### Independence
-The spec critic must not share context with the spec author. The blind
-derivation agent reads only spec files and derives what an implementation
-would need. If the derivation is ambiguous, the spec is ambiguous.
+### Source of Truth is the Test
+The `contract.spec.ts` is the executable contract. The `contract.md` is a
+human-readable orientation aid — helpful for onboarding reviewers, but not
+a substitute for reading the test code. Review quality comes from analyzing
+the tests themselves, not comparing two representations.
 
 ### Gating, Not Blocking
-When SOLID, labels transition to `spec:agent-reviewed` — signaling the
+When SOLID, labels transition to `spec:agent-approved` — signaling the
 human that the agent has cleared the spec. When HAS GAPS, labels transition
-to `spec:comments`. The human can override either by moving directly to
-`spec:approved`. The spec review loop re-runs when the spec returns to
-`spec:ready-for-review`.
+to `spec:agent-comments`. The human can override either by moving directly
+to `spec:human-approved`. The spec review loop re-runs when the spec
+returns to `spec:agent-reviewing`.
 
 ### Concrete over Abstract
 "Consider adding error handling tests" is useless feedback. "What happens
@@ -247,8 +203,7 @@ than one with 30 nits. The human reviewer doesn't want to wade through noise.
 
 ### No Spec Modification
 This skill reads and critiques. It does not modify spec files. The spec
-author (human or `/cdd-spec`) addresses findings and re-pushes. This
-separation ensures the critic stays independent.
+author (human or `/cdd-spec`) addresses findings and re-pushes.
 
 ---
 
@@ -260,6 +215,6 @@ separation ensures the critic stays independent.
 - **`/cdd-brief`** — Gathers context (not needed for spec review)
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
-**Automation:** Loop 3 detects `spec:ready-for-review` PRs and runs
-`/cdd-spec-review` automatically. Findings are posted to the PR. If gaps
-are found, labels transition to `spec:comments`.
+**Automation:** `cdd-spec-review-monitor` detects `spec:agent-reviewing`
+PRs and runs `/cdd-spec-review` automatically. Findings are posted to the PR.
+If gaps are found, labels transition to `spec:agent-comments`.

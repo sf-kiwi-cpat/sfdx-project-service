@@ -103,10 +103,9 @@ Ask if they want to set up a worktree for this work. If yes:
   copy of the repo so there are no collisions with in-progress work.
 - Remind them that `npm install` will run automatically via the SessionStart hook.
 
-**Add labels to track workflow progress** (if linked to a GitHub issue):
+**Assign the issue to claim it** (if linked to a GitHub issue):
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
 gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
 ```
 

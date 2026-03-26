@@ -42,22 +42,28 @@ use CDD. Everything else, just start coding.
 ### Label lifecycle
 
 ```
-/cdd-brief       → spec:in-progress
-/cdd-spec        → spec:ready-for-review (draft PR)
-Loop 1           → /cdd-spec-review:
-                      SOLID    → spec:agent-reviewed (PR marked ready)
-                      HAS GAPS → spec:comments (fix → spec:ready-for-review)
-Human approves   → spec:approved
-Loop 2           → impl:in-progress → impl:ready
-Loop 3           → /cdd-code-review:
-                      PASS       → impl:ready-to-merge
-                      NEEDS WORK → impl:comments (fix → impl:ready)
+/cdd-brief or /cdd-spec    → assign user to issue
+/cdd-spec                   → spec:agent-reviewing (draft PR)
+cdd-spec-review-monitor     → /cdd-spec-review:
+                                 SOLID    → spec:agent-approved (PR marked ready)
+                                 HAS GAPS → spec:agent-comments
+cdd-spec-fix-monitor        → fixes spec → spec:agent-reviewing (re-review)
+Human approves              → spec:human-approved
+cdd-implement-monitor       → impl:agent-in-progress → impl:agent-reviewing
+cdd-code-review-monitor     → /cdd-code-review:
+                                 PASS       → impl:agent-approved
+                                 NEEDS WORK → impl:agent-comments
+cdd-impl-fix-monitor        → fixes code → impl:agent-reviewing (re-review)
 Human merges PR
 ```
 
+Loops are **assignee-scoped** — each local loop only picks up issues/PRs
+assigned to the machine's `gh` user. See `.claude/loops/` for setup.
+
 ### Guardrails
 
-`spec/` is human-guarded (agents cannot modify). `tests/` is agent-mutable.
+`spec/` is human-guarded (agents can draft and fix pre-approval, but
+nothing ships without human sign-off). `tests/` is agent-mutable.
 Test code (`contract.spec.ts`) is source of truth; `contract.md` is always
 derived from it. See [docs/workflow-guide.md](docs/workflow-guide.md) for
 the full workflow, loop setup, and troubleshooting.
@@ -112,6 +118,11 @@ Title: same as commit format, under 70 chars. Template in `.github/pull_request_
 When modifying documentation, follow the structure defined in
 [docs/DOCUMENTATION-ARCHITECTURE.md](docs/DOCUMENTATION-ARCHITECTURE.md).
 Run `/docs-standards` to audit compliance.
+
+When modifying CDD skills, loops, or the label lifecycle, also update
+[docs/workflow-guide.md](docs/workflow-guide.md) to reflect the changes.
+Check for stale references to old labels, removed features, or renamed
+monitors before committing.
 
 ## Gotchas
 

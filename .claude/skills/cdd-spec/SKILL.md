@@ -45,11 +45,10 @@ create one:
 - Use `EnterWorktree` to create it
 - `npm install` runs automatically via SessionStart hook
 
-**Labels:** If working on a GitHub issue and no workflow labels exist yet, add them:
+**Assignee:** If working on a GitHub issue, claim it:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --add-label spec:in-progress
   gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
 fi
 ```
@@ -133,11 +132,11 @@ Once human approves both artifacts:
   ISSUE_NUMBER=$(echo "$BRANCH" | sed 's/.*issue-\([0-9]*\).*/\1/')
 
   if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$BRANCH" ]; then
-    gh issue edit $ISSUE_NUMBER --remove-label spec:in-progress --add-label spec:ready-for-review
+    gh issue edit $ISSUE_NUMBER --add-label spec:agent-reviewing
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label spec:in-progress --add-label spec:ready-for-review
+    gh pr edit $PR_NUMBER --add-label spec:agent-reviewing
   fi
   ```
 - Notify: **"Draft PR created — specs pushed for agent review!"** The spec
@@ -294,7 +293,8 @@ These skills complement `/cdd-spec`, but none are prerequisites:
 - **`/cdd-code-review`** — Verifies correctness and code quality
 - **`/cdd-spec-review`** — Evaluates spec quality before human approval
 
-**Automation:** After specs are pushed (`spec:ready-for-review` label), Loop 3
-runs `/cdd-spec-review` to post findings to the PR. After human approves
-(`spec:approved` label), Loop 1 runs `/cdd-implement`. After implementation
-completes (`impl:ready`), Loop 2 runs `/cdd-code-review`.
+**Automation:** After specs are pushed (`spec:agent-reviewing`),
+`cdd-spec-review-monitor` runs `/cdd-spec-review`. After human approves
+(`spec:human-approved`), `cdd-implement-monitor` runs `/cdd-implement`.
+After implementation completes (`impl:agent-reviewing`),
+`cdd-code-review-monitor` runs `/cdd-code-review`.
