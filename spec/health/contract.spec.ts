@@ -61,4 +61,17 @@ describe('GET /health', () => {
     const res = await request(app.server).get('/health').expect(200);
     expect(res.body.status).toBe('ok');
   });
+
+  it('supports HEAD requests', async () => {
+    // Liveness probes may use HEAD instead of GET
+    await request(app.server).head('/health').expect(200);
+  });
+
+  it('rejects POST with 404', async () => {
+    await request(app.server).post('/health').expect(404);
+  });
+
+  it('rejects PUT with 404', async () => {
+    await request(app.server).put('/health').expect(404);
+  });
 });
