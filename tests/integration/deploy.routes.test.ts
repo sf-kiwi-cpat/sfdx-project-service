@@ -53,7 +53,7 @@ describe('deploy routes integration', () => {
     // Create a project
     const createRes = await request(app.server)
       .post('/v1/projects')
-      .send({ template: 'hello-world-1' });
+      .send({ template: 'work-tracking' });
     projectId = createRes.body.id;
 
     mockAuthInfoCreate.mockResolvedValue({});

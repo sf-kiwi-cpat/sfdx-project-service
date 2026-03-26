@@ -57,10 +57,9 @@ describe('GET /templates', () => {
     }
   });
 
-  it('lists the hello-world-1 and hello-world-2 templates', async () => {
+  it('includes the local-react-test fixture template', async () => {
     const res = await request(app.server).get('/v1/templates').expect(200);
     const ids = res.body.map((t: { id: string }) => t.id);
-    expect(ids).toContain('hello-world-1');
-    expect(ids).toContain('hello-world-2');
+    expect(ids).toContain('local-react-test');
   });
 });

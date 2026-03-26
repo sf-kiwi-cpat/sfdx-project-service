@@ -57,7 +57,7 @@ export async function setupTempProject(): Promise<{ tmpDir: string; projectId: s
   await app.ready();
   const createRes = await request(app.server)
     .post('/v1/projects')
-    .send({ template: 'hello-world-1' });
+    .send({ template: 'work-tracking' });
   const projectId = createRes.body.id;
   await app.close();
 

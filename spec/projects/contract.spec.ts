@@ -56,7 +56,7 @@ describe('Projects API', () => {
     it('returns 201 with a project id when given a valid template', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
 
       expect(res.body).toHaveProperty('id');
@@ -109,7 +109,7 @@ describe('Projects API', () => {
     it('creates a project directory with sfdx-project.json', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
 
       const projectDir = path.join(tmpDir, res.body.id);
@@ -128,7 +128,7 @@ describe('Projects API', () => {
       // First create a project
       const createRes = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
 
       const res = await request(app.server)
