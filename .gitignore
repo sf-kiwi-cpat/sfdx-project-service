@@ -56,5 +56,5 @@ templates/dist/
 .cache/
 temp/
 tmp/
-projects/
+/projects/
 ui/
