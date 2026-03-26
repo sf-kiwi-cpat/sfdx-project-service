@@ -37,6 +37,31 @@ export class ProjectNotFoundError extends Error {
 }
 
 /**
+ * Create a blank SFDX project with minimal scaffold.
+ * Returns the project ID (UUID).
+ */
+export async function createBlankProject(): Promise<string> {
+  const projectId = randomUUID();
+  const projectDir = path.join(getProjectsRoot(), projectId);
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const sfdxConfig = {
+    packageDirectories: [{ path: 'force-app', default: true }],
+    namespace: '',
+    sfdcLoginUrl: 'https://login.salesforce.com',
+    sourceApiVersion: '62.0',
+  };
+  await fs.writeFile(
+    path.join(projectDir, 'sfdx-project.json'),
+    JSON.stringify(sfdxConfig, null, 2)
+  );
+  await fs.mkdir(path.join(projectDir, 'force-app', 'main', 'default'), { recursive: true });
+
+  logger.info({ projectId }, 'Blank project created');
+  return projectId;
+}
+
+/**
  * Create a new project by unzipping a template into a UUID-named directory.
  * Returns the project ID (UUID).
  */
