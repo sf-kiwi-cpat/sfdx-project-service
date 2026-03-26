@@ -112,8 +112,11 @@ Once human approves both artifacts:
   BRANCH=$(git branch --show-current)
   PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
 
+  ME=$(gh api user -q .login)
+
   if [ -z "$PR_NUMBER" ]; then
-    gh pr create --draft --title "spec({feature}): {description}" \
+    gh pr create --draft --assignee "$ME" \
+      --title "spec({feature}): {description}" \
       --body "$(cat <<'EOF'
   ## Summary
   - ...
@@ -123,8 +126,9 @@ Once human approves both artifacts:
   )"
     PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
   else
-    # Ensure existing PR is in draft mode
+    # Ensure existing PR is in draft mode and has an assignee
     gh pr ready "$PR_NUMBER" --undo 2>/dev/null || true
+    gh pr edit "$PR_NUMBER" --add-assignee "$ME"
   fi
   ```
 - Update workflow labels to signal readiness for agent review:
