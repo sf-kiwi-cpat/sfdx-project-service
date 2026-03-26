@@ -135,6 +135,11 @@ Present findings organized by impact:
 **When SOLID** — verdict first, details collapsed:
 
 ```
+**🤖 CDD Agent · spec-review**
+✅ **SOLID** — [one-line summary of what the spec covers]
+
+<details><summary>Full analysis (N describe blocks, M tests)</summary>
+
 ## Spec Summary
 [Brief description of what the spec covers — endpoints, behaviors, test count]
 

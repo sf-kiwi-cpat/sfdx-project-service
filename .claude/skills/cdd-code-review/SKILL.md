@@ -133,6 +133,11 @@ Present findings organized by severity:
 **When PASS** — verdict first, details collapsed:
 
 ```
+**🤖 CDD Agent · code-review**
+✅ **PASS** — [one-line summary: e.g. "zero contract discrepancies, clean diff"]
+
+<details><summary>Full analysis</summary>
+
 ## Contract Verification
 [Zero discrepancies or minor notes]
 
