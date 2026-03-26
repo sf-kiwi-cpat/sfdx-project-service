@@ -35,11 +35,11 @@ offers to create a worktree and hand off to `/cdd-spec`.
 both, edit the test code if needed, and approve when it looks right. The spec
 gets pushed and labeled `spec:ready-for-agent-review`.
 
-`/cdd-spec-review` reads the spec and evaluates whether it's clear, complete,
-and testable. It runs a blind derivation (a separate agent tries to figure out
-what an implementation would need just from reading the spec) to surface
-ambiguities. Posts findings as a PR comment. If there are gaps, the label
-moves to `spec:agent-comments` so the fix monitor can address them.
+`/cdd-spec-review` reads the spec and any existing implementation, then
+evaluates whether the spec is clear, complete, and testable. It critiques
+test-intent alignment, coverage gaps, mock boundaries, and testability.
+Posts findings as a PR comment. If there are gaps, the label moves to
+`spec:agent-comments` so the fix monitor can address them.
 
 `/cdd-implement` reads the contract spec and writes production code to make
 the tests pass. It also creates unit and integration tests, checks coverage

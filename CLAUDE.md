@@ -119,6 +119,11 @@ When modifying documentation, follow the structure defined in
 [docs/DOCUMENTATION-ARCHITECTURE.md](docs/DOCUMENTATION-ARCHITECTURE.md).
 Run `/docs-standards` to audit compliance.
 
+When modifying CDD skills, loops, or the label lifecycle, also update
+[docs/workflow-guide.md](docs/workflow-guide.md) to reflect the changes.
+Check for stale references to old labels, removed features, or renamed
+monitors before committing.
+
 ## Gotchas
 
 - Deleting a GH Actions workflow file does **not** remove its required status
