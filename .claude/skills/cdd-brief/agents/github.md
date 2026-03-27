@@ -31,11 +31,13 @@ gh issue list --state open --limit 20 \
 
 ### Triage Items
 
-Separately query for issues labeled `triage` — these need human conversation
-before any agent work begins:
+Filter the same open issues query for items labeled `triage` — these need
+human conversation before any agent work begins. Do NOT use `--label` flag
+(it's unreliable); filter client-side instead:
 ```bash
-gh issue list --state open --label triage --limit 20 \
-  --json number,title,assignees,createdAt,updatedAt,comments
+gh issue list --state open --limit 50 \
+  --json number,title,labels,assignees,createdAt,updatedAt,comments | \
+  jq '[.[] | select(.labels | map(.name) | index("triage"))]'
 ```
 - List all triage items regardless of assignee
 - Note how many comments each has (signals whether conversation has started)
