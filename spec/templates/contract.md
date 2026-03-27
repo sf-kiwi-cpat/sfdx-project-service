@@ -13,10 +13,10 @@ a human-readable display name, and a description for presentation to clients.
 
 **200 OK** — returns an array of template objects
 
-| Field         | Type   | Constraints |
-|---------------|--------|-------------|
-| `id`          | string | unique template identifier |
-| `name`        | string | human-readable display name |
+| Field         | Type   | Constraints                       |
+| ------------- | ------ | --------------------------------- |
+| `id`          | string | unique template identifier        |
+| `name`        | string | human-readable display name       |
 | `description` | string | non-empty, describes the template |
 
 ## Behaviors
@@ -31,7 +31,7 @@ a human-readable display name, and a description for presentation to clients.
    - `description` must be non-empty (length > 0)
 
 3. **Known templates are listed**
-   - `hello-world-1` and `hello-world-2` are always present (by `id`)
+   - `local-react-test` is always present (by `id`)
 
 ## Error Cases
 
