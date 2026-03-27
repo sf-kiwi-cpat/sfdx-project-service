@@ -1,5 +1,5 @@
 {
   "id": "local-react-test",
   "name": "Local React Test",
-  "description": "A React web application with TypeScript and Vite bundling"
+  "description": "Real-time deployment activity dashboard for Salesforce orgs"
 }

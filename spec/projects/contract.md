@@ -13,7 +13,7 @@ The projects system manages SFDX project creation and file tree browsing. Projec
 **Create a new project**
 
 **Request Body:**
-- `template` (optional, string): Template identifier (e.g., `"hello-world-1"`)
+- `template` (optional, string): Template identifier (e.g., `"work-tracking"`)
   - When provided: unzips the named template into a new project directory
   - When omitted: scaffolds a minimal blank SFDX project in-memory (no zip, no disk lookup)
 

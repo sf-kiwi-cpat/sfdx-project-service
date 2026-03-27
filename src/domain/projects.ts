@@ -36,6 +36,8 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
+const DEFAULT_SOURCE_API_VERSION = '62.0';
+
 /**
  * Create a blank SFDX project with minimal scaffold.
  * Returns the project ID (UUID).
@@ -45,17 +47,22 @@ export async function createBlankProject(): Promise<string> {
   const projectDir = path.join(getProjectsRoot(), projectId);
   await fs.mkdir(projectDir, { recursive: true });
 
-  const sfdxConfig = {
-    packageDirectories: [{ path: 'force-app', default: true }],
-    namespace: '',
-    sfdcLoginUrl: 'https://login.salesforce.com',
-    sourceApiVersion: '62.0',
-  };
-  await fs.writeFile(
-    path.join(projectDir, 'sfdx-project.json'),
-    JSON.stringify(sfdxConfig, null, 2)
-  );
-  await fs.mkdir(path.join(projectDir, 'force-app', 'main', 'default'), { recursive: true });
+  try {
+    const sfdxConfig = {
+      packageDirectories: [{ path: 'force-app', default: true }],
+      namespace: '',
+      sfdcLoginUrl: 'https://login.salesforce.com',
+      sourceApiVersion: DEFAULT_SOURCE_API_VERSION,
+    };
+    await fs.writeFile(
+      path.join(projectDir, 'sfdx-project.json'),
+      JSON.stringify(sfdxConfig, null, 2)
+    );
+    await fs.mkdir(path.join(projectDir, 'force-app', 'main', 'default'), { recursive: true });
+  } catch (err) {
+    await fs.rm(projectDir, { recursive: true, force: true });
+    throw err;
+  }
 
   logger.info({ projectId }, 'Blank project created');
   return projectId;
