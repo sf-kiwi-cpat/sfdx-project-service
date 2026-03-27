@@ -125,7 +125,7 @@ findings, fixes the code, and relabels for re-review. Copy the command from
 
 Each loop polls every 5 minutes using `gh pr list`. No LLM tokens are spent
 on polling. Claude is only invoked when there's actual work to do. Review
-and fix loops post results to the `#app-studio-prs` Slack channel.
+and fix loops post results to the `#app-studio-alerts` Slack channel.
 
 You can stop any loop with Ctrl+C.
 
