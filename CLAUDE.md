@@ -25,7 +25,7 @@ Do not skip hooks with `--no-verify`.
 
 ## CDD — Contract-Driven Development
 
-Humans define *what* (contracts in `spec/`). Agents implement *how* (code in
+Humans define _what_ (contracts in `spec/`). Agents implement _how_ (code in
 `src/`). Code is a derived artifact; contracts are the durable source of truth.
 
 ### Skills (each works standalone)
@@ -107,6 +107,11 @@ with `Closes #N` or `Part of #N`.
 ### PRs
 
 Title: same as commit format, under 70 chars. Template in `.github/pull_request_template.md`.
+
+**Always assign PRs on creation.** Every `gh pr create` must include
+`--assignee @me` (or the equivalent `--assignee "$ME"` after
+`ME=$(gh api user -q .login)`). This keeps ownership visible across
+all workflows — CDD, docs sync, and ad-hoc.
 
 ## Settings
 
