@@ -95,6 +95,6 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Test Summary
 
-- **POST /projects**: 4 tests (2 template-based, 2 blank)
+- **POST /projects**: 5 tests (3 template-based, 2 blank)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent project)
 - **Total**: 8 contract tests, 2 describe blocks
