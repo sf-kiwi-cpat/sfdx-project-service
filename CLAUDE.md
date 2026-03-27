@@ -77,14 +77,6 @@ tests/     — agent-mutable tests (see tests/CLAUDE.md)
 .claude/   — skills, loops, settings
 ```
 
-## Worktrees
-
-Git worktrees share source files but **not** `node_modules`. A `SessionStart`
-hook runs `npm install` automatically in new worktrees.
-
-> **Gotcha:** `WorktreeCreate` hooks _replace_ default worktree creation.
-> Use `SessionStart` for post-creation setup, not `WorktreeCreate`.
-
 ## Git Conventions
 
 ### Branches
