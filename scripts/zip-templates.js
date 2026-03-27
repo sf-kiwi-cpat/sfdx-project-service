@@ -12,7 +12,15 @@
  *   dist/<id>/content.zip
  */
 
-import { readdirSync, mkdirSync, statSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
+import {
+  readdirSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  existsSync,
+  copyFileSync,
+  readFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import AdmZip from 'adm-zip';
@@ -21,11 +29,10 @@ const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
 const distDir = join(root, 'templates', 'dist');
 
+rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
 
-const templates = readdirSync(srcDir).filter((name) =>
-  statSync(join(srcDir, name)).isDirectory()
-);
+const templates = readdirSync(srcDir).filter((name) => statSync(join(srcDir, name)).isDirectory());
 
 for (const name of templates) {
   const templateDir = join(srcDir, name);
