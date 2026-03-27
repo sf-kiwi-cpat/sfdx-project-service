@@ -26,13 +26,19 @@ Both artifacts are generated together so humans can review them in parallel.
 ### Step 0: Check if CDD is appropriate
 
 Before setting up, check whether this work actually needs a contract.
-Contracts are for new or changed observable behavior (new endpoints,
-response shape changes, new error conditions). If the work is a doc
-change, chore, refactor, dependency bump, or bug fix with no behavior
-change, suggest skipping the contract workflow: "This looks like a
-[type]. You probably don't need a formal spec — just start coding.
-Want to proceed with /cdd-spec anyway?" Only continue if the user
-confirms.
+
+**Triage check:** If the work is linked to a GitHub issue, fetch its labels.
+If the issue has a `triage` label, **stop immediately** — do not draft specs
+or start any workflow. Tell the user: "This issue is labeled `triage` and
+needs human conversation before work begins. Want to remove the triage label
+and proceed, or discuss first?" Only continue if the user explicitly approves.
+
+**Scope check:** Contracts are for new or changed observable behavior (new
+endpoints, response shape changes, new error conditions). If the work is a
+doc change, chore, refactor, dependency bump, or bug fix with no behavior
+change, suggest skipping the contract workflow: "This looks like a [type].
+You probably don't need a formal spec — just start coding. Want to proceed
+with /cdd-spec anyway?" Only continue if the user confirms.
 
 ### Step 1: Environment Setup (auto-detected)
 
