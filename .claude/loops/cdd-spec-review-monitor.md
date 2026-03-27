@@ -5,7 +5,7 @@ Detects `spec:agent-reviewing` PRs assigned to the local user, runs `/cdd-spec-r
 ## Start
 
 ```
-/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the spec:agent-reviewing label assigned to $ME using gh pr list --state open --label spec:agent-reviewing --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings to the PR as a comment. If assessment is SOLID: transition labels to spec:agent-approved, mark the draft PR as ready for review using gh pr ready, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "Spec review passed — ready for human approval" and links. If assessment is HAS GAPS: labels transition to spec:agent-comments, post findings summary in the PR's thread.
+/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the spec:agent-reviewing label assigned to $ME using gh pr list --state open --label spec:agent-reviewing --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, then run /cdd-spec-review. The skill posts findings to the PR as a comment. If assessment is SOLID: transition labels to spec:agent-approved, mark the draft PR as ready for review using gh pr ready, post to #app-studio-alerts (C0ANF2KL5HT) in the PR's thread with "Spec review passed — ready for human approval" and links. If assessment is HAS GAPS: labels transition to spec:agent-comments, post findings summary in the PR's thread.
 ```
 
 ## What happens each cycle
@@ -16,18 +16,19 @@ Detects `spec:agent-reviewing` PRs assigned to the local user, runs `/cdd-spec-r
 4. For each PR found:
    - Extract issue number: `echo "$branch" | sed 's/.*issue-\([0-9]*\).*/\1/'`
    - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
+   - If no worktree found, create one: `git worktree add .claude/worktrees/$slug $branch` (slug is the branch suffix, e.g. `issue-42-foo` from `t/user/issue-42-foo`)
    - Enter worktree via `EnterWorktree`
    - `npm install` if `node_modules/` missing
    - Run `/cdd-spec-review`
 5. If assessment is SOLID:
    - Transition labels to `spec:agent-approved`
    - Mark draft PR as ready: `gh pr ready $PR_NUMBER`
-   - Post to #app-studio-prs in the PR's thread
+   - Post to #app-studio-alerts in the PR's thread
 6. If assessment is HAS GAPS:
    - Labels transition to `spec:agent-comments`
    - Post findings summary in the PR's thread
 
-## Slack threading in #app-studio-prs
+## Slack threading in #app-studio-alerts
 
 Each PR gets its own thread in channel C0ANF2KL5HT:
 

@@ -5,7 +5,7 @@ Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-r
 ## Start
 
 ```
-/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the impl:agent-reviewing label assigned to $ME using gh pr list --state open --label impl:agent-reviewing --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list, enter it with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels transition to impl:agent-approved, post to #app-studio-prs (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: labels transition to impl:agent-comments, post review findings in the PR's thread.
+/loop 5m Run ME=$(gh api user -q '.login') then check for open PRs with the impl:agent-reviewing label assigned to $ME using gh pr list --state open --label impl:agent-reviewing --assignee "$ME" --json number,headRefName,title. If none found, do nothing. For each PR: extract the issue number from the branch name using sed, find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels transition to impl:agent-approved, post to #app-studio-alerts (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: labels transition to impl:agent-comments, post review findings in the PR's thread.
 ```
 
 ## What happens each cycle
@@ -16,17 +16,18 @@ Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-r
 4. For each PR found:
    - Extract issue number: `echo "$branch" | sed 's/.*issue-\([0-9]*\).*/\1/'`
    - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
+   - If no worktree found, create one: `git worktree add .claude/worktrees/$slug $branch` (slug is the branch suffix, e.g. `issue-42-foo` from `t/user/issue-42-foo`)
    - Enter worktree via `EnterWorktree`
    - `npm install` if `node_modules/` missing
    - Run `/cdd-code-review`
 5. If verdict is PASS:
    - Labels transition to `impl:agent-approved`
-   - Post to #app-studio-prs in the PR's thread
+   - Post to #app-studio-alerts in the PR's thread
 6. If verdict is NEEDS WORK:
    - Labels transition to `impl:agent-comments`
    - Post review findings in the PR's thread
 
-## Slack threading in #app-studio-prs
+## Slack threading in #app-studio-alerts
 
 Each PR gets its own thread in channel C0ANF2KL5HT:
 
