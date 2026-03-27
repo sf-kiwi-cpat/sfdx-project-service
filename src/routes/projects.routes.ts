@@ -17,9 +17,8 @@
 
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { buildTree, readFile } from '../domain/files.js';
-import { createProject, getProjectDir } from '../domain/projects.js';
+import { createBlankProject, createProject, getProjectDir } from '../domain/projects.js';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -33,14 +32,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { template } = request.body as { template?: string };
-      if (!template) {
-        return reply
-          .status(400)
-          .type(PROBLEM_JSON)
-          .send(problemDetail(400, 'Bad Request', 'template is required in request body'));
-      }
-
-      const id = await createProject(template);
+      const id = template ? await createProject(template) : await createBlankProject();
       return reply.status(201).send({ id });
     }
   );

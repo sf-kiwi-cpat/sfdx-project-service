@@ -20,6 +20,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {
+  createBlankProject,
   createProject,
   getProjectDir,
   TemplateNotFoundError,
@@ -74,6 +75,53 @@ describe('createProject', () => {
 
     it('rejects IDs starting with an underscore', async () => {
       await expect(createProject('_foo')).rejects.toThrow(TemplateNotFoundError);
+    });
+  });
+
+  describe('createBlankProject', () => {
+    it('returns a UUID', async () => {
+      const id = await createBlankProject();
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    });
+
+    it('creates sfdx-project.json with packageDirectories', async () => {
+      const id = await createBlankProject();
+      const configPath = path.join(projectsRoot, id, 'sfdx-project.json');
+      const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+      expect(config.packageDirectories).toBeInstanceOf(Array);
+      expect(config.packageDirectories.length).toBeGreaterThan(0);
+    });
+
+    it('creates force-app/main/default directory', async () => {
+      const id = await createBlankProject();
+      const defaultDir = path.join(projectsRoot, id, 'force-app', 'main', 'default');
+      const stat = await fs.stat(defaultDir);
+      expect(stat.isDirectory()).toBe(true);
+    });
+
+    it('scaffolds lwc and aura subdirectories via empty template', async () => {
+      const id = await createBlankProject();
+      const defaultDir = path.join(projectsRoot, id, 'force-app', 'main', 'default');
+      const entries = await fs.readdir(defaultDir);
+      expect(entries).toContain('aura');
+      expect(entries).toContain('lwc');
+    });
+
+    it('creates .forceignore', async () => {
+      const id = await createBlankProject();
+      const ignorePath = path.join(projectsRoot, id, '.forceignore');
+      const stat = await fs.stat(ignorePath);
+      expect(stat.isFile()).toBe(true);
+    });
+
+    it('cleans up project directory on failure', async () => {
+      const origRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = '/nonexistent/path/that/will/fail';
+      try {
+        await expect(createBlankProject()).rejects.toThrow();
+      } finally {
+        process.env.PROJECTS_ROOT = origRoot;
+      }
     });
   });
 

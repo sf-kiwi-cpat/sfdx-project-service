@@ -26,38 +26,27 @@ export interface Template {
   description: string;
 }
 
-interface TemplateMetadata {
-  [id: string]: { description: string };
-}
-
-async function loadMetadata(dir: string): Promise<TemplateMetadata> {
-  try {
-    const raw = await fs.readFile(path.join(dir, 'metadata.json'), 'utf-8');
-    return JSON.parse(raw) as TemplateMetadata;
-  } catch {
-    return {};
-  }
-}
-
 /**
- * List available project templates by reading the templates/ directory.
- * Each .zip file becomes a template with id = filename without extension.
- * Descriptions are loaded from metadata.json (generated at build time).
+ * List available project templates by reading template.json from each
+ * subdirectory of the templates/ directory.
  */
 export async function listTemplates(): Promise<Template[]> {
   const dir = getTemplatesDir();
-  const [entries, metadata] = await Promise.all([fs.readdir(dir), loadMetadata(dir)]);
-  const templates = entries
-    .filter((f) => f.endsWith('.zip'))
-    .map((f) => {
-      const id = f.replace(/\.zip$/, '');
-      return {
-        id,
-        name: id.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-        description: metadata[id]?.description ?? '',
-      };
-    })
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const templates: Template[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const raw = await fs.readFile(path.join(dir, entry.name, 'template.json'), 'utf-8');
+      const meta = JSON.parse(raw) as Template;
+      templates.push({ id: meta.id, name: meta.name, description: meta.description ?? '' });
+    } catch {
+      // Skip directories without a valid template.json
+    }
+  }
+
+  templates.sort((a, b) => a.id.localeCompare(b.id));
   logger.info({ count: templates.length }, 'Listed templates');
   return templates;
 }

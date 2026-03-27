@@ -68,29 +68,73 @@ EOF
 )"
 ```
 
-### 3. Dedup — patch existing or create new
+### 3. Dedup — patch existing or create new (with revision history)
 
 Each comment type gets **one living comment** per PR. If a previous
-comment from the same agent/type exists, update it in place instead of
-creating a duplicate.
+comment from the same agent/type exists, update it in place — but
+preserve the previous verdict in a collapsed revision history so
+reviewers can trace how findings evolved across passes.
 
 The dedup key is the first line: `🤖 {Name}`.
 
 ```bash
 DEDUP_KEY="🤖 ${COMMENT_NAME}"
 
-EXISTING_URL=$(gh pr view "$PR_NUMBER" --json comments \
-  --jq ".comments[] | select(.body | startswith(\"${DEDUP_KEY}\")) | .url" \
-  | tail -1)
+EXISTING=$(gh pr view "$PR_NUMBER" --json comments \
+  --jq ".comments[] | select(.body | startswith(\"${DEDUP_KEY}\"))")
+EXISTING_URL=$(echo "$EXISTING" | jq -r '.url' | tail -1)
 COMMENT_ID=$(echo "$EXISTING_URL" | grep -oE '[0-9]+$')
 
 if [ -n "$COMMENT_ID" ]; then
+  # Extract previous verdict line (first line after the --- separator)
+  PREV_BODY=$(echo "$EXISTING" | jq -r '.body' | tail -1)
+  PREV_UPDATED=$(echo "$EXISTING" | jq -r '.updatedAt' | tail -1)
+  PREV_VERDICT=$(echo "$PREV_BODY" | sed -n '/^---$/,/^$/{ /^---$/d; /^$/d; p; }' | head -1)
+
+  # Extract existing revision history if present
+  PREV_HISTORY=$(echo "$PREV_BODY" | sed -n '/<details><summary>Revision history/,/<\/details>/p')
+
+  # Build revision history section
+  TIMESTAMP=$(echo "$PREV_UPDATED" | cut -dT -f1)
+  if [ -n "$PREV_HISTORY" ]; then
+    # Append to existing history (insert before </details>)
+    NEW_HISTORY=$(echo "$PREV_HISTORY" | sed "s|</details>|- **${TIMESTAMP}:** ${PREV_VERDICT}\n</details>|")
+  else
+    # Create new history section
+    NEW_HISTORY="<details><summary>Revision history</summary>
+
+- **${TIMESTAMP}:** ${PREV_VERDICT}
+</details>"
+  fi
+
+  # Append history to new comment body
+  COMMENT_BODY="${COMMENT_BODY}
+
+${NEW_HISTORY}"
+
   gh api "repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
     -X PATCH -f body="$COMMENT_BODY"
 else
   gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
 fi
 ```
+
+**Revision history format:** When a comment is updated, the previous
+verdict line is preserved in a collapsed `<details>` block at the bottom:
+
+```
+✅ SOLID — all gaps resolved
+
+...current review body...
+
+<details><summary>Revision history</summary>
+
+- **2026-03-26:** ⚠️ HAS GAPS — 3 must-address items found
+</details>
+```
+
+This keeps the thread clean (one comment) while preserving full
+traceability of how the review evolved.
 
 ## Example
 
@@ -119,6 +163,7 @@ PASS — ready for human merge"
 
 2. **One comment per type per PR.** The dedup logic ensures re-runs
    update the existing comment rather than creating duplicates.
+   Previous verdicts are preserved in a collapsed revision history.
 
 3. **The body is yours.** This skill owns the envelope (header + dedup).
    The calling skill or agent owns the body content and can structure it

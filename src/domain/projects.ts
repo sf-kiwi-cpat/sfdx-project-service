@@ -19,6 +19,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
+import { TemplateService, TemplateType } from '@salesforce/templates';
+import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
 
@@ -37,6 +39,37 @@ export class ProjectNotFoundError extends Error {
 }
 
 /**
+ * Create a blank SFDX project using the official SF template library.
+ * Uses the 'empty' project template from @salesforce/templates.
+ * Returns the project ID (UUID).
+ */
+export async function createBlankProject(): Promise<string> {
+  const projectId = randomUUID();
+  const projectsRoot = getProjectsRoot();
+
+  const options: ProjectOptions = {
+    projectname: projectId,
+    template: 'empty',
+    defaultpackagedir: 'force-app',
+    ns: '',
+    loginurl: 'https://login.salesforce.com',
+    manifest: false,
+    outputdir: projectsRoot,
+  };
+
+  try {
+    const service = new TemplateService(projectsRoot);
+    await service.create(TemplateType.Project, options);
+  } catch (err) {
+    await fs.rm(path.join(projectsRoot, projectId), { recursive: true, force: true });
+    throw err;
+  }
+
+  logger.info({ projectId }, 'Blank project created');
+  return projectId;
+}
+
+/**
  * Create a new project by unzipping a template into a UUID-named directory.
  * Returns the project ID (UUID).
  */
@@ -47,7 +80,7 @@ export async function createProject(templateId: string): Promise<string> {
   }
 
   // Validate template exists
-  const templatePath = path.join(getTemplatesDir(), `${templateId}.zip`);
+  const templatePath = path.join(getTemplatesDir(), templateId, 'content.zip');
   try {
     await fs.access(templatePath);
   } catch {

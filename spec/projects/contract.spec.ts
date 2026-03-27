@@ -56,7 +56,7 @@ describe('Projects API', () => {
     it('returns 201 with a project id when given a valid template', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
 
       expect(res.body).toHaveProperty('id');
@@ -77,17 +77,39 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 400 when template field is missing', async () => {
-      const res = await request(app.server).post('/v1/projects').send({}).expect(400);
+    it('returns 201 with a project id when no template is provided', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(400);
+      expect(res.body).toHaveProperty('id');
+      expect(typeof res.body.id).toBe('string');
+      // UUID format
+      expect(res.body.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
+    });
+
+    it('blank project contains sfdx-project.json', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const projectDir = path.join(tmpDir, res.body.id);
+      const stat = await fs.stat(projectDir);
+      expect(stat.isDirectory()).toBe(true);
+
+      const configPath = path.join(projectDir, 'sfdx-project.json');
+      const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+      expect(config.packageDirectories).toBeInstanceOf(Array);
+      expect(config.packageDirectories.length).toBeGreaterThan(0);
+
+      // Blank scaffold includes the default package directory
+      const defaultDir = path.join(projectDir, 'force-app', 'main', 'default');
+      const dirStat = await fs.stat(defaultDir);
+      expect(dirStat.isDirectory()).toBe(true);
     });
 
     it('creates a project directory with sfdx-project.json', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
 
       const projectDir = path.join(tmpDir, res.body.id);
@@ -96,7 +118,8 @@ describe('Projects API', () => {
 
       const configPath = path.join(projectDir, 'sfdx-project.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
-      expect(config.packageDirectories).toBeDefined();
+      expect(config.packageDirectories).toBeInstanceOf(Array);
+      expect(config.packageDirectories.length).toBeGreaterThan(0);
     });
   });
 
@@ -105,8 +128,21 @@ describe('Projects API', () => {
       // First create a project
       const createRes = await request(app.server)
         .post('/v1/projects')
-        .send({ template: 'hello-world-1' })
+        .send({ template: 'local-react-test' })
         .expect(201);
+
+      const res = await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}/tree`)
+        .expect(200);
+
+      expect(res.body).toHaveProperty('name');
+      expect(res.body).toHaveProperty('type', 'directory');
+      expect(res.body).toHaveProperty('children');
+      expect(Array.isArray(res.body.children)).toBe(true);
+    });
+
+    it('returns 200 with tree structure for a blank project', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       const res = await request(app.server)
         .get(`/v1/projects/${createRes.body.id}/tree`)
