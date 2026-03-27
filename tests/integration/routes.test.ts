@@ -31,6 +31,19 @@ describe('SFDX Project Service API', () => {
     await app.close();
   });
 
+  describe('GET /health', () => {
+    it('returns 200 with { status: "ok" }', async () => {
+      const res = await request(app.server).get('/health').expect(200);
+
+      expect(res.headers['content-type']).toContain('application/json');
+      expect(res.body).toEqual({ status: 'ok' });
+    });
+
+    it('is not available under /v1 prefix', async () => {
+      await request(app.server).get('/v1/health').expect(404);
+    });
+  });
+
   describe('Unknown routes', () => {
     it('returns 404 with RFC 9457 JSON for nonexistent path', async () => {
       const res = await request(app.server).get('/nonexistent').expect(404);

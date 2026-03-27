@@ -48,6 +48,11 @@ export function createApp() {
     return reply.send(app.swagger());
   });
 
+  // Health check — root-level liveness probe (not behind /v1 prefix)
+  app.get('/health', async (_request, reply) => {
+    return reply.send({ status: 'ok' });
+  });
+
   app.register(routes, { prefix: '/v1' });
 
   app.setNotFoundHandler((request, reply) => {
