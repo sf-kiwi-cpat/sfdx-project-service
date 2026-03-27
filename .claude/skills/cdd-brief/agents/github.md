@@ -29,6 +29,18 @@ gh issue list --state open --limit 20 \
   in their title or body
 - Skip issues with workflow labels: `spec:agent-reviewing`, `spec:agent-comments`, `spec:agent-approved`, `spec:human-approved`, `impl:agent-in-progress`, `impl:agent-reviewing`, `impl:agent-comments`, `impl:agent-approved`
 
+### Triage Items
+
+Separately query for issues labeled `triage` — these need human conversation
+before any agent work begins:
+```bash
+gh issue list --state open --label triage --limit 20 \
+  --json number,title,assignees,createdAt,updatedAt,comments
+```
+- List all triage items regardless of assignee
+- Note how many comments each has (signals whether conversation has started)
+- Flag any that are assigned but still labeled triage (may be ready to un-triage)
+
 ### Open Pull Requests
 ```bash
 gh pr list --state open --limit 10 --json number,title,author,reviewRequests,statusCheckRollup,headRefName,createdAt,isDraft
@@ -70,6 +82,10 @@ Return your findings as structured text with clear section headers:
 ### Open PRs
 - #43 — feat: rename endpoint (yours, CI passing, 1 review pending)
 - #41 — fix: error handling (@teammate, review requested from you)
+
+### Triage (needs conversation before work begins)
+- #50 — Rethink deploy retry strategy (2 comments, 3 days old)
+- #47 — Multi-org support scope (0 comments, 1 day old, unassigned)
 
 ### CI Status (main)
 - ✓ main is green (last run: 2h ago)

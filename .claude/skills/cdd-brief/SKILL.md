@@ -60,14 +60,25 @@ Present in this order:
 - Flag stale issues (no activity in 14+ days)
 - Flag dependencies between issues if detectable
 
-**3. Recent context** (from Transcript agent)
+**3. Triage** (from GitHub agent)
+
+- Issues labeled `triage` — these need human conversation before any agent
+  picks them up. They are intentionally excluded from the CDD loop pipeline.
+- Show each item with its comment count (signals if discussion has started)
+- If an item is assigned but still in triage, call it out — it may be ready
+  to graduate out of triage.
+- **Do NOT suggest picking up triage items for implementation.** They are
+  listed for awareness only. The human decides when to un-triage.
+
+**4. Recent context** (from Transcript agent)
 
 - Recent decisions or action items that haven't been addressed
 - Open questions from recent discussions
 - (Skip this section entirely if no transcripts exist)
 
 Then ask: **"What would you like to pick up?"**
-Accept: an issue number, a description of new work, or "continue on [branch]"
+Accept: an issue number, a description of new work, or "continue on [branch]".
+Do not suggest triage items as pickable work — they need conversation first.
 
 ### Context mode (with arguments)
 
