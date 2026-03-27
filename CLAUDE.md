@@ -126,5 +126,9 @@ monitors before committing.
 
 ## Gotchas
 
+- **`gh` CLI `--label` and `--assignee` flags are unreliable.** They silently
+  miss results (label color encoding issues, etc.). Always fetch broadly and
+  filter client-side with `jq`. This applies to `gh pr list`, `gh issue list`,
+  and any loop/skill that queries GitHub. See `.claude/loops/` for the pattern.
 - Deleting a GH Actions workflow file does **not** remove its required status
   check. Clean up via: `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -X PATCH --input <(echo '{"strict":true,"contexts":[]}')`
