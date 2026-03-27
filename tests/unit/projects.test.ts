@@ -98,6 +98,31 @@ describe('createProject', () => {
       const stat = await fs.stat(defaultDir);
       expect(stat.isDirectory()).toBe(true);
     });
+
+    it('scaffolds lwc and aura subdirectories via empty template', async () => {
+      const id = await createBlankProject();
+      const defaultDir = path.join(projectsRoot, id, 'force-app', 'main', 'default');
+      const entries = await fs.readdir(defaultDir);
+      expect(entries).toContain('aura');
+      expect(entries).toContain('lwc');
+    });
+
+    it('creates .forceignore', async () => {
+      const id = await createBlankProject();
+      const ignorePath = path.join(projectsRoot, id, '.forceignore');
+      const stat = await fs.stat(ignorePath);
+      expect(stat.isFile()).toBe(true);
+    });
+
+    it('cleans up project directory on failure', async () => {
+      const origRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = '/nonexistent/path/that/will/fail';
+      try {
+        await expect(createBlankProject()).rejects.toThrow();
+      } finally {
+        process.env.PROJECTS_ROOT = origRoot;
+      }
+    });
   });
 
   describe('extraction failure cleanup', () => {

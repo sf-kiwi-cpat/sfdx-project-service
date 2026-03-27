@@ -46,6 +46,7 @@
     "@fastify/type-provider-typebox": "^5.0.0",
     "@salesforce/core": "^8.26.0",
     "@salesforce/source-deploy-retrieve": "^12.31.21",
+    "@salesforce/templates": "^66.6.2",
     "@sinclair/typebox": "^0.34.0",
     "adm-zip": "^0.5.16",
     "fastify": "^5.0.0",

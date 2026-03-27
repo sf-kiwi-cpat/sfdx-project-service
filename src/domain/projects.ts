@@ -19,6 +19,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
+import { TemplateService, TemplateType } from '@salesforce/templates';
+import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
 
@@ -36,31 +38,30 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
-const DEFAULT_SOURCE_API_VERSION = '62.0';
-
 /**
- * Create a blank SFDX project with minimal scaffold.
+ * Create a blank SFDX project using the official SF template library.
+ * Uses the 'empty' project template from @salesforce/templates.
  * Returns the project ID (UUID).
  */
 export async function createBlankProject(): Promise<string> {
   const projectId = randomUUID();
-  const projectDir = path.join(getProjectsRoot(), projectId);
-  await fs.mkdir(projectDir, { recursive: true });
+  const projectsRoot = getProjectsRoot();
+
+  const options: ProjectOptions = {
+    projectname: projectId,
+    template: 'empty',
+    defaultpackagedir: 'force-app',
+    ns: '',
+    loginurl: 'https://login.salesforce.com',
+    manifest: false,
+    outputdir: projectsRoot,
+  };
 
   try {
-    const sfdxConfig = {
-      packageDirectories: [{ path: 'force-app', default: true }],
-      namespace: '',
-      sfdcLoginUrl: 'https://login.salesforce.com',
-      sourceApiVersion: DEFAULT_SOURCE_API_VERSION,
-    };
-    await fs.writeFile(
-      path.join(projectDir, 'sfdx-project.json'),
-      JSON.stringify(sfdxConfig, null, 2)
-    );
-    await fs.mkdir(path.join(projectDir, 'force-app', 'main', 'default'), { recursive: true });
+    const service = new TemplateService(projectsRoot);
+    await service.create(TemplateType.Project, options);
   } catch (err) {
-    await fs.rm(projectDir, { recursive: true, force: true });
+    await fs.rm(path.join(projectsRoot, projectId), { recursive: true, force: true });
     throw err;
   }
 
