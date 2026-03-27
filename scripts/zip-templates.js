@@ -48,10 +48,18 @@ for (const name of templates) {
     continue;
   }
 
-  // Validate id in template.json matches folder name
+  // Validate template.json fields
   const meta = JSON.parse(readFileSync(templateJsonPath, 'utf-8'));
   if (meta.id !== name) {
     console.error(`  ${name}: template.json id "${meta.id}" does not match folder name, skipping`);
+    continue;
+  }
+  if (typeof meta.name !== 'string' || meta.name.length === 0) {
+    console.error(`  ${name}: template.json missing or empty "name", skipping`);
+    continue;
+  }
+  if (typeof meta.description !== 'string' || meta.description.length === 0) {
+    console.error(`  ${name}: template.json missing or empty "description", skipping`);
     continue;
   }
 
