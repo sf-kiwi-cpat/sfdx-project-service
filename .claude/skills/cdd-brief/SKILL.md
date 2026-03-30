@@ -112,7 +112,9 @@ Ask if they want to set up a worktree for this work. If yes:
   For work without a GitHub issue: `t/{user}/{type}-{slug}`.
 - Use the `EnterWorktree` tool to create the worktree. This gives an isolated
   copy of the repo so there are no collisions with in-progress work.
-- Remind them that `npm install` will run automatically via the SessionStart hook.
+- Run `npm install` synchronously after entering the worktree. Do not rely on
+  the `SessionStart` hook — it races with agent work. Wait for install to
+  complete before proceeding.
 
 **Assign the issue to claim it** (if linked to a GitHub issue):
 ```bash

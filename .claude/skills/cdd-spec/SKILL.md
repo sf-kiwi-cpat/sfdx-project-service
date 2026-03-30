@@ -49,7 +49,7 @@ main worktree, you're in one). If not, and this is for a GitHub issue, offer to
 create one:
 - Branch convention: `t/{user}/issue-{N}-{slug}`
 - Use `EnterWorktree` to create it
-- `npm install` runs automatically via SessionStart hook
+- Run `npm install` synchronously — do not rely on the `SessionStart` hook
 
 **Assignee:** If working on a GitHub issue, claim it:
 ```bash
