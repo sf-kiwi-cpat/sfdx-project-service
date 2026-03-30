@@ -26,13 +26,13 @@ Every agent-posted PR comment follows this structure:
 **Name** — a short label identifying what produced the comment. Use
 the skill or context name naturally:
 
-| Source                | Name              |
-|-----------------------|-------------------|
-| `/cdd-code-review`   | CDD Code Review   |
-| `/cdd-spec-review`   | CDD Spec Review   |
-| Ad-hoc code review   | Code Review       |
-| Quick feedback        | Quick Review      |
-| Implementation notes  | Implementation    |
+| Source               | Name            |
+| -------------------- | --------------- |
+| `/cdd-code-review`   | CDD Code Review |
+| `/cdd-spec-review`   | CDD Spec Review |
+| Ad-hoc code review   | Code Review     |
+| Quick feedback       | Quick Review    |
+| Implementation notes | Implementation  |
 
 You can use any descriptive name — the table above is guidance, not
 an exhaustive list.
@@ -162,13 +162,15 @@ the PR based on the verdict. This keeps label hygiene consistent across
 all review workflows.
 
 **PASS:**
+
 ```bash
-gh pr edit "$PR_NUMBER" --add-label "impl:agent-approved"
+gh pr edit "$PR_NUMBER" --remove-label "impl:agent-comments" --add-label "impl:agent-approved"
 ```
 
 **NEEDS WORK:**
+
 ```bash
-gh pr edit "$PR_NUMBER" --add-label "impl:agent-comments"
+gh pr edit "$PR_NUMBER" --remove-label "impl:agent-approved" --add-label "impl:agent-comments"
 ```
 
 ## Key Rules
