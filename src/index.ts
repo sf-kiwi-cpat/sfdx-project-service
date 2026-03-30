@@ -22,7 +22,7 @@ const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const app = createApp();
 
 try {
-  await app.listen({ port: PORT, host: '0.0.0.0' });
+  await app.listen({ port: PORT, host: '::' });
   logger.info({ port: PORT }, 'SFDX Project Service listening');
 } catch (err) {
   logger.error(err, 'Failed to start server');
