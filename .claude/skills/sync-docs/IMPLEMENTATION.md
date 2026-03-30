@@ -26,15 +26,18 @@ Cron Job (24h)
 ## Phase 1: PR Management
 
 ### Detection Pattern
+
 ```bash
-gh pr list --state open --label "automated" --head "docs-sync*" -L 1
+gh pr list --state open --head "docs-sync*" -L 1
 ```
 
 **Output parsing:**
+
 - If results: Extract PR number and branch name
 - If empty: Create fresh branch
 
 ### Branch Creation
+
 ```bash
 # New branch with timestamp
 git checkout -b docs-sync-$(date +%s)
@@ -45,17 +48,15 @@ cd .claude/worktrees/docs-sync
 ```
 
 ### PR Operations
+
 ```bash
 # Create new PR
 gh pr create --title "docs: keep in sync with codebase" \
   --body "..." \
-  --label "automated"
+  --assignee @me
 
 # Update existing PR (push new commits)
 git push origin [branch]
-
-# Add label to new PR
-gh pr edit [pr-number] --add-label automated
 ```
 
 ## Phase 2: Code→Docs Generation
@@ -63,11 +64,13 @@ gh pr edit [pr-number] --add-label automated
 ### Code Analysis Pattern
 
 1. **File Structure Scanning**
+
    ```bash
    find src/ -name "*.ts" -not -name "*.test.ts" -not -name "*.integration.test.ts"
    ```
 
 2. **Route Discovery**
+
    ```typescript
    // Extract from route files:
    // - router.get('/path', ...)
@@ -76,6 +79,7 @@ gh pr edit [pr-number] --add-label automated
    ```
 
 3. **Module Inventory**
+
    ```typescript
    // For each src/domain/*.ts (or src/*.ts):
    // - exports { functionName, TypeName, ClassName }
@@ -91,30 +95,38 @@ gh pr edit [pr-number] --add-label automated
 ### Documentation Generation
 
 **README.md Template:**
+
 ```markdown
 # Project Name
 
 ## Quick Start
+
 [From package.json scripts]
 
 ## Architecture
+
 [From architecture analysis]
 
 ## API Endpoints
+
 [From route discovery]
 
 ## Project Structure
+
 [From file scanning]
 
 ## Links
+
 [Cross-references to other docs]
 ```
 
 **api.md Template:**
+
 ```markdown
 ## Endpoints
 
 For each route:
+
 - Path and method
 - JSDoc @openapi spec if available
 - Request/response examples
@@ -122,10 +134,12 @@ For each route:
 ```
 
 **modules.md Template:**
+
 ```markdown
 ## Module: [name]
 
 For each export:
+
 - Function/class name
 - Type signature
 - Description from docstring
@@ -146,50 +160,51 @@ For each export:
 ```javascript
 const checks = [
   {
-    category: "API Endpoints",
+    category: 'API Endpoints',
     items: [
-      "All endpoints in api.md exist in route files",
-      "HTTP methods match (GET vs POST, etc)",
-      "Path parameters documented correctly",
-      "Request body fields match actual validation",
-      "Response schema matches actual responses",
-      "Status codes match error handling"
-    ]
+      'All endpoints in api.md exist in route files',
+      'HTTP methods match (GET vs POST, etc)',
+      'Path parameters documented correctly',
+      'Request body fields match actual validation',
+      'Response schema matches actual responses',
+      'Status codes match error handling',
+    ],
   },
   {
-    category: "Architecture",
+    category: 'Architecture',
     items: [
-      "System diagram is current",
-      "Data flow reflects actual code",
-      "Module responsibilities match implementations",
-      "Security model documented",
-      "Deployment model is accurate"
-    ]
+      'System diagram is current',
+      'Data flow reflects actual code',
+      'Module responsibilities match implementations',
+      'Security model documented',
+      'Deployment model is accurate',
+    ],
   },
   {
-    category: "Examples",
+    category: 'Examples',
     items: [
-      "Code examples compile/run (conceptually)",
-      "API examples match current endpoints",
-      "Environment variables are current",
-      "No deprecated patterns used"
-    ]
+      'Code examples compile/run (conceptually)',
+      'API examples match current endpoints',
+      'Environment variables are current',
+      'No deprecated patterns used',
+    ],
   },
   {
-    category: "Completeness",
+    category: 'Completeness',
     items: [
-      "New features documented",
-      "Removed features removed from docs",
-      "All public APIs documented",
-      "No placeholder text"
-    ]
-  }
+      'New features documented',
+      'Removed features removed from docs',
+      'All public APIs documented',
+      'No placeholder text',
+    ],
+  },
 ];
 ```
 
 ### Discrepancy Reporting
 
 Format for returning issues:
+
 ```
 ## Issues Found (Priority Order)
 
@@ -207,7 +222,9 @@ Format for returning issues:
 ```
 
 ### Agent Context
+
 The verification agent should:
+
 - Read documentation with fresh perspective
 - Reference source code directly
 - Not make assumptions
@@ -217,6 +234,7 @@ The verification agent should:
 ## Phase 4: Fix & Iterate
 
 ### If Issues Found
+
 1. Agent A (Code→Docs) receives issues list
 2. Re-analyzes code with issues in mind
 3. Updates docs to fix discrepancies
@@ -225,6 +243,7 @@ The verification agent should:
 6. If still issues, loop up to 3 times then report
 
 ### Stopping Condition
+
 - All verifications pass, OR
 - Same issues persist after 3 loops, OR
 - New issues emerge (regression detection)
@@ -234,6 +253,7 @@ The verification agent should:
 ### Commit Message Format
 
 **For initial docs:**
+
 ```
 docs: add comprehensive project documentation
 
@@ -246,6 +266,7 @@ Add documentation for:
 ```
 
 **For updates:**
+
 ```
 docs: keep in sync with codebase
 
@@ -267,24 +288,29 @@ Automated documentation sync keeping docs in sync with codebase.
 ## Changes
 
 ### Pass 1 (Code→Docs)
+
 - Generated/updated X files
 - New content: Y
 - Updated content: Z
 
 ### Pass 2 (Docs→Code)
+
 - Verification: ✓ PASSED / ✗ ISSUES
 - Issues found: [List if any]
 - Issues fixed: [List if any]
 
 ## Files Changed
+
 [List of doc files]
 
 ## Related
+
 - Codebase commits: [refs]
 - Previous PR: [if appending]
 
 ---
-*This PR was created by the automated documentation sync system.*
+
+_This PR was created by the automated documentation sync system._
 ```
 
 ## Integration Patterns
@@ -296,6 +322,7 @@ Automated documentation sync keeping docs in sync with codebase.
 ```
 
 The cron job should:
+
 1. Detect/create worktree
 2. Run full workflow
 3. Return PR URL or "no changes"
@@ -304,6 +331,7 @@ The cron job should:
 ### With CI/CD
 
 Optional: Verify docs in CI
+
 ```yaml
 - name: Verify docs
   run: |
@@ -314,11 +342,13 @@ Optional: Verify docs in CI
 ### Manual Trigger
 
 Users can run manually:
+
 ```bash
 /sync-docs
 ```
 
 Or with options:
+
 ```bash
 /sync-docs --create-pr --force --verify-only
 ```
@@ -330,7 +360,7 @@ Or with options:
 ```typescript
 // Pseudo-code for Agent A
 const routes = findFiles('src/routes/*.ts');
-routes.forEach(file => {
+routes.forEach((file) => {
   const content = readFile(file);
   const endpoints = extractRoutes(content);
   // router.get('/path', ...)
@@ -346,12 +376,12 @@ routes.forEach(file => {
 const docs = readFile('docs/api.md');
 const routes = readFile('src/routes/projects.routes.ts');
 
-docs.endpoints.forEach(endpoint => {
-  const codeEndpoint = routes.find(ep => ep.path === endpoint.path);
+docs.endpoints.forEach((endpoint) => {
+  const codeEndpoint = routes.find((ep) => ep.path === endpoint.path);
   if (!codeEndpoint) {
-    report("Missing endpoint in code");
+    report('Missing endpoint in code');
   } else if (codeEndpoint.method !== endpoint.method) {
-    report("Method mismatch");
+    report('Method mismatch');
   }
   // ... more checks
 });
@@ -360,12 +390,14 @@ docs.endpoints.forEach(endpoint => {
 ## Limitations & Future Work
 
 ### Current Limitations
+
 - Requires well-documented code (JSDoc comments help)
 - Works best with consistent code structure
 - May miss implicit behaviors
 - Examples can't be actually executed
 
 ### Future Enhancements
+
 - Actual example execution via tests
 - AI-powered architecture diagram generation
 - Integration with API specs (OpenAPI)
@@ -376,17 +408,20 @@ docs.endpoints.forEach(endpoint => {
 ## Debugging
 
 ### Check Worktree Status
+
 ```bash
 git worktree list
 git -C /path/to/worktree status
 ```
 
 ### Check PR Detection
+
 ```bash
-gh pr list --state open --label "automated" -L 10
+gh pr list --state open --head "docs-sync*" -L 10
 ```
 
 ### Manual Phase Execution
+
 ```bash
 # Phase 2 only (dry-run)
 git diff docs/ # see what would change
@@ -396,6 +431,7 @@ git diff docs/ # see what would change
 ```
 
 ### View Job Status
+
 ```bash
 # In Claude Code session
 /tasks  # See current running tasks

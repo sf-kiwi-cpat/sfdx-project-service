@@ -40,7 +40,7 @@ export async function listTemplates(): Promise<Template[]> {
     try {
       const raw = await fs.readFile(path.join(dir, entry.name, 'template.json'), 'utf-8');
       const meta = JSON.parse(raw) as Template;
-      templates.push({ id: meta.id, name: meta.name, description: meta.description ?? '' });
+      templates.push({ id: meta.id, name: meta.name, description: meta.description });
     } catch {
       // Skip directories without a valid template.json
     }

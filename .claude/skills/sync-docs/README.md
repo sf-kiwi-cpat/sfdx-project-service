@@ -5,6 +5,7 @@ First-draft skill for automated documentation sync using a two-pass review proce
 ## What is This?
 
 A reusable skill for keeping project documentation automatically in sync with codebase changes. Combines:
+
 - **Code→Docs**: Generate documentation from current code
 - **Docs→Code**: Verify documentation accuracy against source
 - **PR Management**: Automatic PR creation and updates
@@ -13,7 +14,9 @@ A reusable skill for keeping project documentation automatically in sync with co
 ## Files
 
 ### SKILL.md
+
 Main skill definition with:
+
 - When to use this skill
 - Full process (5 phases)
 - Exit conditions and key details
@@ -23,7 +26,9 @@ Main skill definition with:
 **Use this**: When you want the full workflow description
 
 ### IMPLEMENTATION.md
+
 Technical implementation guide with:
+
 - Architecture overview
 - Each phase in detail (code patterns)
 - PR creation templates
@@ -33,7 +38,9 @@ Technical implementation guide with:
 **Use this**: When implementing for a new project or understanding how it works
 
 ### EXAMPLES.md
+
 Practical examples and patterns with:
+
 - Usage examples
 - Output examples (success, issues, no-changes)
 - Code patterns for agents
@@ -43,16 +50,19 @@ Practical examples and patterns with:
 **Use this**: For quick reference and common workflows
 
 ### README.md
+
 This file - navigation and overview
 
 ## Quick Start
 
 ### Invoke the Skill
+
 ```bash
 /sync-docs
 ```
 
 ### Schedule Daily
+
 ```bash
 /loop 24h [sync-docs-prompt]
 ```
@@ -62,11 +72,13 @@ This file - navigation and overview
 ### Two-Pass Review
 
 **Pass 1 (Code→Docs)**
+
 - Analyzes codebase (routes, modules, recent changes)
 - Generates or updates documentation
 - Output: Changed files summary
 
-**Pass 2 (Docs→Code)** *(Fresh Agent Context)*
+**Pass 2 (Docs→Code)** _(Fresh Agent Context)_
+
 - Reads all docs
 - Cross-references with code
 - Verifies accuracy
@@ -74,7 +86,7 @@ This file - navigation and overview
 
 ### Intelligent PR Management
 
-- **Detects** existing open PR with "automated" label
+- **Detects** existing open PR by `docs-sync*` branch prefix
 - **Appends** commits to existing PR (no duplicates)
 - **Creates** new PR only if none exist
 - **Skips** if no changes detected
@@ -102,6 +114,7 @@ Return PR URL
 This skill was created for **SFDX Project Service** but is designed to be reusable for any project.
 
 ### Current Implementation
+
 - **Project**: https://github.com/forcedotcom/sfdx-project-service
 - **Initial PR**: #70 (created March 2026)
 - **Cron Job**: Daily at midnight
@@ -113,8 +126,7 @@ This skill was created for **SFDX Project Service** but is designed to be reusab
 2. Update doc file paths in SKILL.md Phase 2
 3. Adjust code scanning patterns for your structure
 4. Create initial PR with `/sync-docs`
-5. Label with "automated"
-6. Schedule cron job
+5. Schedule cron job
 
 ## Related
 
@@ -128,7 +140,7 @@ This skill was created for **SFDX Project Service** but is designed to be reusab
 If you're inheriting this system:
 
 1. **Check memory**: `/memory/docs-sync.md` has current state
-2. **Review current PR**: Open PR with "automated" label
+2. **Review current PR**: Open PR on a `docs-sync*` branch
 3. **Understand workflow**: Read SKILL.md
 4. **Run manually**: `/sync-docs` to see it in action
 5. **Schedule if needed**: `/loop 24h [prompt]` to recreate cron

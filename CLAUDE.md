@@ -25,7 +25,7 @@ Do not skip hooks with `--no-verify`.
 
 ## CDD — Contract-Driven Development
 
-Humans define *what* (contracts in `spec/`). Agents implement *how* (code in
+Humans define _what_ (contracts in `spec/`). Agents implement _how_ (code in
 `src/`). Code is a derived artifact; contracts are the durable source of truth.
 
 ### Skills (each works standalone)
@@ -77,14 +77,6 @@ tests/     — agent-mutable tests (see tests/CLAUDE.md)
 .claude/   — skills, loops, settings
 ```
 
-## Worktrees
-
-Git worktrees share source files but **not** `node_modules`. A `SessionStart`
-hook runs `npm install` automatically in new worktrees.
-
-> **Gotcha:** `WorktreeCreate` hooks _replace_ default worktree creation.
-> Use `SessionStart` for post-creation setup, not `WorktreeCreate`.
-
 ## Git Conventions
 
 ### Branches
@@ -107,6 +99,11 @@ with `Closes #N` or `Part of #N`.
 ### PRs
 
 Title: same as commit format, under 70 chars. Template in `.github/pull_request_template.md`.
+
+**Always assign PRs on creation.** Every `gh pr create` must include
+`--assignee @me` (or the equivalent `--assignee "$ME"` after
+`ME=$(gh api user -q .login)`). This keeps ownership visible across
+all workflows — CDD, docs sync, and ad-hoc.
 
 ## Settings
 
