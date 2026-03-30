@@ -53,6 +53,7 @@ vi.mock('@salesforce/core', () => ({
 import { createApp } from '../../src/app.js';
 import {
   TEST_CREDENTIALS,
+  COMPONENT_RESPONSES,
   setupTempProject,
   cleanupTempProject,
   setupDefaultMocks,
@@ -218,12 +219,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     expect(res.headers['content-type']).toContain('text/event-stream');
   });
 
-  it('returns 200 with Content-Type: text/event-stream', async () => {
+  it('returns Cache-Control: no-cache header for SSE stream', async () => {
     const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
       .expect(200);
 
-    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache');
   });
 
   it('returns 404 when project ID does not exist', async () => {
@@ -259,8 +260,10 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
     expect(completeData).toBeDefined();
     const parsed = JSON.parse(completeData!);
+    // appUrl is derived from the WebApplication component's fullName in the deploy response
+    const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App' → 'c-App'
     expect(parsed.appUrl).toBe(
-      `${TEST_CREDENTIALS.instanceUrl}/lwr/application/ai/c-App`
+      `${TEST_CREDENTIALS.instanceUrl}/lwr/application/ai/c-${webAppName}`
     );
   });
 

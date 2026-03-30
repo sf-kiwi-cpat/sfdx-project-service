@@ -40,7 +40,7 @@ The deployment system implements an **asynchronous deployment workflow** using S
 **Stream deployment events in real-time (SSE)**
 
 **Response:**
-- **200 OK** with `Content-Type: text/event-stream`
+- **200 OK** with `Content-Type: text/event-stream` and `Cache-Control: no-cache`
 - Streams Server-Sent Events as deployment progresses
 - Each event is a JSON object containing full SDR data for that moment
 
