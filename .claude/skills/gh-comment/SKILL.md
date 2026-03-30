@@ -168,14 +168,14 @@ GitHub API:
 **PASS:**
 
 ```bash
-gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-comments --method DELETE 2>/dev/null
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-comments --method DELETE 2>/dev/null || true
 gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-approved'
 ```
 
 **NEEDS WORK:**
 
 ```bash
-gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-approved --method DELETE 2>/dev/null
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-approved --method DELETE 2>/dev/null || true
 gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-comments'
 ```
 

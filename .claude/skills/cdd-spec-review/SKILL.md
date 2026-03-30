@@ -151,10 +151,10 @@ GitHub API, so the same `/issues/` endpoint works for both:
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null
+  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
   gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=spec:agent-approved'
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null
+    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
     gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=spec:agent-approved'
     gh pr ready $PR_NUMBER
   fi
@@ -169,10 +169,10 @@ re-pushes, which moves the label back to `spec:agent-reviewing`.
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null
+  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
   gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=spec:agent-comments'
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null
+    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
     gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=spec:agent-comments'
   fi
 fi

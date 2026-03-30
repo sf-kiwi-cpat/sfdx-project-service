@@ -196,11 +196,11 @@ GitHub API, so the same `/issues/` endpoint works for both:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null
+  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null || true
   gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=impl:agent-approved'
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null
+    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null || true
     gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-approved'
   fi
 fi
@@ -210,11 +210,11 @@ fi
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null
+  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null || true
   gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=impl:agent-comments'
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null
+    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-reviewing --method DELETE 2>/dev/null || true
     gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-comments'
   fi
 fi

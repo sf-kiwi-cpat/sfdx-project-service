@@ -133,8 +133,8 @@ monitors before committing.
   ```bash
   # Add label (works for both issues and PRs)
   gh api repos/{owner}/{repo}/issues/$NUMBER/labels --method POST -f 'labels[]=label-name'
-  # Remove label
-  gh api repos/{owner}/{repo}/issues/$NUMBER/labels/label-name --method DELETE
+  # Remove label (|| true: no-op if label doesn't exist)
+  gh api repos/{owner}/{repo}/issues/$NUMBER/labels/label-name --method DELETE 2>/dev/null || true
   ```
 - Deleting a GH Actions workflow file does **not** remove its required status
   check. Clean up via: `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -X PATCH --input <(echo '{"strict":true,"contexts":[]}')`
