@@ -36,7 +36,7 @@ Scheduled daily at midnight:
 
 ```
 ✓ Phase 1: PR Detection
-  Found open PR #70 (automated label)
+  Found open PR #70 (branch: docs-sync-1710705600)
   Branch: worktree-docs-sync
 
 ✓ Phase 2: Code→Docs Generation
@@ -95,7 +95,7 @@ Scheduled daily at midnight:
 
 ```
 ✓ Phase 1: PR Detection
-  No open PR with "automated" label found
+  No open docs-sync PR found
   Created branch: docs-sync-1710705600
 
 ✓ Phase 2: Code→Docs Generation
@@ -199,7 +199,6 @@ git push -u origin docs-sync-1710705600
 gh pr create \
   --title "docs: keep in sync with codebase" \
   --body "Pass 1: Code→Docs ✓ / Pass 2: Docs→Code ✓" \
-  --label "automated" \
   --assignee @me
 ```
 
@@ -251,12 +250,12 @@ npm install
 ### Issue: PR Detection Fails
 
 ```
-gh pr list --state open --label "automated" -L 1
+gh pr list --state open --head "docs-sync*" -L 1
 # No output
 
 Solution:
 Create new branch and PR as if first-time
-gh pr create ... --label "automated" --assignee @me
+gh pr create ... --assignee @me
 ```
 
 ## Integration Checklist
@@ -267,7 +266,7 @@ gh pr create ... --label "automated" --assignee @me
 - [ ] Cron job scheduled: `/loop 24h [prompt]`
 - [ ] Memory saved: `/memory/docs-sync.md`
 - [ ] Initial PR created with docs
-- [ ] "automated" label applied to PR
+- [ ] PR assigned to creator
 - [ ] Team aware of docs-as-code process
 
 ## Common Workflows
@@ -278,15 +277,14 @@ gh pr create ... --label "automated" --assignee @me
 2. Generate initial docs with Phase 2
 3. Verify with Phase 3
 4. Create PR with initial docs
-5. Label with "automated"
-6. Schedule cron job
+5. Schedule cron job
 
 ### Ongoing Maintenance
 
 Each day at midnight:
 
 1. Cron job triggers `/sync-docs`
-2. Detects open "automated" PR
+2. Detects open docs-sync PR
 3. Generates updated docs from new code changes
 4. Verifies accuracy
 5. Appends commit to existing PR (or creates new if PR merged)
@@ -306,7 +304,7 @@ Each day at midnight:
 gh pr merge [pr-number]
 
 # Next cron job will:
-# - Detect no open "automated" PR
+# - Detect no open docs-sync PR
 # - Create new branch for next sync
 # - Continue cycle
 ```

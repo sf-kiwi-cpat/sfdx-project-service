@@ -20,12 +20,11 @@ Keep SF Project Service documentation automatically in sync with codebase via a 
 ### Phase 1: PR Management
 
 ```bash
-gh pr list --state open --label "automated" -L 1
+gh pr list --state open --head "docs-sync*" -L 1
 ```
 
 - **If open PR found**: Switch to that branch, append updates
 - **If no open PR**: Create fresh branch `docs-sync-[timestamp]`
-- **Label new PRs**: Add "automated" label for future detection
 
 ### Phase 2: Code→Docs Generation
 
@@ -92,7 +91,6 @@ If Phase 3 passed or only minor notes:
 4. If creating new PR:
    - Push branch: `git push -u origin [branch]`
    - Create PR via `gh pr create --assignee @me`
-   - Add automated label: `gh pr edit --add-label automated`
    - Include pass results in PR description
 
 ### Phase 5: Return Result
@@ -119,8 +117,7 @@ If Phase 3 passed or only minor notes:
 
 - **Worktree**: Use `docs-sync` if available
 - **Base branch**: Always `main`
-- **Labels**: New PRs get "automated" label
-- **Detection**: Look for existing open PR via label
+- **Detection**: Look for existing open PR via `docs-sync*` branch prefix
 - **No duplicates**: Append to open PR, don't create new one
 - **gh CLI**: Required for PR operations
 
@@ -153,7 +150,6 @@ To manually trigger or debug:
 
 ✓ PR created: https://github.com/forcedotcom/sfdx-project-service/pull/71
   - Branch: docs-sync-1710705600
-  - Label: automated
 ```
 
 ## Troubleshooting
@@ -161,7 +157,7 @@ To manually trigger or debug:
 **"No open PR found, creating new one"**
 
 - Expected on first run
-- PR will be labeled "automated" for future detection
+- PR will be detected by `docs-sync*` branch prefix in future runs
 
 **Phase 3 finds discrepancies**
 

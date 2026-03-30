@@ -22,7 +22,7 @@
 
 ```bash
 # Detect open PR
-gh pr list --state open --label "automated" -L 1
+gh pr list --state open --head "docs-sync*" -L 1
 
 # Create worktree
 git worktree add .claude/worktrees/docs-sync origin/main
@@ -37,7 +37,7 @@ git commit -m "docs: keep in sync with codebase"
 git push -u origin [branch]
 
 # Create PR
-gh pr create --title "..." --body "..." --label "automated" --assignee @me
+gh pr create --title "..." --body "..." --assignee @me
 
 # Update PR
 git push origin [branch]  # Automatically updates
@@ -64,7 +64,7 @@ gh pr view [pr-number]
 ✓ Phase 3 finds zero discrepancies (or all fixed)
 ✓ `git add docs/` succeeds
 ✓ PR created/updated successfully
-✓ PR has "automated" label
+✓ PR assigned to creator
 
 ## When to Run
 

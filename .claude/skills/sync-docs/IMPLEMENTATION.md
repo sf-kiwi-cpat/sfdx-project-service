@@ -28,7 +28,7 @@ Cron Job (24h)
 ### Detection Pattern
 
 ```bash
-gh pr list --state open --label "automated" --head "docs-sync*" -L 1
+gh pr list --state open --head "docs-sync*" -L 1
 ```
 
 **Output parsing:**
@@ -53,14 +53,10 @@ cd .claude/worktrees/docs-sync
 # Create new PR
 gh pr create --title "docs: keep in sync with codebase" \
   --body "..." \
-  --label "automated" \
   --assignee @me
 
 # Update existing PR (push new commits)
 git push origin [branch]
-
-# Add label to new PR
-gh pr edit [pr-number] --add-label automated
 ```
 
 ## Phase 2: Code→Docs Generation
@@ -421,7 +417,7 @@ git -C /path/to/worktree status
 ### Check PR Detection
 
 ```bash
-gh pr list --state open --label "automated" -L 10
+gh pr list --state open --head "docs-sync*" -L 10
 ```
 
 ### Manual Phase Execution
