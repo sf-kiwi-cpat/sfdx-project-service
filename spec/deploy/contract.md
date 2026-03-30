@@ -84,9 +84,17 @@ data: <JSON>
     "status": "Succeeded",
     "numberComponentsDeployed": 5,
     "numberComponentsTotal": 5,
-    "components": [...]
+    "components": [...],
+    "appUrl": "https://example.salesforce.com/lwr/application/ai/c-App"
   }
   ```
+
+  **`appUrl`** (optional): Present only when the deployment succeeds AND includes
+  a `WebApplication` component. Format: `{instanceUrl}/lwr/application/ai/c-{appName}`,
+  where `appName` is the `fullName` of the deployed WebApplication component.
+  Omitted when:
+  - The deployment fails
+  - No `WebApplication` component is in the deployment
 
 **Error Responses:**
 - **404 Not Found** — Project or deployment does not exist
@@ -165,7 +173,7 @@ event: progress
 data: {"deploymentId":"deploy_abc123","status":"InProgress","numberComponentsDeployed":1,...}
 
 event: complete
-data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...]}
+data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...],"appUrl":"https://test.salesforce.com/lwr/application/ai/c-App"}
 ```
 
 ---
