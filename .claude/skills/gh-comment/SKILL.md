@@ -161,16 +161,22 @@ When the comment is a **code review** (CDD or ad-hoc), apply labels to
 the PR based on the verdict. This keeps label hygiene consistent across
 all review workflows.
 
+Use `gh api` for labels — `gh pr edit --add-label` is unreliable
+(silently fails due to Projects Classic deprecation). PRs are issues in the
+GitHub API:
+
 **PASS:**
 
 ```bash
-gh pr edit "$PR_NUMBER" --remove-label "impl:agent-comments" --add-label "impl:agent-approved"
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-comments --method DELETE 2>/dev/null
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-approved'
 ```
 
 **NEEDS WORK:**
 
 ```bash
-gh pr edit "$PR_NUMBER" --remove-label "impl:agent-approved" --add-label "impl:agent-comments"
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-approved --method DELETE 2>/dev/null
+gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-comments'
 ```
 
 ## Key Rules
