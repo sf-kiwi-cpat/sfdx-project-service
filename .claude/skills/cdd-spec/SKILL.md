@@ -137,16 +137,18 @@ Once human approves both artifacts:
     gh pr edit "$PR_NUMBER" --add-assignee "$ME"
   fi
   ```
-- Update workflow labels to signal readiness for agent review:
+- Update workflow labels via REST API (not `gh pr edit` — fails silently
+  due to GitHub's Projects Classic deprecation):
   ```bash
+  OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
   ISSUE_NUMBER=$(echo "$BRANCH" | sed 's/.*issue-\([0-9]*\).*/\1/')
 
   if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$BRANCH" ]; then
-    gh issue edit $ISSUE_NUMBER --add-label spec:agent-reviewing
+    gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=spec:agent-reviewing"
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --add-label spec:agent-reviewing
+    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=spec:agent-reviewing"
   fi
   ```
 - Notify: **"Draft PR created — specs pushed for agent review!"** The spec

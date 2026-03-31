@@ -127,5 +127,14 @@ monitors before committing.
   miss results (label color encoding issues, etc.). Always fetch broadly and
   filter client-side with `jq`. This applies to `gh pr list`, `gh issue list`,
   and any loop/skill that queries GitHub. See `.claude/loops/` for the pattern.
+- **`gh`'s `--jq` flag does NOT support `jq`'s `--arg`.** The `--jq` flag
+  only accepts a single expression string — extra flags like `--arg` are
+  parsed as `gh` arguments and cause errors. Always pipe to `jq` separately:
+  `gh pr list --json ... | jq --arg ME "$ME" '...'` (not `gh ... --jq --arg`).
+- **`gh issue edit` / `gh pr edit` with `--add-label` / `--remove-label`
+  silently fails** when the repo has Projects Classic enabled (GraphQL
+  deprecation error). Use the REST API instead:
+  `gh api "repos/OWNER/REPO/issues/N/labels" -X POST -f "labels[]=name"`
+  and `gh api "repos/OWNER/REPO/issues/N/labels/name" -X DELETE`.
 - Deleting a GH Actions workflow file does **not** remove its required status
   check. Clean up via: `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -X PATCH --input <(echo '{"strict":true,"contexts":[]}')`

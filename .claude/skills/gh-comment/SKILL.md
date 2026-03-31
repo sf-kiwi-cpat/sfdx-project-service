@@ -161,16 +161,23 @@ When the comment is a **code review** (CDD or ad-hoc), apply labels to
 the PR based on the verdict. This keeps label hygiene consistent across
 all review workflows.
 
+**Do NOT use `gh pr edit` for labels** — it fails silently due to GitHub's
+Projects Classic deprecation. Use the REST API:
+
 **PASS:**
 
 ```bash
-gh pr edit "$PR_NUMBER" --remove-label "impl:agent-comments" --add-label "impl:agent-approved"
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
+gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-comments" -X DELETE 2>/dev/null
 ```
 
 **NEEDS WORK:**
 
 ```bash
-gh pr edit "$PR_NUMBER" --remove-label "impl:agent-approved" --add-label "impl:agent-comments"
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
+gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-approved" -X DELETE 2>/dev/null
 ```
 
 ## Key Rules
