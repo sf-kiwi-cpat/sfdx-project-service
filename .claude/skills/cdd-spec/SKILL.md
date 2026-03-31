@@ -137,19 +137,16 @@ Once human approves both artifacts:
     gh pr edit "$PR_NUMBER" --add-assignee "$ME"
   fi
   ```
-- Update workflow labels to signal readiness for agent review.
-  **Use `gh api` for labels** — `gh issue/pr edit --add-label` is unreliable
-  (silently fails due to Projects Classic deprecation). PRs are issues in the
-  GitHub API, so the same `/issues/` endpoint works for both:
+- Update workflow labels to signal readiness for agent review:
   ```bash
   ISSUE_NUMBER=$(echo "$BRANCH" | sed 's/.*issue-\([0-9]*\).*/\1/')
 
   if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$BRANCH" ]; then
-    gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=spec:agent-reviewing'
+    gh issue edit $ISSUE_NUMBER --add-label spec:agent-reviewing
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=spec:agent-reviewing'
+    gh pr edit $PR_NUMBER --add-label spec:agent-reviewing
   fi
   ```
 - Notify: **"Draft PR created — specs pushed for agent review!"** The spec

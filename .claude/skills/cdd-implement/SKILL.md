@@ -31,19 +31,14 @@ You are the implementation orchestrator. Your job is to write code that makes co
 an issue (`issue-{N}`), you're probably in the right place. If on `main`, offer
 to create a worktree first.
 
-**Label transition.** If this is linked to a GitHub issue, update labels.
-Use `gh api` for labels — `gh issue/pr edit --add-label` is unreliable
-(silently fails due to Projects Classic deprecation). PRs are issues in the
-GitHub API, so the same `/issues/` endpoint works for both:
+**Label transition.** If this is linked to a GitHub issue, update labels:
 ```bash
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:human-approved --method DELETE 2>/dev/null || true
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=impl:agent-in-progress'
+  gh issue edit $ISSUE_NUMBER --remove-label spec:human-approved --add-label impl:agent-in-progress
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:human-approved --method DELETE 2>/dev/null || true
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-in-progress'
+    gh pr edit $PR_NUMBER --remove-label spec:human-approved --add-label impl:agent-in-progress
   fi
 fi
 ```
@@ -87,19 +82,17 @@ fi
   - `fix({scope}): {description}` for bug fixes
   - One logical change per commit; reference issue in body with `Closes #N`
 - Push to remote
-- Update workflow labels (use `gh api` — `gh edit --add-label` is unreliable):
+- Update workflow labels:
   ```bash
   ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 
   if [ -n "$ISSUE_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/impl:agent-in-progress --method DELETE 2>/dev/null || true
-    gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=impl:agent-reviewing'
+    gh issue edit $ISSUE_NUMBER --remove-label impl:agent-in-progress --add-label impl:agent-reviewing
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/impl:agent-in-progress --method DELETE 2>/dev/null || true
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=impl:agent-reviewing'
+    gh pr edit $PR_NUMBER --remove-label impl:agent-in-progress --add-label impl:agent-reviewing
   fi
   ```
 

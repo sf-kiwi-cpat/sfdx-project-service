@@ -143,19 +143,13 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 ready for review (undraft). This is the signal to humans that the agent
 has cleared the spec and it's ready for their approval.
 
-Use `gh api` for labels — `gh issue/pr edit --add-label` is unreliable
-(silently fails due to Projects Classic deprecation). PRs are issues in the
-GitHub API, so the same `/issues/` endpoint works for both:
-
 ```bash
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=spec:agent-approved'
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=spec:agent-approved'
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-approved
     gh pr ready $PR_NUMBER
   fi
 fi
@@ -169,11 +163,9 @@ re-pushes, which moves the label back to `spec:agent-reviewing`.
 PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
-  gh api repos/{owner}/{repo}/issues/$ISSUE_NUMBER/labels --method POST -f 'labels[]=spec:agent-comments'
+  gh issue edit $ISSUE_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   if [ -n "$PR_NUMBER" ]; then
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels/spec:agent-reviewing --method DELETE 2>/dev/null || true
-    gh api repos/{owner}/{repo}/issues/$PR_NUMBER/labels --method POST -f 'labels[]=spec:agent-comments'
+    gh pr edit $PR_NUMBER --remove-label spec:agent-reviewing --add-label spec:agent-comments
   fi
 fi
 ```
