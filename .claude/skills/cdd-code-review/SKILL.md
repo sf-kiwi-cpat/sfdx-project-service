@@ -188,26 +188,35 @@ the header — the skill adds the `🤖 CDD Code Review` header for you).
 
 Update labels based on verdict:
 
+**Do NOT use `gh pr edit` / `gh issue edit` for labels** — they fail silently
+due to GitHub's Projects Classic deprecation. Use the REST API:
+
 **If PASS:**
 ```bash
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-approved
+  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
+  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-approved
+    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
+    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
   fi
 fi
 ```
 
 **If NEEDS WORK:**
 ```bash
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
 if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-comments
+  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
+  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
   PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
   if [ -n "$PR_NUMBER" ]; then
-    gh pr edit $PR_NUMBER --remove-label impl:agent-reviewing --add-label impl:agent-comments
+    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
+    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
   fi
 fi
 ```
