@@ -129,6 +129,11 @@ export async function deployMetadataAsync(
       deploymentResult.errorMessage = result.response.errorMessage;
     }
 
+    const webApp = result.getFileResponses().find((f) => f.type === 'WebApplication');
+    if (webApp) {
+      deploymentResult.appUrl = `${credentials.instanceUrl}/lwr/application/ai/c-${webApp.fullName}`;
+    }
+
     logger.info({ deploymentId, status: result.response.status }, 'Async deployment completed');
     setDeploymentResult(deploymentId, deploymentResult);
   } catch (err) {

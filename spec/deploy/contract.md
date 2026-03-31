@@ -40,7 +40,7 @@ The deployment system implements an **asynchronous deployment workflow** using S
 **Stream deployment events in real-time (SSE)**
 
 **Response:**
-- **200 OK** with `Content-Type: text/event-stream`
+- **200 OK** with `Content-Type: text/event-stream` and `Cache-Control: no-cache`
 - Streams Server-Sent Events as deployment progresses
 - Each event is a JSON object containing full SDR data for that moment
 
@@ -84,9 +84,17 @@ data: <JSON>
     "status": "Succeeded",
     "numberComponentsDeployed": 5,
     "numberComponentsTotal": 5,
-    "components": [...]
+    "components": [...],
+    "appUrl": "https://example.salesforce.com/lwr/application/ai/c-App"
   }
   ```
+
+  **`appUrl`** (optional): Present only when the deployment succeeds AND includes
+  a `WebApplication` component. Format: `{instanceUrl}/lwr/application/ai/c-{appName}`,
+  where `appName` is the `fullName` of the deployed WebApplication component.
+  Omitted when:
+  - The deployment fails
+  - No `WebApplication` component is in the deployment
 
 **Error Responses:**
 - **404 Not Found** — Project or deployment does not exist
@@ -165,7 +173,7 @@ event: progress
 data: {"deploymentId":"deploy_abc123","status":"InProgress","numberComponentsDeployed":1,...}
 
 event: complete
-data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...]}
+data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...],"appUrl":"https://test.salesforce.com/lwr/application/ai/c-App"}
 ```
 
 ---

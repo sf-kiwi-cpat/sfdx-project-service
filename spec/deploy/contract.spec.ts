@@ -53,10 +53,13 @@ vi.mock('@salesforce/core', () => ({
 import { createApp } from '../../src/app.js';
 import {
   TEST_CREDENTIALS,
+  COMPONENT_RESPONSES,
   setupTempProject,
   cleanupTempProject,
   setupDefaultMocks,
   createSuccessDeployResponse,
+  createSuccessDeployResponseWithoutApp,
+  createFailedDeployResponse,
   setupDeployMock,
 } from './fixtures.js';
 
@@ -216,12 +219,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     expect(res.headers['content-type']).toContain('text/event-stream');
   });
 
-  it('returns 200 with Content-Type: text/event-stream', async () => {
+  it('returns Cache-Control: no-cache header for SSE stream', async () => {
     const res = await request(app.server)
       .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
       .expect(200);
 
-    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache');
   });
 
   it('returns 404 when project ID does not exist', async () => {
@@ -238,5 +241,105 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       .expect(404);
 
     expect(res.body.status).toBe(404);
+  });
+
+  it('complete event includes appUrl when deployment contains a WebApplication component', async () => {
+    const res = await request(app.server)
+      .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+      .expect(200);
+
+    // Parse SSE events to find the complete event
+    const lines = res.text.split('\n');
+    let completeData: string | undefined;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === 'event: complete' && lines[i + 1]?.startsWith('data: ')) {
+        completeData = lines[i + 1].slice(6);
+        break;
+      }
+    }
+
+    expect(completeData).toBeDefined();
+    const parsed = JSON.parse(completeData!);
+    // appUrl is derived from the WebApplication component's fullName in the deploy response
+    const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App' → 'c-App'
+    expect(parsed.appUrl).toBe(
+      `${TEST_CREDENTIALS.instanceUrl}/lwr/application/ai/c-${webAppName}`
+    );
+  });
+
+  it('complete event omits appUrl when no WebApplication component is deployed', async () => {
+    // Close current app and create fresh one with no-app response
+    await app.close();
+    vi.clearAllMocks();
+    app = createApp();
+    await app.ready();
+
+    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+    setupDeployMock(mockPollStatus);
+    mockPollStatus.mockResolvedValue(createSuccessDeployResponseWithoutApp());
+
+    // Initiate deployment
+    const deployRes = await request(app.server)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
+    const noAppDeploymentId = deployRes.body.deploymentId;
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const res = await request(app.server)
+      .get(`/v1/projects/${projectId}/deployments/${noAppDeploymentId}/events`)
+      .expect(200);
+
+    const lines = res.text.split('\n');
+    let completeData: string | undefined;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === 'event: complete' && lines[i + 1]?.startsWith('data: ')) {
+        completeData = lines[i + 1].slice(6);
+        break;
+      }
+    }
+
+    expect(completeData).toBeDefined();
+    const parsed = JSON.parse(completeData!);
+    expect(parsed.appUrl).toBeUndefined();
+  });
+
+  it('complete event omits appUrl when deployment fails', async () => {
+    // Close current app and create fresh one with failed response
+    await app.close();
+    vi.clearAllMocks();
+    app = createApp();
+    await app.ready();
+
+    setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+    setupDeployMock(mockPollStatus);
+    mockPollStatus.mockResolvedValue(createFailedDeployResponse());
+
+    // Initiate deployment
+    const deployRes = await request(app.server)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+      .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
+    const failedDeploymentId = deployRes.body.deploymentId;
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const res = await request(app.server)
+      .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}/events`)
+      .expect(200);
+
+    const lines = res.text.split('\n');
+    let completeData: string | undefined;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === 'event: complete' && lines[i + 1]?.startsWith('data: ')) {
+        completeData = lines[i + 1].slice(6);
+        break;
+      }
+    }
+
+    expect(completeData).toBeDefined();
+    const parsed = JSON.parse(completeData!);
+    expect(parsed.appUrl).toBeUndefined();
   });
 });

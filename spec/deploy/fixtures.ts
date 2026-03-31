@@ -44,6 +44,13 @@ export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
   { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
+  { fullName: 'App', type: 'WebApplication', state: 'Created' },
+];
+
+export const COMPONENT_RESPONSES_NO_APP = [
+  { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
+  { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
+  { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
 ];
 
 /**
@@ -82,9 +89,30 @@ export function setupDefaultMocks(
 }
 
 /**
- * Create a successful deployment mock response
+ * Create a successful deployment mock response (includes WebApplication)
  */
 export function createSuccessDeployResponse(): {
+  response: {
+    status: string;
+    numberComponentsDeployed: number;
+    numberComponentsTotal: number;
+  };
+  getFileResponses: () => Array<{ fullName: string; type: string; state: string }>;
+} {
+  return {
+    response: {
+      status: 'Succeeded',
+      numberComponentsDeployed: 4,
+      numberComponentsTotal: 4,
+    },
+    getFileResponses: () => COMPONENT_RESPONSES,
+  };
+}
+
+/**
+ * Create a successful deployment mock response without a WebApplication component
+ */
+export function createSuccessDeployResponseWithoutApp(): {
   response: {
     status: string;
     numberComponentsDeployed: number;
@@ -98,7 +126,7 @@ export function createSuccessDeployResponse(): {
       numberComponentsDeployed: 3,
       numberComponentsTotal: 3,
     },
-    getFileResponses: () => COMPONENT_RESPONSES,
+    getFileResponses: () => COMPONENT_RESPONSES_NO_APP,
   };
 }
 
