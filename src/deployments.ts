@@ -34,6 +34,7 @@ export interface DeploymentResult {
   numberComponentsTotal?: number;
   components?: DeploymentComponentResult[];
   errorMessage?: string;
+  appUrl?: string;
 }
 
 export interface ProgressEvent {
