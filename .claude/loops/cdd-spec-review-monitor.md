@@ -24,20 +24,15 @@ Detects `spec:agent-reviewing` PRs assigned to the local user, runs `/cdd-spec-r
 6. If assessment is SOLID:
    - Transition labels to `spec:agent-approved`
    - Mark draft PR as ready: `gh pr ready $PR_NUMBER`
-   - Post to #app-studio-alerts in the PR's thread
+   - Run `/slack-notify $PR_NUMBER CDD Spec Review :white_check_mark: *SOLID* — {summary}\nLabels: \`spec:agent-reviewing\` → \`spec:agent-approved\`. Ready for human approval.`
 7. If assessment is HAS GAPS:
    - Labels transition to `spec:agent-comments`
-   - Post findings summary in the PR's thread
+   - Run `/slack-notify $PR_NUMBER CDD Spec Review :warning: *HAS GAPS* — {summary}\nLabels: \`spec:agent-reviewing\` → \`spec:agent-comments\`. Findings posted to PR.`
 
-## Slack threading in #app-studio-alerts
+## Slack notifications
 
-Each PR gets its own thread in channel C0ANF2KL5HT:
-
-1. Search channel for existing thread containing "PR #N" or the PR URL
-2. If found: reply in that thread (set `thread_ts` to the parent message's timestamp)
-3. If not found: post a new top-level message:
-   `"PR #N - title\nLink: https://github.com/REPO/pull/N"`
-   Then reply in that thread with the spec review status
+Use the `/slack-notify` skill for all Slack posts. See
+`.claude/skills/slack-notify/SKILL.md` for the full procedure.
 
 ## Label transitions
 

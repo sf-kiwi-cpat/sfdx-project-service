@@ -23,20 +23,15 @@ Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-r
    - Run `/cdd-code-review`
 6. If verdict is PASS:
    - Labels transition to `impl:agent-approved`
-   - Post to #app-studio-alerts in the PR's thread
+   - Run `/slack-notify $PR_NUMBER CDD Code Review :white_check_mark: *PASS* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-approved\`. Ready for human merge.`
 7. If verdict is NEEDS WORK:
    - Labels transition to `impl:agent-comments`
-   - Post review findings in the PR's thread
+   - Run `/slack-notify $PR_NUMBER CDD Code Review :warning: *NEEDS WORK* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-comments\`. Findings posted to PR.`
 
-## Slack threading in #app-studio-alerts
+## Slack notifications
 
-Each PR gets its own thread in channel C0ANF2KL5HT:
-
-1. Search channel for existing thread containing "PR #N" or the PR URL
-2. If found: reply in that thread (set `thread_ts` to the parent message's timestamp)
-3. If not found: post a new top-level message:
-   `"PR #N - title\nLink: https://github.com/REPO/pull/N"`
-   Then reply in that thread with the review status
+Use the `/slack-notify` skill for all Slack posts. See
+`.claude/skills/slack-notify/SKILL.md` for the full procedure.
 
 ## Label transitions
 

@@ -34,17 +34,13 @@ Slack thread asking the human to intervene.
    - Commit, push
 6. Transition labels:
    - Remove `impl:agent-comments`, add `impl:agent-reviewing` (on issue and PR)
-7. Post to #app-studio-alerts in the PR's thread
+7. Run `/slack-notify $PR_NUMBER CDD Impl Fix :wrench: Implementation fixes pushed — ready for re-review\n{bullet list of fixes applied}\nLabels: \`impl:agent-comments\` → \`impl:agent-reviewing\``
+   - If max retries hit: `/slack-notify $PR_NUMBER CDD Impl Fix :rotating_light: Max retries (3) — human intervention needed`
 
-## Slack threading in #app-studio-alerts
+## Slack notifications
 
-Each PR gets its own thread in channel C0ANF2KL5HT:
-
-1. Search channel for existing thread containing "PR #N" or the PR URL
-2. If found: reply in that thread (set `thread_ts` to the parent message's timestamp)
-3. If not found: post a new top-level message:
-   `"PR #N - title\nLink: https://github.com/REPO/pull/N"`
-   Then reply in that thread with the fix status
+Use the `/slack-notify` skill for all Slack posts. See
+`.claude/skills/slack-notify/SKILL.md` for the full procedure.
 
 ## Label transitions
 
