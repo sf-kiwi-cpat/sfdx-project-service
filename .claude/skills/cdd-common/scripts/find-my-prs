@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Finds open PRs assigned to the current user with a given label.
+# Outputs a JSON array of matching PRs.
+# Usage: find-my-prs <label>
+set -euo pipefail
+
+if [ $# -lt 1 ]; then
+  echo "usage: find-my-prs <label>" >&2
+  exit 1
+fi
+
+label="$1"
+ME=$(gh api user -q '.login')
+
+gh pr list --state open --json number,headRefName,title,labels,assignees | \
+  jq --arg ME "$ME" --arg LABEL "$label" \
+  '[.[] | select(
+    (.assignees | map(.login) | index($ME)) and
+    (.labels | map(.name) | index($LABEL))
+  )]'

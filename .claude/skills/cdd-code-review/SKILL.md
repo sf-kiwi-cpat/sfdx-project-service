@@ -193,30 +193,28 @@ due to GitHub's Projects Classic deprecation. Use the REST API:
 
 **If PASS:**
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
-  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "impl:agent-approved"
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "impl:agent-reviewing"
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-approved"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-reviewing"
   fi
 fi
 ```
 
 **If NEEDS WORK:**
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
-  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "impl:agent-comments"
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "impl:agent-reviewing"
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-reviewing" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-comments"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-reviewing"
   fi
 fi
 ```

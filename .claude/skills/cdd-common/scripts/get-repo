@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Outputs the current repository as owner/repo.
+# Usage: get-repo
+set -euo pipefail
+gh repo view --json nameWithOwner -q .nameWithOwner

@@ -48,7 +48,7 @@ horizontal rule and can contain any valid markdown.
 If not provided as an argument, detect from the current branch:
 
 ```bash
-PR_NUMBER=$(gh pr list --head "$(git branch --show-current)" --json number -q '.[0].number')
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number)
 ```
 
 If no PR is found, skip posting and report that no PR exists.
@@ -167,17 +167,15 @@ Projects Classic deprecation. Use the REST API:
 **PASS:**
 
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-approved"
-gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-comments" -X DELETE 2>/dev/null
+.claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-approved"
+.claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-comments"
 ```
 
 **NEEDS WORK:**
 
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-comments"
-gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-approved" -X DELETE 2>/dev/null
+.claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-comments"
+.claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-approved"
 ```
 
 ## Key Rules

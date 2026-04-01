@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Adds or removes a label on a GitHub issue/PR using the REST API.
+# Workaround for gh issue edit --add-label which silently fails
+# when the repo has Projects Classic enabled.
+# Usage: label <issue-number> <add|remove> <label-name>
+set -euo pipefail
+
+if [ $# -lt 3 ]; then
+  echo "usage: label <issue-number> <add|remove> <label-name>" >&2
+  exit 1
+fi
+
+number="$1"
+action="$2"
+label_name="$3"
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+
+case "$action" in
+  add)
+    gh api "repos/$REPO/issues/$number/labels" -X POST -f "labels[]=$label_name" --silent
+    ;;
+  remove)
+    gh api "repos/$REPO/issues/$number/labels/$label_name" -X DELETE 2>/dev/null || true
+    ;;
+  *)
+    echo "error: action must be 'add' or 'remove', got '$action'" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Outputs the current GitHub user's login.
+# Usage: get-user
+set -euo pipefail
+gh api user -q .login
