@@ -136,5 +136,15 @@ monitors before committing.
   deprecation error). Use the REST API instead:
   `gh api "repos/OWNER/REPO/issues/N/labels" -X POST -f "labels[]=name"`
   and `gh api "repos/OWNER/REPO/issues/N/labels/name" -X DELETE`.
+- **`gh issue create --body` / `gh pr create --body` with inline markdown
+  breaks permission matching.** The `#` characters in markdown headings
+  desync the shell quote tracker in Claude Code's permission matcher,
+  causing commands to prompt for approval even when allow-listed. Use the
+  `Write` tool to create a temp file, then pass it with `--body-file`:
+  ```bash
+  # 1. Use the Write tool to create /tmp/body.md (not cat/heredoc)
+  # 2. Then:
+  gh issue create --title "..." --body-file /tmp/body.md
+  ```
 - Deleting a GH Actions workflow file does **not** remove its required status
   check. Clean up via: `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -X PATCH --input <(echo '{"strict":true,"contexts":[]}')`
