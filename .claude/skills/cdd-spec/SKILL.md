@@ -121,15 +121,14 @@ Once human approves both artifacts:
   ME=$(.claude/skills/cdd-common/scripts/get-user)
 
   if [ -z "$PR_NUMBER" ]; then
+    # Use the Write tool to create /tmp/gh-body-spec.md with:
+    #   ## Summary
+    #   - ...
+    #
+    #   Part of #N
     gh pr create --draft --assignee "$ME" \
       --title "spec({feature}): {description}" \
-      --body "$(cat <<'EOF'
-  ## Summary
-  - ...
-
-  Part of #N
-  EOF
-  )"
+      --body-file /tmp/gh-body-spec.md
     PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number "$BRANCH")
   else
     # Ensure existing PR is in draft mode and has an assignee

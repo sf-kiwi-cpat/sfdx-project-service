@@ -37,7 +37,8 @@ git commit -m "docs: keep in sync with codebase"
 git push -u origin [branch]
 
 # Create PR
-gh pr create --title "..." --body "..." --assignee @me
+# Use Write tool to create /tmp/gh-body-docs.md first
+gh pr create --title "..." --body-file /tmp/gh-body-docs.md --assignee @me
 
 # Update PR
 git push origin [branch]  # Automatically updates

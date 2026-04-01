@@ -50,9 +50,9 @@ cd .claude/worktrees/docs-sync
 ### PR Operations
 
 ```bash
-# Create new PR
+# Create new PR (use Write tool to create /tmp/gh-body-docs.md first)
 gh pr create --title "docs: keep in sync with codebase" \
-  --body "..." \
+  --body-file /tmp/gh-body-docs.md \
   --assignee @me
 
 # Update existing PR (push new commits)
