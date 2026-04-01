@@ -53,9 +53,10 @@ create one:
 
 **Assignee:** If working on a GitHub issue, claim it:
 ```bash
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh issue edit $ISSUE_NUMBER --add-assignee $(gh api user -q .login)
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  ME=$(.claude/skills/cdd-common/scripts/get-user)
+  gh issue edit "$ISSUE_NUMBER" --add-assignee "$ME"
 fi
 ```
 
@@ -116,9 +117,8 @@ Once human approves both artifacts:
   the agent clears it and marks it ready:
   ```bash
   BRANCH=$(git branch --show-current)
-  PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
-
-  ME=$(gh api user -q .login)
+  PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number "$BRANCH" 2>/dev/null) || true
+  ME=$(.claude/skills/cdd-common/scripts/get-user)
 
   if [ -z "$PR_NUMBER" ]; then
     # Use the Write tool to create /tmp/gh-body-spec.md with:
@@ -129,25 +129,24 @@ Once human approves both artifacts:
     gh pr create --draft --assignee "$ME" \
       --title "spec({feature}): {description}" \
       --body-file /tmp/gh-body-spec.md
-    PR_NUMBER=$(gh pr list --head "$BRANCH" --json number -q '.[0].number')
+    PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number "$BRANCH")
   else
     # Ensure existing PR is in draft mode and has an assignee
     gh pr ready "$PR_NUMBER" --undo 2>/dev/null || true
     gh pr edit "$PR_NUMBER" --add-assignee "$ME"
   fi
   ```
-- Update workflow labels via REST API (not `gh pr edit` — fails silently
-  due to GitHub's Projects Classic deprecation):
+- Update workflow labels via scripts (avoids `gh pr edit` which fails
+  silently due to GitHub's Projects Classic deprecation):
   ```bash
-  OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  ISSUE_NUMBER=$(echo "$BRANCH" | sed 's/.*issue-\([0-9]*\).*/\1/')
+  ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number "$BRANCH") || true
 
-  if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$BRANCH" ]; then
-    gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=spec:agent-reviewing"
+  if [ -n "$ISSUE_NUMBER" ]; then
+    .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "spec:agent-reviewing"
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=spec:agent-reviewing"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "spec:agent-reviewing"
   fi
   ```
 - Notify: **"Draft PR created — specs pushed for agent review!"** The spec
