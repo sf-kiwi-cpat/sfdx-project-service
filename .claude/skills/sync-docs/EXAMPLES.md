@@ -196,9 +196,10 @@ git add docs/
 git commit -m "docs: keep in sync with codebase"
 git push -u origin docs-sync-1710705600
 
+# Use Write tool to create /tmp/gh-body-docs-sync.md with PR body first
 gh pr create \
   --title "docs: keep in sync with codebase" \
-  --body "Pass 1: Code→Docs ✓ / Pass 2: Docs→Code ✓" \
+  --body-file /tmp/gh-body-docs-sync.md \
   --assignee @me
 ```
 

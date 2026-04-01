@@ -115,7 +115,8 @@ ${NEW_HISTORY}"
   gh api "repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
     -X PATCH -f body="$COMMENT_BODY"
 else
-  gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+  # Use Write tool to save COMMENT_BODY to /tmp/gh-comment-pr${PR_NUMBER}.md
+  gh pr comment "$PR_NUMBER" --body-file /tmp/gh-comment-pr${PR_NUMBER}.md
 fi
 ```
 
