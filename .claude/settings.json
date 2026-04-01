@@ -1,5 +1,8 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(.claude/skills/cdd-common/scripts/*:*)"
+    ],
     "deny": [
       "Bash(git * --no-verify*)"
     ]

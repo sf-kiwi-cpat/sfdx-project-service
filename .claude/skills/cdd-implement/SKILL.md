@@ -33,17 +33,16 @@ to create a worktree first.
 
 **Label transition.** If this is linked to a GitHub issue, update labels.
 **Do NOT use `gh issue edit` or `gh pr edit` for labels** — they fail silently
-due to GitHub's Projects Classic deprecation. Use the REST API instead:
+due to GitHub's Projects Classic deprecation. Use the label script instead:
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-in-progress"
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/spec:human-approved" -X DELETE 2>/dev/null
-  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "impl:agent-in-progress"
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "spec:human-approved"
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-in-progress"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/spec:human-approved" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-in-progress"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "spec:human-approved"
   fi
 fi
 ```
@@ -87,20 +86,19 @@ fi
   - `fix({scope}): {description}` for bug fixes
   - One logical change per commit; reference issue in body with `Closes #N`
 - Push to remote
-- Update workflow labels via REST API (not `gh pr edit` — see Step 0 note):
+- Update workflow labels via scripts (not `gh pr edit` — see Step 0 note):
   ```bash
-  OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-  PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
+  ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+  PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
 
   if [ -n "$ISSUE_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=impl:agent-reviewing"
-    gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/impl:agent-in-progress" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "impl:agent-reviewing"
+    .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "impl:agent-in-progress"
   fi
 
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=impl:agent-reviewing"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/impl:agent-in-progress" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-reviewing"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-in-progress"
   fi
   ```
 

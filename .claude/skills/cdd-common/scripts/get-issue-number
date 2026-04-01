@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Extracts the issue number from a branch name (e.g., t/user/issue-42-slug → 42).
+# Usage: get-issue-number [branch]
+#   branch defaults to the current git branch.
+set -euo pipefail
+
+branch="${1:-$(git branch --show-current)}"
+number=$(echo "$branch" | sed -n 's/.*issue-\([0-9][0-9]*\).*/\1/p')
+
+if [ -z "$number" ]; then
+  echo "error: no issue number found in branch '$branch'" >&2
+  exit 1
+fi
+
+echo "$number"

@@ -144,18 +144,17 @@ ready for review (undraft). This is the signal to humans that the agent
 has cleared the spec and it's ready for their approval.
 
 **Do NOT use `gh pr edit` / `gh issue edit` for labels** — they fail silently
-due to GitHub's Projects Classic deprecation. Use the REST API:
+due to GitHub's Projects Classic deprecation. Use the label script instead:
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=spec:agent-approved"
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing" -X DELETE 2>/dev/null
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "spec:agent-approved"
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "spec:agent-reviewing"
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=spec:agent-approved"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/spec:agent-reviewing" -X DELETE 2>/dev/null
-    gh pr ready $PR_NUMBER
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "spec:agent-approved"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "spec:agent-reviewing"
+    gh pr ready "$PR_NUMBER"
   fi
 fi
 ```
@@ -165,15 +164,14 @@ reflects that feedback exists. The fix monitor addresses findings and
 re-pushes, which moves the label back to `spec:agent-reviewing`.
 
 ```bash
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-PR_NUMBER=$(gh pr list --head $(git branch --show-current) --json number -q '.[0].number')
-ISSUE_NUMBER=$(git branch --show-current | sed 's/.*issue-\([0-9]*\).*/\1/')
-if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "$(git branch --show-current)" ]; then
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels" -X POST -f "labels[]=spec:agent-comments"
-  gh api "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/labels/spec:agent-reviewing" -X DELETE 2>/dev/null
+ISSUE_NUMBER=$(.claude/skills/cdd-common/scripts/get-issue-number) || true
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+if [ -n "$ISSUE_NUMBER" ]; then
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" add "spec:agent-comments"
+  .claude/skills/cdd-common/scripts/label "$ISSUE_NUMBER" remove "spec:agent-reviewing"
   if [ -n "$PR_NUMBER" ]; then
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels" -X POST -f "labels[]=spec:agent-comments"
-    gh api "repos/$OWNER_REPO/issues/$PR_NUMBER/labels/spec:agent-reviewing" -X DELETE 2>/dev/null
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "spec:agent-comments"
+    .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "spec:agent-reviewing"
   fi
 fi
 ```
