@@ -18,7 +18,12 @@
 /**
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
- * These tests define the contract for POST /projects and GET /projects/:id/tree.
+ * These tests define the contract for the Projects API:
+ *   - POST /projects        — create a project (returns id + generated name)
+ *   - GET /projects          — list all projects (id + name)
+ *   - PATCH /projects/:id    — rename a project
+ *   - GET /projects/:id/tree — file tree for a project
+ *
  * They are the source of truth for these endpoints' external behavior.
  * The AI implementation agent must NOT modify this file.
  */
@@ -53,7 +58,7 @@ describe('Projects API', () => {
   });
 
   describe('POST /projects', () => {
-    it('returns 201 with a project id when given a valid template', async () => {
+    it('returns 201 with id and name when given a valid template', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test' })
@@ -61,10 +66,12 @@ describe('Projects API', () => {
 
       expect(res.body).toHaveProperty('id');
       expect(typeof res.body.id).toBe('string');
-      // UUID format
       expect(res.body.id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       );
+      expect(res.body).toHaveProperty('name');
+      expect(typeof res.body.name).toBe('string');
+      expect(res.body.name.length).toBeGreaterThan(0);
     });
 
     it('returns 400 when template is unknown', async () => {
@@ -77,15 +84,17 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 201 with a project id when no template is provided', async () => {
+    it('returns 201 with id and name when no template is provided', async () => {
       const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       expect(res.body).toHaveProperty('id');
       expect(typeof res.body.id).toBe('string');
-      // UUID format
       expect(res.body.id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       );
+      expect(res.body).toHaveProperty('name');
+      expect(typeof res.body.name).toBe('string');
+      expect(res.body.name.length).toBeGreaterThan(0);
     });
 
     it('blank project contains sfdx-project.json', async () => {
@@ -123,9 +132,120 @@ describe('Projects API', () => {
     });
   });
 
+  describe('GET /projects', () => {
+    it('returns 200 with an array of projects', async () => {
+      // Create two projects
+      const res1 = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const res2 = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const res = await request(app.server).get('/v1/projects').expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      const ids = res.body.map((p: { id: string }) => p.id);
+      expect(ids).toContain(res1.body.id);
+      expect(ids).toContain(res2.body.id);
+    });
+
+    it('each project has id and name', async () => {
+      await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server).get('/v1/projects').expect(200);
+
+      for (const project of res.body) {
+        expect(project).toHaveProperty('id');
+        expect(typeof project.id).toBe('string');
+        expect(project).toHaveProperty('name');
+        expect(typeof project.name).toBe('string');
+        expect(project.name.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('returns empty array when no projects exist', async () => {
+      // Use an isolated empty directory
+      const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-empty-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = emptyDir;
+
+      try {
+        const freshApp = createApp();
+        await freshApp.ready();
+        const res = await request(freshApp.server).get('/v1/projects').expect(200);
+        await freshApp.close();
+
+        expect(Array.isArray(res.body)).toBe(true);
+        expect(res.body).toHaveLength(0);
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(emptyDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('PATCH /projects/:id', () => {
+    it('returns 200 with updated name', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'my-custom-name' })
+        .expect(200);
+
+      expect(res.body).toHaveProperty('id', createRes.body.id);
+      expect(res.body).toHaveProperty('name', 'my-custom-name');
+    });
+
+    it('persists the renamed value', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'renamed-project' })
+        .expect(200);
+
+      const listRes = await request(app.server).get('/v1/projects').expect(200);
+      const project = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+      expect(project).toBeDefined();
+      expect(project.name).toBe('renamed-project');
+    });
+
+    it('returns 404 for nonexistent project', async () => {
+      const res = await request(app.server)
+        .patch('/v1/projects/00000000-0000-0000-0000-000000000000')
+        .send({ name: 'anything' })
+        .expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+    });
+
+    it('returns 400 when name is missing', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({})
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+    });
+
+    it('returns 400 when name is empty string', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: '' })
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+    });
+  });
+
   describe('GET /projects/:id/tree', () => {
     it('returns 200 with tree structure for an existing project', async () => {
-      // First create a project
       const createRes = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test' })

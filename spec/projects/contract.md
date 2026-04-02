@@ -4,7 +4,7 @@
 
 ## Overview
 
-The projects system manages SFDX project creation and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Blank projects support the "vibe coding" flow where users build from scratch without picking a template.
+The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later.
 
 ## Endpoints
 
@@ -13,7 +13,7 @@ The projects system manages SFDX project creation and file tree browsing. Projec
 **Create a new project**
 
 **Request Body:**
-- `template` (optional, string): Template identifier (e.g., `"work-tracking"`)
+- `template` (optional, string): Template identifier (e.g., `"local-react-test"`)
   - When provided: unzips the named template into a new project directory
   - When omitted: scaffolds a minimal blank SFDX project in-memory (no zip, no disk lookup)
 
@@ -22,10 +22,12 @@ The projects system manages SFDX project creation and file tree browsing. Projec
 - **201 Created** — Project created successfully
   ```json
   {
-    "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "name": "brave-falcon"
   }
   ```
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
+  - `name` is a non-empty string (auto-generated)
   - Returned for both template-based and blank projects
 
 - **400 Bad Request** — Invalid input
@@ -40,6 +42,52 @@ The projects system manages SFDX project creation and file tree browsing. Projec
 | Blank | Minimal `sfdx-project.json` with `packageDirectories` (array, at least one entry) + empty `force-app/main/default/` directory tree |
 
 Both scenarios produce a valid SFDX project with `sfdx-project.json` containing a non-empty `packageDirectories` array.
+
+---
+
+### GET `/v1/projects`
+
+**List all projects**
+
+**Responses:**
+
+- **200 OK** — Array of projects
+  ```json
+  [
+    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon" },
+    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river" }
+  ]
+  ```
+  - Each element has `id` (string) and `name` (non-empty string)
+  - Returns empty array `[]` when no projects exist
+  - No pagination — returns all projects
+
+---
+
+### PATCH `/v1/projects/:id`
+
+**Rename a project**
+
+**Request Body:**
+- `name` (required, string): New project name (must be non-empty)
+
+**Responses:**
+
+- **200 OK** — Project renamed
+  ```json
+  {
+    "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "name": "my-custom-name"
+  }
+  ```
+  - Name change is persisted and reflected in subsequent `GET /v1/projects` calls
+
+- **400 Bad Request** — Invalid input
+  - `name` field is missing or empty string
+  - Response: RFC 9457 Problem Detail (`application/problem+json`)
+
+- **404 Not Found** — Project does not exist
+  - Response: RFC 9457 Problem Detail (`application/problem+json`)
 
 ---
 
@@ -67,20 +115,24 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Design Principles
 
+### Projects Have Names
+- Every project gets a human-readable name at creation time (auto-generated)
+- Names can be changed via PATCH — the generated name is a default, not permanent
+- Name format is an implementation detail; the contract only guarantees a non-empty string
+
 ### Templates Are Optional
 - `POST /projects {}` (no template) is a first-class creation path, not an error
 - Blank projects are scaffolded in-memory — no zip file, no disk lookup
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
 
 ### Uniform Response Shape
-- Both blank and template-based creation return the same `{ id }` response
+- Both blank and template-based creation return the same `{ id, name }` response
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
 
-### Separation of Concerns
-- The project service creates the empty room; orchestration layers furnish it
-- No prompt, name, or AI-related data flows through project creation
-- Blank projects are a filesystem concern, not an intelligence concern
+### Stateless
+- No "active project" concept — every request identifies the project by ID
+- Listing returns all projects; the client decides which to use
 
 ---
 
@@ -89,12 +141,16 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 | Error | HTTP | Condition |
 |-------|------|-----------|
 | Unknown template | 400 | `template` field provided but not recognized |
-| Project not found | 404 | GET tree for nonexistent project ID |
+| Project not found | 404 | GET tree / PATCH for nonexistent project ID |
+| Missing name | 400 | PATCH without `name` field |
+| Empty name | 400 | PATCH with `name: ""` |
 
 ---
 
 ## Test Summary
 
-- **POST /projects**: 5 tests (3 template-based, 2 blank)
-- **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent project)
-- **Total**: 8 contract tests, 2 describe blocks
+- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
+- **GET /projects**: 3 tests (array contents, element shape, empty state)
+- **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
+- **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
+- **Total**: 16 contract tests, 4 describe blocks
