@@ -102,7 +102,36 @@ fi
   fi
   ```
 
-### Step 7: Report
+### Step 7: Sync PR Description
+
+The PR description is a living document. After implementation, update it to
+reflect the current state of the branch (not just the original spec summary).
+
+Use the `Write` tool to create `/tmp/gh-body-impl.md` with:
+
+```markdown
+## Summary
+- {bullet points covering BOTH spec contracts AND implementation}
+- {what endpoints/features were added or changed}
+- {key design decisions}
+
+## Issue
+Closes #N
+
+## Test plan
+- [x] {N} contract tests passing
+- [x] {N} unit tests passing
+- [x] Coverage: {X}%
+- [x] Lint passing
+- [ ] Code review
+```
+
+Then update the PR:
+```bash
+gh pr edit "$PR_NUMBER" --body-file /tmp/gh-body-impl.md
+```
+
+### Step 8: Report
 - Show what was implemented
 - Confirm all contract tests pass
 - Highlight any warnings or issues

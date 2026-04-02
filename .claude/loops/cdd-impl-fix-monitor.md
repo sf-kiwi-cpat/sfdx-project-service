@@ -30,7 +30,8 @@ Slack thread asking the human to intervene.
    - Address each finding from the review
    - Run all tests: `npm test`
    - Commit, push
-6. Transition labels:
+4. Sync PR description: read the current PR body (`gh pr view $PR_NUMBER --json body -q .body`), rebuild it to reflect the current state of spec contracts, implementation, and test results. Use the `Write` tool to create `/tmp/gh-body-impl-fix.md` with the full PR template (Summary, Issue with `Closes #N`, Test plan with actual results), then `gh pr edit $PR_NUMBER --body-file /tmp/gh-body-impl-fix.md`.
+5. Transition labels:
    - Remove `impl:agent-comments`, add `impl:agent-reviewing` (on issue and PR)
 7. Run `/slack-notify $PR_NUMBER CDD Impl Fix :wrench: Implementation fixes pushed — ready for re-review\n{bullet list of fixes applied}\nLabels: \`impl:agent-comments\` → \`impl:agent-reviewing\``
    - If max retries hit: `/slack-notify $PR_NUMBER CDD Impl Fix :rotating_light: Max retries (3) — human intervention needed`

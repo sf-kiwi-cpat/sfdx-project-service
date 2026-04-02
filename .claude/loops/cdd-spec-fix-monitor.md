@@ -31,7 +31,8 @@ Slack thread asking the human to intervene.
    - Fix each finding from the review
    - Run contract spec tests to confirm they pass
    - Commit, push
-6. Transition labels:
+4. Sync PR description: read the current PR body (`gh pr view $PR_NUMBER --json body -q .body`), rebuild it to reflect the current state of spec contracts and any implementation already on the branch. Use the `Write` tool to create `/tmp/gh-body-spec-fix.md` with the full PR template (Summary, Issue with `Closes #N`, Test plan with actual results), then `gh pr edit $PR_NUMBER --body-file /tmp/gh-body-spec-fix.md`.
+5. Transition labels:
    - Remove `spec:agent-comments`, add `spec:agent-reviewing` (on issue and PR)
 7. Run `/slack-notify $PR_NUMBER CDD Spec Fix :wrench: Spec fixes pushed — ready for re-review\n{bullet list of fixes applied}\nLabels: \`spec:agent-comments\` → \`spec:agent-reviewing\``
    - If max retries hit: `/slack-notify $PR_NUMBER CDD Spec Fix :rotating_light: Max retries (3) — human intervention needed`
