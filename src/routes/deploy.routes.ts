@@ -112,6 +112,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
       });
 
       // Send start event

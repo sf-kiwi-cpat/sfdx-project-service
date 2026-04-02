@@ -17,6 +17,7 @@
 
 import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
+import fastifyCors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { logger } from './logger.js';
@@ -30,6 +31,8 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
  */
 export function createApp() {
   const app = Fastify({ loggerInstance: logger });
+
+  app.register(fastifyCors, { origin: true });
 
   app.register(fastifySwagger, {
     openapi: {

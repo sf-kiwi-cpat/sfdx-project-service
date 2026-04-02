@@ -108,8 +108,8 @@ export async function deployMetadataAsync(
       addProgressEvent(deploymentId, mapStatusToProgressEvent(deploymentId, statusUpdate));
     });
 
-    // Set up a 10-minute timeout for polling to prevent indefinite waits (600,000 ms)
-    const result = await deploy.pollStatus(undefined, 600);
+    // Set up a 60-minute timeout for polling to prevent indefinite waits
+    const result = await deploy.pollStatus(undefined, 3600);
 
     // Store result regardless of success or failure
     const deploymentResult: DeploymentResult = {
