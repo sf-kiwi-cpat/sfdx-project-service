@@ -5,7 +5,7 @@ Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-r
 ## Start
 
 ```
-/loop 5m Run .claude/skills/cdd-common/scripts/find-my-prs "impl:agent-reviewing" to get a JSON array of matching PRs (filters by current user and label). If the array is empty, do nothing. For each matching PR: extract the issue number from the branch name using .claude/skills/cdd-common/scripts/get-issue-number "$branch", find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels transition to impl:agent-approved, post to #app-studio-alerts (C0ANF2KL5HT) in the PR's thread with "PR ready for merge" and links. If verdict is NEEDS WORK: labels transition to impl:agent-comments, post review findings in the PR's thread.
+/loop 5m Run .claude/skills/cdd-common/scripts/find-my-prs "impl:agent-reviewing" to get a JSON array of matching PRs (filters by current user and label). If the array is empty, do nothing. For each matching PR: extract the issue number from the branch name using .claude/skills/cdd-common/scripts/get-issue-number "$branch", find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels transition to impl:agent-approved, post verdict and label transition to the PR's Slack thread via /slack-notify. If verdict is NEEDS WORK: labels transition to impl:agent-comments, post verdict and label transition to the PR's Slack thread via /slack-notify.
 ```
 
 ## What happens each cycle
@@ -21,10 +21,10 @@ Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-r
    - Run `/cdd-code-review`
 6. If verdict is PASS:
    - Labels transition to `impl:agent-approved`
-   - Run `/slack-notify $PR_NUMBER CDD Code Review :white_check_mark: *PASS* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-approved\`. Ready for human merge.`
+   - Run `/slack-notify $PR_NUMBER CDD Code Review :white_check_mark: *PASS* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-approved\``
 7. If verdict is NEEDS WORK:
    - Labels transition to `impl:agent-comments`
-   - Run `/slack-notify $PR_NUMBER CDD Code Review :warning: *NEEDS WORK* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-comments\`. Findings posted to PR.`
+   - Run `/slack-notify $PR_NUMBER CDD Code Review :warning: *NEEDS WORK* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-comments\``
 
 ## Slack notifications
 
