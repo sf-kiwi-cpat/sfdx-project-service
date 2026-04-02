@@ -18,7 +18,14 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { buildTree, readFile } from '../domain/files.js';
-import { createBlankProject, createProject, getProjectDir } from '../domain/projects.js';
+import {
+  createBlankProject,
+  createProject,
+  getProjectDir,
+  listProjects,
+  renameProject,
+} from '../domain/projects.js';
+import { problemDetail, PROBLEM_JSON } from '../errors.js';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -32,8 +39,38 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { template } = request.body as { template?: string };
-      const id = template ? await createProject(template) : await createBlankProject();
-      return reply.status(201).send({ id });
+      const result = template ? await createProject(template) : await createBlankProject();
+      return reply.status(201).send(result);
+    }
+  );
+
+  app.get('/projects', async (_request, reply) => {
+    const projects = await listProjects();
+    return reply.send(projects);
+  });
+
+  app.patch(
+    '/projects/:id',
+    {
+      schema: {
+        params: Type.Object({ id: Type.String() }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { name } = request.body as { name?: string };
+
+      if (!name || typeof name !== 'string' || name.length === 0) {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(
+            problemDetail(400, 'Bad Request', 'name is required and must be a non-empty string')
+          );
+      }
+
+      const result = await renameProject(id, name);
+      return reply.send(result);
     }
   );
 

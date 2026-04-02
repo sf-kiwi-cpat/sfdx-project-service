@@ -79,13 +79,15 @@ describe('createProject', () => {
   });
 
   describe('createBlankProject', () => {
-    it('returns a UUID', async () => {
-      const id = await createBlankProject();
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    it('returns an object with id and name', async () => {
+      const result = await createBlankProject();
+      expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(typeof result.name).toBe('string');
+      expect(result.name.length).toBeGreaterThan(0);
     });
 
     it('creates sfdx-project.json with packageDirectories', async () => {
-      const id = await createBlankProject();
+      const { id } = await createBlankProject();
       const configPath = path.join(projectsRoot, id, 'sfdx-project.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
       expect(config.packageDirectories).toBeInstanceOf(Array);
@@ -93,14 +95,14 @@ describe('createProject', () => {
     });
 
     it('creates force-app/main/default directory', async () => {
-      const id = await createBlankProject();
+      const { id } = await createBlankProject();
       const defaultDir = path.join(projectsRoot, id, 'force-app', 'main', 'default');
       const stat = await fs.stat(defaultDir);
       expect(stat.isDirectory()).toBe(true);
     });
 
     it('scaffolds lwc and aura subdirectories via empty template', async () => {
-      const id = await createBlankProject();
+      const { id } = await createBlankProject();
       const defaultDir = path.join(projectsRoot, id, 'force-app', 'main', 'default');
       const entries = await fs.readdir(defaultDir);
       expect(entries).toContain('aura');
@@ -108,7 +110,7 @@ describe('createProject', () => {
     });
 
     it('creates .forceignore', async () => {
-      const id = await createBlankProject();
+      const { id } = await createBlankProject();
       const ignorePath = path.join(projectsRoot, id, '.forceignore');
       const stat = await fs.stat(ignorePath);
       expect(stat.isFile()).toBe(true);
