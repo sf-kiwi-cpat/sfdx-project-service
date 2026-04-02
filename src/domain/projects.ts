@@ -24,6 +24,97 @@ import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
 
+const ADJECTIVES = [
+  'brave',
+  'calm',
+  'dark',
+  'eager',
+  'fair',
+  'glad',
+  'happy',
+  'keen',
+  'bold',
+  'cool',
+  'deep',
+  'fast',
+  'gold',
+  'high',
+  'kind',
+  'lean',
+  'mild',
+  'neat',
+  'pure',
+  'rich',
+  'safe',
+  'soft',
+  'true',
+  'warm',
+  'wise',
+  'wild',
+  'swift',
+  'stark',
+  'prime',
+  'rare',
+];
+
+const NOUNS = [
+  'falcon',
+  'river',
+  'storm',
+  'cedar',
+  'flame',
+  'frost',
+  'grove',
+  'haven',
+  'brook',
+  'cliff',
+  'coral',
+  'crane',
+  'delta',
+  'drift',
+  'ember',
+  'field',
+  'forge',
+  'glade',
+  'heron',
+  'lotus',
+  'maple',
+  'north',
+  'ocean',
+  'pearl',
+  'ridge',
+  'shore',
+  'spark',
+  'stone',
+  'tower',
+  'valley',
+];
+
+const META_FILE = '.project-meta.json';
+
+interface ProjectMeta {
+  name: string;
+}
+
+function generateName(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  return `${adj}-${noun}`;
+}
+
+async function writeProjectMeta(projectDir: string, meta: ProjectMeta): Promise<void> {
+  await fs.writeFile(path.join(projectDir, META_FILE), JSON.stringify(meta, null, 2) + '\n');
+}
+
+async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
+  try {
+    const raw = await fs.readFile(path.join(projectDir, META_FILE), 'utf-8');
+    return JSON.parse(raw) as ProjectMeta;
+  } catch {
+    return { name: path.basename(projectDir) };
+  }
+}
+
 export class TemplateNotFoundError extends Error {
   constructor(templateId: string) {
     super(`Template not found: ${templateId}`);
@@ -38,12 +129,16 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
+export interface ProjectResult {
+  id: string;
+  name: string;
+}
+
 /**
  * Create a blank SFDX project using the official SF template library.
  * Uses the 'empty' project template from @salesforce/templates.
- * Returns the project ID (UUID).
  */
-export async function createBlankProject(): Promise<string> {
+export async function createBlankProject(): Promise<ProjectResult> {
   const projectId = randomUUID();
   const projectsRoot = getProjectsRoot();
 
@@ -65,15 +160,17 @@ export async function createBlankProject(): Promise<string> {
     throw err;
   }
 
-  logger.info({ projectId }, 'Blank project created');
-  return projectId;
+  const name = generateName();
+  await writeProjectMeta(path.join(projectsRoot, projectId), { name });
+
+  logger.info({ projectId, name }, 'Blank project created');
+  return { id: projectId, name };
 }
 
 /**
  * Create a new project by unzipping a template into a UUID-named directory.
- * Returns the project ID (UUID).
  */
-export async function createProject(templateId: string): Promise<string> {
+export async function createProject(templateId: string): Promise<ProjectResult> {
   // Sanitize templateId — only allow alphanumeric, hyphens, underscores
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(templateId)) {
     throw new TemplateNotFoundError(templateId);
@@ -101,8 +198,48 @@ export async function createProject(templateId: string): Promise<string> {
     throw err;
   }
 
-  logger.info({ projectId, templateId }, 'Project created from template');
-  return projectId;
+  const name = generateName();
+  await writeProjectMeta(projectDir, { name });
+
+  logger.info({ projectId, templateId, name }, 'Project created from template');
+  return { id: projectId, name };
+}
+
+/**
+ * List all projects in the projects root directory.
+ */
+export async function listProjects(): Promise<ProjectResult[]> {
+  const projectsRoot = getProjectsRoot();
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  let entries: string[];
+  try {
+    entries = await fs.readdir(projectsRoot);
+  } catch {
+    return [];
+  }
+
+  const results: ProjectResult[] = [];
+  for (const entry of entries) {
+    if (!UUID_RE.test(entry)) continue;
+    const entryPath = path.join(projectsRoot, entry);
+    const stat = await fs.stat(entryPath);
+    if (!stat.isDirectory()) continue;
+    const meta = await readProjectMeta(entryPath);
+    results.push({ id: entry, name: meta.name });
+  }
+  return results;
+}
+
+/**
+ * Rename a project. Throws if the project doesn't exist.
+ */
+export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
+  const projectDir = await getProjectDir(projectId);
+  const meta: ProjectMeta = { name };
+  await writeProjectMeta(projectDir, meta);
+  logger.info({ projectId, name }, 'Project renamed');
+  return { id: projectId, name };
 }
 
 /**

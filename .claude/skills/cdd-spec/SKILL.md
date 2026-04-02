@@ -110,7 +110,7 @@ Ask: "Do these contracts match your intent? Any changes needed?"
 Once human approves both artifacts:
 - Commit both `contract.spec.ts` and `contract.md` to the branch
   - Use conventional commit format: `spec({feature}): {description}`
-  - Reference the issue in the body: `Closes #N` or `Part of #N`
+  - Reference the issue in the body: `Closes #N`
 - Push to remote
 - Create a **draft PR** (or ensure existing PR is draft). Draft PRs signal
   that the spec is not yet agent-reviewed — humans should not review until
@@ -121,11 +121,22 @@ Once human approves both artifacts:
   ME=$(.claude/skills/cdd-common/scripts/get-user)
 
   if [ -z "$PR_NUMBER" ]; then
-    # Use the Write tool to create /tmp/gh-body-spec.md with:
-    #   ## Summary
-    #   - ...
+    # Use the Write tool to create /tmp/gh-body-spec.md with the full
+    # PR template. Always use "Closes #N" — the PR will close the issue
+    # when merged. The description is a living document that later steps
+    # (/cdd-implement, fix monitors) will update as work progresses.
     #
-    #   Part of #N
+    #   ## Summary
+    #   - {bullet points describing the contracts}
+    #
+    #   ## Issue
+    #   Closes #N
+    #
+    #   ## Test plan
+    #   - [ ] Spec agent review
+    #   - [ ] Human approval
+    #   - [ ] Implementation
+    #   - [ ] Code review
     gh pr create --draft --assignee "$ME" \
       --title "spec({feature}): {description}" \
       --body-file /tmp/gh-body-spec.md
