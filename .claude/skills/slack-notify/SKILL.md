@@ -75,7 +75,6 @@ Build the message with the bot-branded header:
 ```
 :robot_face: *{SKILL_NAME}* | PR #{PR_NUMBER}
 {BODY}
-{PR_URL}
 ```
 
 Send as a thread reply:
@@ -93,21 +92,20 @@ slack_send_message(
 ### Code review passed
 ```
 /slack-notify 138 CDD Code Review :white_check_mark: *PASS* — zero contract discrepancies, clean diff
-Labels: `impl:agent-reviewing` → `impl:agent-approved`. Ready for human merge.
+Labels: `impl:agent-reviewing` → `impl:agent-approved`
 ```
 
 Produces:
 ```
 :robot_face: *CDD Code Review* | PR #138
 :white_check_mark: *PASS* — zero contract discrepancies, clean diff
-Labels: `impl:agent-reviewing` → `impl:agent-approved`. Ready for human merge.
-https://github.com/forcedotcom/sfdx-project-service/pull/138
+Labels: `impl:agent-reviewing` → `impl:agent-approved`
 ```
 
 ### Spec review found gaps
 ```
 /slack-notify 42 CDD Spec Review :warning: *HAS GAPS* — 2 must-address items
-Labels: `spec:agent-reviewing` → `spec:agent-comments`. Findings posted to PR.
+Labels: `spec:agent-reviewing` → `spec:agent-comments`
 ```
 
 ### Max retries hit
@@ -130,5 +128,7 @@ The spec fix loop has cycled 3 times without passing review.
    prefix lets developers instantly distinguish agent messages from human
    ones when scanning a thread.
 
-4. **Always append the PR URL.** Even in a thread about the PR, the
-   direct link saves a click.
+4. **Keep messages lean.** The label transition line is the signal —
+   don't restate what it already communicates (e.g., "ready for merge"
+   or "findings posted to PR"). The PR URL is also redundant since the
+   thread is anchored to the GitHub bot's PR notification.
