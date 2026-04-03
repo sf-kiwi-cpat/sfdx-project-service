@@ -74,7 +74,7 @@ for (const name of templates) {
 
   // Install deps in content/ if needed
   if (existsSync(join(contentDir, 'package.json'))) {
-    console.log(`  ${name}: installing dependencies…`);
+    console.error(`  ${name}: installing dependencies…`);
     execSync('npm install --ignore-scripts', { cwd: contentDir, stdio: 'pipe' });
   }
 
@@ -83,7 +83,7 @@ for (const name of templates) {
   zip.addLocalFolder(contentDir);
   const zipPath = join(outDir, 'content.zip');
   zip.writeZip(zipPath);
-  console.log(`  ${name} → ${outDir}/`);
+  console.error(`  ${name} → ${outDir}/`);
 }
 
-console.log(`Built ${templates.length} template(s).`);
+console.error(`Built ${templates.length} template(s).`);
