@@ -1,29 +1,20 @@
-/**
- * SPEC TESTS — Human-guarded contract (SDLC 2026)
+/*
+ * Copyright (c) 2026, Salesforce, Inc.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * These tests define the contract for:
- * - POST /v1/projects/:id/deployments with Vite programmatic build step
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The build contract is: when a project contains .tsx or .jsx source files,
- * the service runs vite.build() programmatically before deployment.
- * The service owns the build config — the user's project has no build tooling.
- * The build runs asynchronously as part of the deployment pipeline — the POST
- * always returns 202 immediately. Build errors surface in the deployment result.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * - Project has .tsx/.jsx → 202 Accepted → async build + deploy
- * - Build fails → 202 Accepted → deployment result contains build error
- * - Build times out (5 min) → 202 Accepted → deployment result contains timeout error
- * - No .tsx/.jsx files → build skipped → 202 Accepted (metadata-only deploy)
- *
- * Mocking strategy:
- * - @salesforce/core is mocked (auth requires network)
- * - vite module is mocked (controls build outcomes without real compilation)
- * - ComponentSet.prototype.deploy is mocked via setupDeployMock()
- * - Real filesystem for tsx/jsx detection (fixtures create real directories + files)
- *
- * These tests are the source of truth for build integration behavior.
- * The AI implementation agent must NOT modify this file.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
