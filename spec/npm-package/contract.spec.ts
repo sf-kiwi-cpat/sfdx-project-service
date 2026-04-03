@@ -69,6 +69,7 @@ describe('npm package shape', () => {
       });
       // Strip non-JSON lines (e.g. lifecycle script output like "HUSKY=0 skip install")
       const jsonStart = output.indexOf('[');
+      if (jsonStart === -1) throw new Error(`npm pack produced no JSON output:\n${output}`);
       const parsed = JSON.parse(output.slice(jsonStart));
       packedFiles = parsed[0].files.map((f: { path: string }) => f.path);
     }, 120_000);
