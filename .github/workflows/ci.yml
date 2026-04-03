@@ -17,9 +17,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: package.json
-          registry-url: https://registry.npmjs.org
 
-      - run: npm install
+      - name: Rewrite Nexus URLs in lockfile
+        run: sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' package-lock.json
+
+      - run: npm ci
 
       - name: Lint
         run: npm run lint
