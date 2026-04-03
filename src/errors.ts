@@ -15,7 +15,12 @@
  * limitations under the License.
  */
 
-import { TemplateNotFoundError, ProjectNotFoundError } from './domain/projects.js';
+import {
+  TemplateNotFoundError,
+  ProjectNotFoundError,
+  OrgAliasNotFoundError,
+  OrgAliasEmptyError,
+} from './domain/projects.js';
 
 /** Thrown when a Salesforce deployment fails. */
 export class DeploymentError extends Error {
@@ -98,6 +103,12 @@ export class PathTooLongError extends Error {
  * Map thrown errors to HTTP problem details.
  */
 export function errorToProblem(err: unknown): ProblemDetail {
+  if (err instanceof OrgAliasEmptyError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof OrgAliasNotFoundError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
   if (err instanceof TemplateNotFoundError) {
     return problemDetail(400, 'Bad Request', err.message);
   }
