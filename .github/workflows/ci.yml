@@ -9,6 +9,8 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
     steps:
       - uses: actions/checkout@v4
 
@@ -20,8 +22,6 @@ jobs:
         run: sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' package-lock.json templates/src/*/content/package-lock.json
 
       - run: npm ci
-        env:
-          HUSKY: '0'
 
       - name: Lint
         run: npm run lint
