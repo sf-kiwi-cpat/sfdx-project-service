@@ -61,6 +61,29 @@ export function extractCredentials(
 }
 
 /**
+ * Extract credential headers if present, without requiring them.
+ * Returns the credentials or null if headers are missing/incomplete.
+ */
+export function extractOptionalCredentials(request: FastifyRequest): OrgCredentials | null {
+  const authHeader = request.headers.authorization as string | undefined;
+  const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  const instanceUrl = request.headers['x-salesforce-instance-url'] as string | undefined;
+
+  if (!accessToken || !instanceUrl) {
+    return null;
+  }
+
+  // Validate URL format
+  try {
+    new URL(instanceUrl);
+  } catch {
+    return null;
+  }
+
+  return { accessToken, instanceUrl };
+}
+
+/**
  * Validate credentials format.
  * - accessToken: required string
  * - instanceUrl: required, must be valid URL

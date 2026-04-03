@@ -18,10 +18,11 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-import { extractCredentials } from '../utils/auth.js';
-import { deployMetadataAsync, buildConnection } from '../domain/deploy.js';
+import { extractOptionalCredentials } from '../utils/auth.js';
+import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
 import { DeploymentError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
+import { resolveDeployAuth } from '../domain/auth.js';
 import {
   createDeployment,
   deploymentExists,
@@ -44,23 +45,32 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      // Extract and validate credentials from headers
-      const credentialsResult = extractCredentials(request);
-      if (!credentialsResult.valid) {
-        return reply
-          .status(400)
-          .type(PROBLEM_JSON)
-          .send(problemDetail(400, 'Bad Request', credentialsResult.error));
-      }
-
-      const credentials = credentialsResult.credentials;
-
       // Get project directory
       const projectDir = await getProjectDir(id);
 
+      // Extract optional credential headers (for legacy fallback)
+      const headerCredentials = extractOptionalCredentials(request);
+
+      // Resolve auth using priority chain:
+      // 1. Project target-org  2. Global default org  3. Credential headers  4. 400
+      const auth = await resolveDeployAuth(projectDir, headerCredentials ?? undefined);
+
+      if (!auth) {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(
+            problemDetail(
+              400,
+              'Bad Request',
+              'No authentication available. Provide orgAlias at project creation, configure a global default org, or pass Authorization and X-Salesforce-Instance-Url headers.'
+            )
+          );
+      }
+
       // Eagerly validate the connection to catch auth errors early
       try {
-        await buildConnection(credentials);
+        await buildConnectionFromAuth(auth);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Connection failed';
         throw new DeploymentError(msg);
@@ -70,7 +80,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       const deploymentId = createDeployment(id);
 
       // Start async deployment in background
-      const deploymentPromise = deployMetadataAsync(deploymentId, projectDir, credentials);
+      const deploymentPromise = deployMetadataAsync(deploymentId, projectDir, auth);
 
       // Store the promise for test observability
       setDeploymentPollPromise(deploymentId, deploymentPromise);

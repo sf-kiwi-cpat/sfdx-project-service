@@ -23,6 +23,7 @@ import { TemplateService, TemplateType } from '@salesforce/templates';
 import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
+import { resolveAlias, writeProjectTargetOrg } from './auth.js';
 
 const ADJECTIVES = [
   'brave',
@@ -132,13 +133,46 @@ export class ProjectNotFoundError extends Error {
 export interface ProjectResult {
   id: string;
   name: string;
+  targetOrg?: string;
+}
+
+/**
+ * Validate an orgAlias against the Salesforce auth store.
+ * Returns the resolved username, or throws OrgAliasNotFoundError.
+ */
+export class OrgAliasNotFoundError extends Error {
+  constructor(alias: string) {
+    super(`Org alias not found in auth store: ${alias}`);
+    this.name = 'OrgAliasNotFoundError';
+  }
+}
+
+export class OrgAliasEmptyError extends Error {
+  constructor() {
+    super('orgAlias must be a non-empty string');
+    this.name = 'OrgAliasEmptyError';
+  }
 }
 
 /**
  * Create a blank SFDX project using the official SF template library.
  * Uses the 'empty' project template from @salesforce/templates.
+ *
+ * If orgAlias is provided, validates it against the auth store and
+ * persists the target-org in the project's .sf/config.json.
  */
-export async function createBlankProject(): Promise<ProjectResult> {
+export async function createBlankProject(orgAlias?: string): Promise<ProjectResult> {
+  // Validate orgAlias if provided
+  if (orgAlias !== undefined) {
+    if (orgAlias === '') {
+      throw new OrgAliasEmptyError();
+    }
+    const username = await resolveAlias(orgAlias);
+    if (!username) {
+      throw new OrgAliasNotFoundError(orgAlias);
+    }
+  }
+
   const projectId = randomUUID();
   const projectsRoot = getProjectsRoot();
 
@@ -160,8 +194,16 @@ export async function createBlankProject(): Promise<ProjectResult> {
     throw err;
   }
 
+  const projectDir = path.join(projectsRoot, projectId);
   const name = generateName();
-  await writeProjectMeta(path.join(projectsRoot, projectId), { name });
+  await writeProjectMeta(projectDir, { name });
+
+  // Persist target-org if orgAlias was provided
+  if (orgAlias) {
+    await writeProjectTargetOrg(projectDir, orgAlias);
+    logger.info({ projectId, name, orgAlias }, 'Blank project created with target-org');
+    return { id: projectId, name, targetOrg: orgAlias };
+  }
 
   logger.info({ projectId, name }, 'Blank project created');
   return { id: projectId, name };

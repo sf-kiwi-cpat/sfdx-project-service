@@ -21,6 +21,7 @@ import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { logger } from '../logger.js';
 import { type OrgCredentials } from '../utils/auth.js';
+import { type ResolvedAuth } from './auth.js';
 import {
   setDeploymentResult,
   setDeploymentError,
@@ -39,6 +40,18 @@ export async function buildConnection(credentials: OrgCredentials): Promise<Conn
     },
   });
   return Connection.create({ authInfo });
+}
+
+/**
+ * Build a Salesforce connection from resolved auth.
+ * Supports both environment auth (username-based) and legacy credential headers.
+ */
+export async function buildConnectionFromAuth(auth: ResolvedAuth): Promise<Connection> {
+  if (auth.type === 'environment') {
+    const authInfo = await AuthInfo.create({ username: auth.username });
+    return Connection.create({ authInfo });
+  }
+  return buildConnection(auth);
 }
 
 /**
@@ -79,12 +92,14 @@ export async function buildComponentSet(projectDir: string): Promise<ComponentSe
 export async function deployMetadataAsync(
   deploymentId: string,
   projectDir: string,
-  credentials: OrgCredentials
+  auth: ResolvedAuth | OrgCredentials
 ): Promise<void> {
   try {
     logger.info({ deploymentId, projectDir }, 'Starting async deployment');
 
-    const connection = await buildConnection(credentials);
+    // Support both ResolvedAuth (new) and OrgCredentials (legacy/existing tests)
+    const connection =
+      'type' in auth ? await buildConnectionFromAuth(auth) : await buildConnection(auth);
 
     // Build React projects before deploying
     if (await hasReactFiles(projectDir)) {
@@ -131,7 +146,14 @@ export async function deployMetadataAsync(
 
     const webApp = result.getFileResponses().find((f) => f.type === 'WebApplication');
     if (webApp) {
-      deploymentResult.appUrl = `${credentials.instanceUrl}/lwr/application/ai/c-${webApp.fullName}`;
+      // Get instanceUrl from the auth source
+      const instanceUrl =
+        'type' in auth
+          ? auth.type === 'credentials'
+            ? auth.instanceUrl
+            : connection.getAuthInfoFields().instanceUrl
+          : auth.instanceUrl;
+      deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${webApp.fullName}`;
     }
 
     logger.info({ deploymentId, status: result.response.status }, 'Async deployment completed');

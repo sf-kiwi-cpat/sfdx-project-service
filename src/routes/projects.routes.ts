@@ -34,12 +34,13 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: Type.Object({
           template: Type.Optional(Type.String()),
+          orgAlias: Type.Optional(Type.String()),
         }),
       },
     },
     async (request, reply) => {
-      const { template } = request.body as { template?: string };
-      const result = template ? await createProject(template) : await createBlankProject();
+      const { template, orgAlias } = request.body as { template?: string; orgAlias?: string };
+      const result = template ? await createProject(template) : await createBlankProject(orgAlias);
       return reply.status(201).send(result);
     }
   );
