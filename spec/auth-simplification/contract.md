@@ -26,6 +26,7 @@ to work as a fallback.
 
 ### 400
 
+- returns 400 when `orgAlias` is an empty string
 - returns 400 when `orgAlias` is not found in auth store
 
 ---
@@ -49,7 +50,8 @@ to work as a fallback.
 
 **202**
 
-- prefers environment auth over credential headers when both present
+- prefers project target-org over credential headers when both present
+- prefers global default org over credential headers when both present
 
 ### Error cases
 
@@ -63,4 +65,4 @@ to work as a fallback.
 
 ---
 
-2 endpoints, 10 tests
+2 endpoints, 12 tests

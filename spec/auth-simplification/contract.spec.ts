@@ -146,6 +146,13 @@ describe('POST /v1/projects — orgAlias support', () => {
     expect(res.body).not.toHaveProperty('targetOrg');
   });
 
+  it('returns 400 when orgAlias is an empty string', async () => {
+    const res = await request(app.server).post('/v1/projects').send({ orgAlias: '' }).expect(400);
+
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.status).toBe(400);
+  });
+
   it('returns 400 when orgAlias is not found in auth store', async () => {
     setupStateAggregatorMock(mockStateAggregatorGetInstance, {});
 
@@ -239,9 +246,27 @@ describe('POST /v1/projects/:id/deployments — environment auth', () => {
   });
 
   describe('auth resolution priority', () => {
-    it('prefers environment auth over credential headers when both present', async () => {
+    it('prefers project target-org over credential headers when both present', async () => {
       const projectDir = path.join(tmpDir, projectId);
       await setupProjectTargetOrg(projectDir, TEST_ORG_ALIAS);
+      setupStateAggregatorMock(mockStateAggregatorGetInstance);
+
+      const res = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
+        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send()
+        .expect(202);
+
+      expect(res.body).toHaveProperty('deploymentId');
+      // Verify environment auth was used (username-based, not accessTokenOptions)
+      expect(mockAuthInfoCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: TEST_USERNAME })
+      );
+    });
+
+    it('prefers global default org over credential headers when both present', async () => {
+      setupConfigAggregatorMock(mockConfigAggregatorCreate, TEST_ORG_ALIAS);
       setupStateAggregatorMock(mockStateAggregatorGetInstance);
 
       const res = await request(app.server)
