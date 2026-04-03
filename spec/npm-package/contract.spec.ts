@@ -71,7 +71,7 @@ describe('npm package shape', () => {
       const jsonStart = output.indexOf('[');
       const parsed = JSON.parse(output.slice(jsonStart));
       packedFiles = parsed[0].files.map((f: { path: string }) => f.path);
-    });
+    }, 120_000);
 
     it('includes package.json', () => {
       expect(packedFiles).toContain('package.json');

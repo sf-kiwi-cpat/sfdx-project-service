@@ -18,8 +18,8 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Rewrite Nexus URLs in lockfiles
-        run: sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' package-lock.json templates/src/*/content/package-lock.json
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
