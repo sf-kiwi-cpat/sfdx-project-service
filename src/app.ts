@@ -42,6 +42,9 @@ export function createApp() {
         version: pkg.version,
         description: 'REST API wrapping an SFDX project for remote IDE-like operations',
       },
+      // When set (e.g. ROUTING_PREFIX=/project-service), swagger-ui uses this as the
+      // base URL for "Try it out" requests so they route correctly through the proxy.
+      ...(process.env.ROUTING_PREFIX ? { servers: [{ url: process.env.ROUTING_PREFIX }] } : {}),
     },
   });
 
