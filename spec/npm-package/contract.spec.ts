@@ -67,9 +67,12 @@ describe('npm package shape', () => {
         cwd: root,
         encoding: 'utf-8',
       });
-      const parsed = JSON.parse(output);
+      // Strip non-JSON lines (e.g. lifecycle script output like "HUSKY=0 skip install")
+      const jsonStart = output.indexOf('[');
+      if (jsonStart === -1) throw new Error(`npm pack produced no JSON output:\n${output}`);
+      const parsed = JSON.parse(output.slice(jsonStart));
       packedFiles = parsed[0].files.map((f: { path: string }) => f.path);
-    });
+    }, 120_000);
 
     it('includes package.json', () => {
       expect(packedFiles).toContain('package.json');
