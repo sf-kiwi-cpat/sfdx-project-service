@@ -44,22 +44,24 @@ describe('GET /templates', () => {
     expect(res.body.length).toBeGreaterThan(0);
   });
 
-  it('each template has id, name, and description fields', async () => {
+  it('each template has id, name, description, and categories fields', async () => {
     const res = await request(app.server).get('/v1/templates').expect(200);
     for (const template of res.body) {
       expect(template).toHaveProperty('id');
       expect(template).toHaveProperty('name');
       expect(template).toHaveProperty('description');
+      expect(template).toHaveProperty('categories');
       expect(typeof template.id).toBe('string');
       expect(typeof template.name).toBe('string');
       expect(typeof template.description).toBe('string');
       expect(template.description.length).toBeGreaterThan(0);
+      expect(Array.isArray(template.categories)).toBe(true);
     }
   });
 
-  it('includes the local-react-test fixture template', async () => {
+  it('excludes templates with visible: false', async () => {
     const res = await request(app.server).get('/v1/templates').expect(200);
     const ids = res.body.map((t: { id: string }) => t.id);
-    expect(ids).toContain('local-react-test');
+    expect(ids).not.toContain('local-react-test');
   });
 });

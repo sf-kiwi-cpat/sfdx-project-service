@@ -31,7 +31,6 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
               name: Type.String(),
               description: Type.String(),
               categories: Type.Array(Type.String()),
-              visible: Type.Boolean(),
             })
           ),
         },
