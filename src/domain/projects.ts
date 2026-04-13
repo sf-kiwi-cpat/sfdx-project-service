@@ -95,6 +95,7 @@ const META_FILE = '.project-meta.json';
 
 interface ProjectMeta {
   name: string;
+  createdAt?: string;
 }
 
 function generateName(): string {
@@ -116,6 +117,13 @@ async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
   }
 }
 
+async function getProjectCreatedAt(projectDir: string, meta: ProjectMeta): Promise<string> {
+  if (meta.createdAt) return meta.createdAt;
+  // Fallback for projects created before createdAt was added
+  const stat = await fs.stat(projectDir);
+  return stat.birthtime.toISOString();
+}
+
 export class TemplateNotFoundError extends Error {
   constructor(templateId: string) {
     super(`Template not found: ${templateId}`);
@@ -133,6 +141,7 @@ export class ProjectNotFoundError extends Error {
 export interface ProjectResult {
   id: string;
   name: string;
+  createdAt?: string;
   targetOrg?: string;
 }
 
@@ -196,17 +205,18 @@ export async function createBlankProject(orgAlias?: string): Promise<ProjectResu
 
   const projectDir = path.join(projectsRoot, projectId);
   const name = generateName();
-  await writeProjectMeta(projectDir, { name });
+  const createdAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, createdAt });
 
   // Persist target-org if orgAlias was provided
   if (orgAlias) {
     await writeProjectTargetOrg(projectDir, orgAlias);
     logger.info({ projectId, name, orgAlias }, 'Blank project created with target-org');
-    return { id: projectId, name, targetOrg: orgAlias };
+    return { id: projectId, name, createdAt, targetOrg: orgAlias };
   }
 
   logger.info({ projectId, name }, 'Blank project created');
-  return { id: projectId, name };
+  return { id: projectId, name, createdAt };
 }
 
 /**
@@ -241,10 +251,11 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   }
 
   const name = generateName();
-  await writeProjectMeta(projectDir, { name });
+  const createdAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, createdAt });
 
   logger.info({ projectId, templateId, name }, 'Project created from template');
-  return { id: projectId, name };
+  return { id: projectId, name, createdAt };
 }
 
 /**
@@ -268,8 +279,10 @@ export async function listProjects(): Promise<ProjectResult[]> {
     const stat = await fs.stat(entryPath);
     if (!stat.isDirectory()) continue;
     const meta = await readProjectMeta(entryPath);
-    results.push({ id: entry, name: meta.name });
+    const createdAt = await getProjectCreatedAt(entryPath, meta);
+    results.push({ id: entry, name: meta.name, createdAt });
   }
+  results.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   return results;
 }
 
