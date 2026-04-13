@@ -1,5 +1,6 @@
 {
   "id": "metadata-ownership-tracking",
   "name": "Metadata Ownership Tracking",
-  "description": "Monitor and manage metadata ownership across orgs with static resources"
+  "description": "Monitor and manage metadata ownership across orgs with static resources",
+  "categories": ["Governance", "Administration"]
 }

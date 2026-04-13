@@ -24,6 +24,15 @@ export interface Template {
   id: string;
   name: string;
   description: string;
+  categories: string[];
+}
+
+interface TemplateMeta {
+  id: string;
+  name: string;
+  description: string;
+  categories?: string[];
+  visible?: boolean;
 }
 
 /**
@@ -39,8 +48,14 @@ export async function listTemplates(): Promise<Template[]> {
     if (!entry.isDirectory()) continue;
     try {
       const raw = await fs.readFile(path.join(dir, entry.name, 'template.json'), 'utf-8');
-      const meta = JSON.parse(raw) as Template;
-      templates.push({ id: meta.id, name: meta.name, description: meta.description });
+      const meta = JSON.parse(raw) as TemplateMeta;
+      if (meta.visible === false) continue;
+      templates.push({
+        id: meta.id,
+        name: meta.name,
+        description: meta.description,
+        categories: meta.categories ?? [],
+      });
     } catch {
       // Skip directories without a valid template.json
     }

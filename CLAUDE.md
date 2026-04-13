@@ -65,8 +65,10 @@ assigned to the machine's `gh` user. See `.claude/loops/` for setup.
 `spec/` is human-guarded (agents can draft and fix pre-approval, but
 nothing ships without human sign-off). `tests/` is agent-mutable.
 Test code (`contract.spec.ts`) is source of truth; `contract.md` is always
-derived from it. See [docs/workflow-guide.md](docs/workflow-guide.md) for
-the full workflow, loop setup, and troubleshooting.
+derived from it — regenerate the entire file whenever the spec changes,
+never hand-edit or partially update it. See
+[docs/workflow-guide.md](docs/workflow-guide.md) for the full workflow,
+loop setup, and troubleshooting.
 
 ## Directory layout
 

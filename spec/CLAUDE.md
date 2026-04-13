@@ -16,6 +16,11 @@ Each feature gets a folder: `spec/<feature>/`
   `contract.spec.ts`, never the reverse.
 - **Never edit `contract.md` directly.** Edit `contract.spec.ts`, then
   regenerate with `/cdd-spec --refresh <feature>`.
+- **Every commit that touches `contract.spec.ts` must regenerate `contract.md`.**
+  Always regenerate the entire file from the spec — never hand-edit or
+  partially update it. A stale `contract.md` is a documentation bug.
+  If editing the spec outside of `/cdd-spec`, regenerate manually before
+  committing.
 - **To change a contract during implementation:** stop, go back to `/cdd-spec`,
   make the change, regenerate both artifacts, get human approval, then resume.
 - A `PreToolUse` hook blocks agent writes to `spec/**/*.spec.ts`.
