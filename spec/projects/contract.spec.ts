@@ -58,7 +58,8 @@ describe('Projects API', () => {
   });
 
   describe('POST /projects', () => {
-    it('returns 201 with id and name when given a valid template', async () => {
+    it('returns 201 with id, name, and createdAt when given a valid template', async () => {
+      const before = new Date().toISOString();
       const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test' })
@@ -72,6 +73,10 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
+      expect(res.body).toHaveProperty('createdAt');
+      expect(typeof res.body.createdAt).toBe('string');
+      expect(new Date(res.body.createdAt).toISOString()).toBe(res.body.createdAt);
+      expect(res.body.createdAt >= before).toBe(true);
     });
 
     it('returns 400 when template is unknown', async () => {
@@ -84,7 +89,8 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 201 with id and name when no template is provided', async () => {
+    it('returns 201 with id, name, and createdAt when no template is provided', async () => {
+      const before = new Date().toISOString();
       const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       expect(res.body).toHaveProperty('id');
@@ -95,6 +101,10 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
+      expect(res.body).toHaveProperty('createdAt');
+      expect(typeof res.body.createdAt).toBe('string');
+      expect(new Date(res.body.createdAt).toISOString()).toBe(res.body.createdAt);
+      expect(res.body.createdAt >= before).toBe(true);
     });
 
     it('blank project contains sfdx-project.json', async () => {
@@ -149,7 +159,7 @@ describe('Projects API', () => {
       expect(ids).toContain(res2.body.id);
     });
 
-    it('each project has id and name', async () => {
+    it('each project has id, name, and createdAt', async () => {
       await request(app.server).post('/v1/projects').send({}).expect(201);
 
       const res = await request(app.server).get('/v1/projects').expect(200);
@@ -160,6 +170,37 @@ describe('Projects API', () => {
         expect(project).toHaveProperty('name');
         expect(typeof project.name).toBe('string');
         expect(project.name.length).toBeGreaterThan(0);
+        expect(project).toHaveProperty('createdAt');
+        expect(typeof project.createdAt).toBe('string');
+      }
+    });
+
+    it('returns projects sorted by most recent first', async () => {
+      // Use an isolated directory so we control the full list
+      const sortDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-sort-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = sortDir;
+
+      try {
+        const sortApp = createApp();
+        await sortApp.ready();
+
+        const first = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
+        const second = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
+        const third = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
+
+        const res = await request(sortApp.server).get('/v1/projects').expect(200);
+        const ids = res.body.map((p: { id: string }) => p.id);
+
+        // Most recent (third) should be first in the list
+        expect(ids[0]).toBe(third.body.id);
+        expect(ids[1]).toBe(second.body.id);
+        expect(ids[2]).toBe(first.body.id);
+
+        await sortApp.close();
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(sortDir, { recursive: true, force: true });
       }
     });
 

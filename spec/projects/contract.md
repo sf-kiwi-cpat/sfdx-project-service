@@ -4,7 +4,7 @@
 
 ## Overview
 
-The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later.
+The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** and a **createdAt** timestamp at creation time, and can be renamed later.
 
 ## Endpoints
 
@@ -23,11 +23,13 @@ The projects system manages SFDX project creation, listing, naming, and file tre
   ```json
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "name": "brave-falcon"
+    "name": "brave-falcon",
+    "createdAt": "2026-04-13T12:00:00.000Z"
   }
   ```
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
   - `name` is a non-empty string (auto-generated)
+  - `createdAt` is an ISO 8601 timestamp of when the project was created
   - Returned for both template-based and blank projects
 
 - **400 Bad Request** — Invalid input
@@ -51,14 +53,15 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 **Responses:**
 
-- **200 OK** — Array of projects
+- **200 OK** — Array of projects, sorted by most recent first
   ```json
   [
-    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon" },
-    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river" }
+    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "createdAt": "2026-04-13T12:01:00.000Z" },
+    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "createdAt": "2026-04-13T12:00:00.000Z" }
   ]
   ```
-  - Each element has `id` (string) and `name` (non-empty string)
+  - Each element has `id` (string), `name` (non-empty string), and `createdAt` (ISO 8601 string)
+  - Results are sorted by `createdAt` descending (most recently created first)
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
 
@@ -120,13 +123,18 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Names can be changed via PATCH — the generated name is a default, not permanent
 - Name format is an implementation detail; the contract only guarantees a non-empty string
 
+### Projects Track Creation Time
+- Every project records a `createdAt` ISO 8601 timestamp at creation time
+- `createdAt` is immutable — renaming does not change it
+- Listing returns projects sorted by `createdAt` descending (most recent first)
+
 ### Templates Are Optional
 - `POST /projects {}` (no template) is a first-class creation path, not an error
 - Blank projects are scaffolded in-memory — no zip file, no disk lookup
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
 
 ### Uniform Response Shape
-- Both blank and template-based creation return the same `{ id, name }` response
+- Both blank and template-based creation return the same `{ id, name, createdAt }` response
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
 
@@ -149,8 +157,8 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Test Summary
 
-- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
-- **GET /projects**: 3 tests (array contents, element shape, empty state)
+- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error) — now includes `createdAt` assertions
+- **GET /projects**: 4 tests (array contents, element shape, sort order, empty state)
 - **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 16 contract tests, 4 describe blocks
+- **Total**: 17 contract tests, 4 describe blocks
