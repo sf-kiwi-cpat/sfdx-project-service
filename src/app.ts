@@ -32,7 +32,10 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 export function createApp() {
   const app = Fastify({ loggerInstance: logger });
 
-  app.register(fastifyCors, { origin: true, methods: '*' });
+  app.register(fastifyCors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  });
 
   app.register(fastifySwagger, {
     openapi: {
