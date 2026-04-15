@@ -4,7 +4,7 @@
 
 ## Overview
 
-The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** and a **createdAt** timestamp at creation time, and can be renamed later.
+The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later. Each project tracks a **lastAccessedAt** timestamp that updates whenever the project is accessed by ID.
 
 ## Endpoints
 
@@ -23,13 +23,11 @@ The projects system manages SFDX project creation, listing, naming, and file tre
   ```json
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "name": "brave-falcon",
-    "createdAt": "2026-04-13T12:00:00.000Z"
+    "name": "brave-falcon"
   }
   ```
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
   - `name` is a non-empty string (auto-generated)
-  - `createdAt` is an ISO 8601 timestamp of when the project was created
   - Returned for both template-based and blank projects
 
 - **400 Bad Request** — Invalid input
@@ -56,12 +54,12 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - **200 OK** — Array of projects
   ```json
   [
-    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "createdAt": "2026-04-13T12:00:00.000Z" },
-    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "createdAt": "2026-04-13T12:01:00.000Z" }
+    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "lastAccessedAt": "2026-04-13T12:00:00.000Z" },
+    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "lastAccessedAt": "2026-04-13T12:01:00.000Z" }
   ]
   ```
-  - Each element has `id` (string), `name` (non-empty string), and `createdAt` (ISO 8601 string)
-  - `createdAt` is a valid ISO 8601 timestamp; sorting is left to the client
+  - Each element has `id` (string), `name` (non-empty string), and `lastAccessedAt` (ISO 8601 string)
+  - `lastAccessedAt` is a valid ISO 8601 timestamp; sorting is left to the client
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
 
@@ -123,10 +121,11 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Names can be changed via PATCH — the generated name is a default, not permanent
 - Name format is an implementation detail; the contract only guarantees a non-empty string
 
-### Projects Track Creation Time
-- Every project records a `createdAt` ISO 8601 timestamp at creation time
-- `createdAt` is immutable — renaming does not change it
-- Sorting by `createdAt` is left to the client
+### Projects Track Last Access
+- Every project records a `lastAccessedAt` ISO 8601 timestamp
+- `lastAccessedAt` is set at creation time and updated whenever the project is accessed by ID (PATCH, tree, file read)
+- Only `GET /v1/projects` returns `lastAccessedAt`; other responses do not include it
+- Sorting by `lastAccessedAt` is left to the client
 
 ### Templates Are Optional
 - `POST /projects {}` (no template) is a first-class creation path, not an error
@@ -134,7 +133,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
 
 ### Uniform Response Shape
-- Both blank and template-based creation return the same `{ id, name, createdAt }` response
+- Both blank and template-based creation return the same `{ id, name }` response
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
 
@@ -157,8 +156,8 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Test Summary
 
-- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error) — now includes `createdAt` assertions
-- **GET /projects**: 4 tests (array contents, element shape, createdAt validation, empty state)
+- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
+- **GET /projects**: 4 tests (array contents, element shape with lastAccessedAt, access-updates-timestamp, empty state)
 - **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
 - **Total**: 17 contract tests, 4 describe blocks

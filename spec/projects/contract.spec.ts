@@ -20,10 +20,11 @@
  *
  * These tests define the contract for the Projects API:
  *   - POST /projects        — create a project (returns id + generated name)
- *   - GET /projects          — list all projects (id + name)
+ *   - GET /projects          — list all projects (id + name + lastAccessedAt)
  *   - PATCH /projects/:id    — rename a project
  *   - GET /projects/:id/tree — file tree for a project
  *
+ * Accessing a project by :id (PATCH, tree, file) updates its lastAccessedAt.
  * They are the source of truth for these endpoints' external behavior.
  * The AI implementation agent must NOT modify this file.
  */
@@ -58,8 +59,7 @@ describe('Projects API', () => {
   });
 
   describe('POST /projects', () => {
-    it('returns 201 with id, name, and createdAt when given a valid template', async () => {
-      const before = new Date().toISOString();
+    it('returns 201 with id and name when given a valid template', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test' })
@@ -73,10 +73,6 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
-      expect(res.body).toHaveProperty('createdAt');
-      expect(typeof res.body.createdAt).toBe('string');
-      expect(new Date(res.body.createdAt).toISOString()).toBe(res.body.createdAt);
-      expect(res.body.createdAt >= before).toBe(true);
     });
 
     it('returns 400 when template is unknown', async () => {
@@ -89,8 +85,7 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 201 with id, name, and createdAt when no template is provided', async () => {
-      const before = new Date().toISOString();
+    it('returns 201 with id and name when no template is provided', async () => {
       const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       expect(res.body).toHaveProperty('id');
@@ -101,10 +96,6 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
-      expect(res.body).toHaveProperty('createdAt');
-      expect(typeof res.body.createdAt).toBe('string');
-      expect(new Date(res.body.createdAt).toISOString()).toBe(res.body.createdAt);
-      expect(res.body.createdAt >= before).toBe(true);
     });
 
     it('blank project contains sfdx-project.json', async () => {
@@ -159,7 +150,7 @@ describe('Projects API', () => {
       expect(ids).toContain(res2.body.id);
     });
 
-    it('each project has id, name, and createdAt', async () => {
+    it('each project has id, name, and lastAccessedAt', async () => {
       await request(app.server).post('/v1/projects').send({}).expect(201);
 
       const res = await request(app.server).get('/v1/projects').expect(200);
@@ -170,19 +161,47 @@ describe('Projects API', () => {
         expect(project).toHaveProperty('name');
         expect(typeof project.name).toBe('string');
         expect(project.name.length).toBeGreaterThan(0);
-        expect(project).toHaveProperty('createdAt');
-        expect(typeof project.createdAt).toBe('string');
+        expect(project).toHaveProperty('lastAccessedAt');
+        expect(typeof project.lastAccessedAt).toBe('string');
+        expect(new Date(project.lastAccessedAt).toISOString()).toBe(project.lastAccessedAt);
       }
     });
 
-    it('each project createdAt is a valid ISO 8601 timestamp', async () => {
-      await request(app.server).post('/v1/projects').send({}).expect(201);
-      await request(app.server).post('/v1/projects').send({}).expect(201);
+    it('accessing a project updates its lastAccessedAt', async () => {
+      // Use an isolated directory so we control the full list
+      const accessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-access-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = accessDir;
 
-      const res = await request(app.server).get('/v1/projects').expect(200);
+      try {
+        const accessApp = createApp();
+        await accessApp.ready();
 
-      for (const project of res.body) {
-        expect(new Date(project.createdAt).toISOString()).toBe(project.createdAt);
+        // Create a project
+        const createRes = await request(accessApp.server).post('/v1/projects').send({}).expect(201);
+
+        // Capture initial lastAccessedAt
+        const list1 = await request(accessApp.server).get('/v1/projects').expect(200);
+        const initial = list1.body.find((p: { id: string }) => p.id === createRes.body.id);
+        const initialTimestamp = initial.lastAccessedAt;
+
+        // Small delay to ensure timestamp difference is observable
+        await new Promise((r) => setTimeout(r, 50));
+
+        // Access the project (GET tree triggers lastAccessedAt update)
+        await request(accessApp.server).get(`/v1/projects/${createRes.body.id}/tree`).expect(200);
+
+        // Capture updated lastAccessedAt
+        const list2 = await request(accessApp.server).get('/v1/projects').expect(200);
+        const updated = list2.body.find((p: { id: string }) => p.id === createRes.body.id);
+
+        // lastAccessedAt must have advanced
+        expect(updated.lastAccessedAt > initialTimestamp).toBe(true);
+
+        await accessApp.close();
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(accessDir, { recursive: true, force: true });
       }
     });
 
