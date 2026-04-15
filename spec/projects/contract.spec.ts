@@ -175,32 +175,14 @@ describe('Projects API', () => {
       }
     });
 
-    it('returns projects sorted by most recent first', async () => {
-      // Use an isolated directory so we control the full list
-      const sortDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-sort-'));
-      const originalRoot = process.env.PROJECTS_ROOT;
-      process.env.PROJECTS_ROOT = sortDir;
+    it('each project createdAt is a valid ISO 8601 timestamp', async () => {
+      await request(app.server).post('/v1/projects').send({}).expect(201);
+      await request(app.server).post('/v1/projects').send({}).expect(201);
 
-      try {
-        const sortApp = createApp();
-        await sortApp.ready();
+      const res = await request(app.server).get('/v1/projects').expect(200);
 
-        const first = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
-        const second = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
-        const third = await request(sortApp.server).post('/v1/projects').send({}).expect(201);
-
-        const res = await request(sortApp.server).get('/v1/projects').expect(200);
-        const ids = res.body.map((p: { id: string }) => p.id);
-
-        // Most recent (third) should be first in the list
-        expect(ids[0]).toBe(third.body.id);
-        expect(ids[1]).toBe(second.body.id);
-        expect(ids[2]).toBe(first.body.id);
-
-        await sortApp.close();
-      } finally {
-        process.env.PROJECTS_ROOT = originalRoot;
-        await fs.rm(sortDir, { recursive: true, force: true });
+      for (const project of res.body) {
+        expect(new Date(project.createdAt).toISOString()).toBe(project.createdAt);
       }
     });
 

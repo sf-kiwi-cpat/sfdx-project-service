@@ -282,7 +282,6 @@ export async function listProjects(): Promise<ProjectResult[]> {
     const createdAt = await getProjectCreatedAt(entryPath, meta);
     results.push({ id: entry, name: meta.name, createdAt });
   }
-  results.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   return results;
 }
 

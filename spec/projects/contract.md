@@ -53,15 +53,15 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 **Responses:**
 
-- **200 OK** — Array of projects, sorted by most recent first
+- **200 OK** — Array of projects
   ```json
   [
-    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "createdAt": "2026-04-13T12:01:00.000Z" },
-    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "createdAt": "2026-04-13T12:00:00.000Z" }
+    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "createdAt": "2026-04-13T12:00:00.000Z" },
+    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "createdAt": "2026-04-13T12:01:00.000Z" }
   ]
   ```
   - Each element has `id` (string), `name` (non-empty string), and `createdAt` (ISO 8601 string)
-  - Results are sorted by `createdAt` descending (most recently created first)
+  - `createdAt` is a valid ISO 8601 timestamp; sorting is left to the client
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
 
@@ -126,7 +126,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 ### Projects Track Creation Time
 - Every project records a `createdAt` ISO 8601 timestamp at creation time
 - `createdAt` is immutable — renaming does not change it
-- Listing returns projects sorted by `createdAt` descending (most recent first)
+- Sorting by `createdAt` is left to the client
 
 ### Templates Are Optional
 - `POST /projects {}` (no template) is a first-class creation path, not an error
@@ -158,7 +158,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 ## Test Summary
 
 - **POST /projects**: 5 tests (2 with template, 2 blank, 1 error) — now includes `createdAt` assertions
-- **GET /projects**: 4 tests (array contents, element shape, sort order, empty state)
+- **GET /projects**: 4 tests (array contents, element shape, createdAt validation, empty state)
 - **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
 - **Total**: 17 contract tests, 4 describe blocks
