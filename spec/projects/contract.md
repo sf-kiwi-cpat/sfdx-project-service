@@ -60,6 +60,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   ```
   - Each element has `id` (string), `name` (non-empty string), and `lastAccessedAt` (ISO 8601 string)
   - `lastAccessedAt` is a valid ISO 8601 timestamp; sorting is left to the client
+  - A freshly created project's `lastAccessedAt` equals its creation time
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
 
@@ -123,7 +124,8 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ### Projects Track Last Access
 - Every project records a `lastAccessedAt` ISO 8601 timestamp
-- `lastAccessedAt` is set at creation time and updated whenever the project is accessed by ID (PATCH, tree, file read)
+- `lastAccessedAt` is initialized to the project's creation time
+- `lastAccessedAt` is updated whenever the project is accessed by ID (PATCH, tree, file read)
 - Only `GET /v1/projects` returns `lastAccessedAt`; other responses do not include it
 - Sorting by `lastAccessedAt` is left to the client
 
@@ -157,7 +159,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 ## Test Summary
 
 - **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
-- **GET /projects**: 4 tests (array contents, element shape with lastAccessedAt, access-updates-timestamp, empty state)
+- **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
 - **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 17 contract tests, 4 describe blocks
+- **Total**: 18 contract tests, 4 describe blocks

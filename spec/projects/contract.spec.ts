@@ -25,6 +25,7 @@
  *   - GET /projects/:id/tree — file tree for a project
  *
  * Accessing a project by :id (PATCH, tree, file) updates its lastAccessedAt.
+ * A freshly created project's lastAccessedAt equals its creation time.
  * They are the source of truth for these endpoints' external behavior.
  * The AI implementation agent must NOT modify this file.
  */
@@ -199,6 +200,32 @@ describe('Projects API', () => {
         expect(updated.lastAccessedAt > initialTimestamp).toBe(true);
 
         await accessApp.close();
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(accessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('freshly created project has lastAccessedAt set to creation time', async () => {
+      const accessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-initial-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = accessDir;
+
+      try {
+        const freshApp = createApp();
+        await freshApp.ready();
+
+        const before = new Date().toISOString();
+        await request(freshApp.server).post('/v1/projects').send({}).expect(201);
+        const after = new Date().toISOString();
+
+        const res = await request(freshApp.server).get('/v1/projects').expect(200);
+        const project = res.body[0];
+
+        expect(project.lastAccessedAt >= before).toBe(true);
+        expect(project.lastAccessedAt <= after).toBe(true);
+
+        await freshApp.close();
       } finally {
         process.env.PROJECTS_ROOT = originalRoot;
         await fs.rm(accessDir, { recursive: true, force: true });
