@@ -95,7 +95,7 @@ const META_FILE = '.project-meta.json';
 
 interface ProjectMeta {
   name: string;
-  createdAt?: string;
+  lastAccessedAt?: string;
 }
 
 function generateName(): string {
@@ -117,11 +117,10 @@ async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
   }
 }
 
-async function getProjectCreatedAt(projectDir: string, meta: ProjectMeta): Promise<string> {
-  if (meta.createdAt) return meta.createdAt;
-  // Fallback for projects created before createdAt was added
-  const stat = await fs.stat(projectDir);
-  return stat.birthtime.toISOString();
+export async function updateLastAccessed(projectDir: string): Promise<void> {
+  const meta = await readProjectMeta(projectDir);
+  meta.lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, meta);
 }
 
 export class TemplateNotFoundError extends Error {
@@ -141,7 +140,7 @@ export class ProjectNotFoundError extends Error {
 export interface ProjectResult {
   id: string;
   name: string;
-  createdAt?: string;
+  lastAccessedAt?: string;
   targetOrg?: string;
 }
 
@@ -205,18 +204,18 @@ export async function createBlankProject(orgAlias?: string): Promise<ProjectResu
 
   const projectDir = path.join(projectsRoot, projectId);
   const name = generateName();
-  const createdAt = new Date().toISOString();
-  await writeProjectMeta(projectDir, { name, createdAt });
+  const lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
   // Persist target-org if orgAlias was provided
   if (orgAlias) {
     await writeProjectTargetOrg(projectDir, orgAlias);
     logger.info({ projectId, name, orgAlias }, 'Blank project created with target-org');
-    return { id: projectId, name, createdAt, targetOrg: orgAlias };
+    return { id: projectId, name, targetOrg: orgAlias };
   }
 
   logger.info({ projectId, name }, 'Blank project created');
-  return { id: projectId, name, createdAt };
+  return { id: projectId, name };
 }
 
 /**
@@ -251,11 +250,11 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   }
 
   const name = generateName();
-  const createdAt = new Date().toISOString();
-  await writeProjectMeta(projectDir, { name, createdAt });
+  const lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
   logger.info({ projectId, templateId, name }, 'Project created from template');
-  return { id: projectId, name, createdAt };
+  return { id: projectId, name };
 }
 
 /**
@@ -279,8 +278,7 @@ export async function listProjects(): Promise<ProjectResult[]> {
     const stat = await fs.stat(entryPath);
     if (!stat.isDirectory()) continue;
     const meta = await readProjectMeta(entryPath);
-    const createdAt = await getProjectCreatedAt(entryPath, meta);
-    results.push({ id: entry, name: meta.name, createdAt });
+    results.push({ id: entry, name: meta.name, lastAccessedAt: meta.lastAccessedAt });
   }
   return results;
 }
@@ -290,8 +288,9 @@ export async function listProjects(): Promise<ProjectResult[]> {
  */
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
   const projectDir = await getProjectDir(projectId);
-  const meta: ProjectMeta = { name };
-  await writeProjectMeta(projectDir, meta);
+  const existingMeta = await readProjectMeta(projectDir);
+  await writeProjectMeta(projectDir, { ...existingMeta, name });
+  await updateLastAccessed(projectDir);
   logger.info({ projectId, name }, 'Project renamed');
   return { id: projectId, name };
 }
