@@ -278,7 +278,8 @@ export async function listProjects(): Promise<ProjectResult[]> {
     const stat = await fs.stat(entryPath);
     if (!stat.isDirectory()) continue;
     const meta = await readProjectMeta(entryPath);
-    results.push({ id: entry, name: meta.name, lastAccessedAt: meta.lastAccessedAt });
+    const lastAccessedAt = meta.lastAccessedAt ?? stat.birthtime.toISOString();
+    results.push({ id: entry, name: meta.name, lastAccessedAt });
   }
   return results;
 }
@@ -289,8 +290,11 @@ export async function listProjects(): Promise<ProjectResult[]> {
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
   const projectDir = await getProjectDir(projectId);
   const existingMeta = await readProjectMeta(projectDir);
-  await writeProjectMeta(projectDir, { ...existingMeta, name });
-  await updateLastAccessed(projectDir);
+  await writeProjectMeta(projectDir, {
+    ...existingMeta,
+    name,
+    lastAccessedAt: new Date().toISOString(),
+  });
   logger.info({ projectId, name }, 'Project renamed');
   return { id: projectId, name };
 }
