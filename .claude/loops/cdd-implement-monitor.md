@@ -1,30 +1,31 @@
-# CDD Implementation Monitor Loop
+# CDD Implementation Monitor
 
-Detects `spec:human-approved` PRs assigned to the local user and runs `/cdd-implement` on each.
+Poll for `spec:human-approved` PRs and run `/cdd-implement` in each PR's worktree.
 
 ## Start
 
 ```
-/loop 5m Run .claude/skills/cdd-common/scripts/find-my-prs "spec:human-approved" to get a JSON array of matching PRs (filters by current user and label). If the array is empty, do nothing. For each matching PR: extract the issue number from the branch name using .claude/skills/cdd-common/scripts/get-issue-number "$branch", find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, find the contract spec with find spec -name contract.spec.ts, then run /cdd-implement on it. The /cdd-implement skill handles all label transitions and code changes.
+/loop 5m Follow the loop preamble (.claude/skills/cdd-common/loop-preamble.md) for label "spec:human-approved". For each ready PR: BEFORE entering the worktree, validate the human spec approval checklist by running .claude/skills/cdd-common/scripts/check-spec-approval "$PR_NUMBER". If it exits non-zero, the human applied spec:human-approved without completing the checklist — revert by removing spec:human-approved and re-adding spec:agent-approved (use the label script), post a PR comment via /gh-comment with name "CDD Approval Gate" explaining which checkboxes are unchecked and that the monitor will not implement until they are (include the unchecked items from the script's stderr), then move to the next PR — do not implement. If the checklist passes, EnterWorktree at its worktree path, find the contract spec, then run /cdd-implement.
 ```
 
-## What happens each cycle
-
-1. Find matching PRs: `.claude/skills/cdd-common/scripts/find-my-prs "spec:human-approved"` (returns JSON array filtered by current user + label)
-2. If empty array, do nothing (wait for next cycle)
-3. For each PR found:
-   - Extract issue number: `.claude/skills/cdd-common/scripts/get-issue-number "$branch"`
-   - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
-   - If no worktree found, create one: `git worktree add .claude/worktrees/$slug $branch` (slug is the branch suffix, e.g. `issue-42-foo` from `t/user/issue-42-foo`)
-   - Enter worktree via `EnterWorktree`
-   - `npm install` if `node_modules/` missing
-   - Find spec: `find spec -name "contract.spec.ts" -type f | head -1`
-   - Run `/cdd-implement <path>`
-6. `/cdd-implement` handles: `spec:human-approved` → `impl:agent-in-progress` → `impl:agent-reviewing`
-
-## Label transitions
+## Labels
 
 ```
-spec:human-approved       →  impl:agent-in-progress       (at /cdd-implement start)
-impl:agent-in-progress    →  impl:agent-reviewing  (at /cdd-implement end)
+spec:human-approved → impl:agent-in-progress → impl:agent-reviewing
+
+spec:human-approved (incomplete checklist) → spec:agent-approved (reverted by monitor)
 ```
+
+## Why the gate
+
+The human approval step is the single point where all downstream quality
+guarantees originate. At scale (many specs per week) it collapses into a
+rubber stamp unless there's a forcing function. The checklist in the PR
+body is that forcing function; this monitor enforces it mechanically so
+the approval is real, not ceremonial.
+
+Humans who want to override can still do so: tick every box without
+reading, and the gate passes. That's a human problem, not a tooling
+problem — but the checkbox act forces at least a moment of attention per
+claim, and the claims can be audited after the fact if a spec ships with
+bugs.

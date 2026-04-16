@@ -33,7 +33,9 @@ offers to create a worktree and hand off to `/cdd-spec`.
 `contract.spec.ts` (executable test code, the actual source of truth) and a
 `contract.md` (prose description, auto-generated from the tests). You review
 both, edit the test code if needed, and approve when it looks right. The spec
-gets pushed and labeled `spec:ready-for-agent-review`.
+gets pushed and labeled `spec:ready-for-agent-review`. The PR body includes a
+**human spec approval checklist** — downstream automation requires every box
+to be ticked before implementation begins.
 
 `/cdd-spec-review` reads the spec and any existing implementation, then
 evaluates whether the spec is clear, complete, and testable. It critiques
@@ -49,10 +51,19 @@ seems wrong, it flags it rather than working around it. Labels move to
 
 `/cdd-code-review` reviews the implementation using blind contract derivation
 (a separate agent reads only the production code and tries to derive what the
-contract should be, then compares against the actual spec). Also checks for
-code quality issues. Posts findings as a PR comment. If the verdict is PASS,
-labels move to `impl:agent-approved`. If NEEDS WORK, labels move to
-`impl:agent-comments`.
+contract should be, then compares against the actual spec). The blind agent
+is explicitly forbidden from reading the spec, the PR body, the branch name,
+the issue text, commit messages, and prior review comments — any of those
+would leak the contract and break the independence guarantee. Also checks for
+code quality issues. Posts findings as a PR comment with a footer recording
+the reviewed SHA. If the verdict is PASS, labels move to `impl:agent-approved`.
+If NEEDS WORK, labels move to `impl:agent-comments`.
+
+On re-reviews (when prior "CDD Code Review" comments exist on the PR), the
+skill also runs a fix-cycle verification pass: it matches fix commits to the
+prior review's findings (via the `— addresses finding: {text}` suffix) and
+checks that each claimed fix actually resolved its referenced finding.
+Fix-claim mismatches and silently-dropped findings are flagged as Must Fix.
 
 ## What you do vs. what agents do
 
@@ -71,25 +82,55 @@ a `{phase}:{actor}-{state}` pattern. Transitions happen when a skill or
 monitor completes its work.
 
 ```
-/cdd-spec             sets   spec:ready-for-agent-review
-/cdd-spec-review      sets   spec:agent-approved      (if solid)
-                        or   spec:agent-comments      (if gaps found)
-cdd-spec-fix-monitor  sets   spec:ready-for-agent-review  (after fixing)
-You approve           sets   spec:human-approved
-/cdd-implement        sets   impl:agent-in-progress, then impl:ready-for-agent-review
-/cdd-code-review      sets   impl:agent-approved      (if passing)
-                        or   impl:agent-comments      (if needs work)
-cdd-impl-fix-monitor  sets   impl:ready-for-agent-review  (after fixing)
+/cdd-spec              sets   spec:ready-for-agent-review
+/cdd-spec-review       sets   spec:agent-approved      (if solid)
+                         or   spec:agent-comments      (if gaps found)
+cdd-spec-fix-monitor   sets   spec:ready-for-agent-review  (after fixing)
+You approve            sets   spec:human-approved
+                              (checklist in PR body must be fully ticked)
+cdd-implement-monitor  validates checklist:
+                         pass → runs /cdd-implement
+                         fail → reverts to spec:agent-approved + PR comment
+/cdd-implement         sets   impl:agent-in-progress, then impl:ready-for-agent-review
+/cdd-code-review       sets   impl:agent-approved      (if passing)
+                         or   impl:agent-comments      (if needs work)
+cdd-impl-fix-monitor   checks for recurring findings:
+                         recurrence → escalates to #app-studio-alerts, no fix
+                         new        → sets impl:ready-for-agent-review (after fixing)
 You merge the PR
 ```
 
 The feedback labels (`spec:agent-comments` and `impl:agent-comments`) trigger
 fix monitors that automatically address findings and re-submit for review.
+Fix commits follow the format `... — addresses finding: {text}` so re-review
+can mechanically verify that each fix actually resolved the finding it
+referenced.
+
 You can also fix things manually — push your changes and move the label back
 to `spec:ready-for-agent-review` or `impl:ready-for-agent-review`.
 
 You can always override. If a spec review says HAS GAPS but you disagree,
-set `spec:human-approved` directly.
+set `spec:human-approved` directly (but the checklist gate still applies).
+
+### The human approval checklist
+
+When `/cdd-spec` creates the draft PR, the body includes a section:
+
+```
+## Human spec approval (required before applying spec:human-approved)
+- [ ] I read each `it()` assertion in contract.spec.ts, not just the names
+- [ ] The error cases cover the failure modes I want to handle in production
+- [ ] The mock boundary matches reality (not mocking away bugs)
+- [ ] No aspirational fields in contract.md that aren't tested
+- [ ] I traced through at least one request/response end-to-end mentally
+```
+
+Before applying `spec:human-approved`, tick every box. If you apply the
+label with any box unchecked, `cdd-implement-monitor` reverts the label
+and posts a comment listing the unchecked items. This is the one
+mechanical forcing function that keeps spec approval from becoming a
+rubber stamp as volume grows. You can still pencil-whip the boxes, but
+ticking them is at least one moment of attention per claim.
 
 ## Monitor loops
 
