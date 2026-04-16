@@ -1,0 +1,4 @@
+# Default reviewers for all PRs. When a PR is marked ready for review,
+# GitHub auto-requests review from this team. The GitHub Slack app
+# notifies the linked Slack team (app-studio-reviewers).
+* @forcedotcom/app-studio-reviewers
