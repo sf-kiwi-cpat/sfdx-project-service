@@ -32,7 +32,7 @@ fi
 
 # Extract the checklist section. The section header is
 # "## Human spec approval" and it ends at the next "##" heading.
-SECTION=$(echo "$BODY" | awk '
+SECTION=$(printf '%s\n' "$BODY" | awk '
   /^## Human spec approval/ { in_section = 1; next }
   in_section && /^## / { in_section = 0 }
   in_section { print }
@@ -43,15 +43,15 @@ if [ -z "$SECTION" ]; then
   exit 1
 fi
 
-UNCHECKED=$(echo "$SECTION" | grep -E '^\s*- \[ \]' || true)
+UNCHECKED=$(printf '%s\n' "$SECTION" | grep -iE '^\s*- \[ \]' || true)
 
 if [ -n "$UNCHECKED" ]; then
   echo "Human spec approval checklist is incomplete. Unchecked items:" >&2
-  echo "$UNCHECKED" >&2
+  printf '%s\n' "$UNCHECKED" >&2
   exit 1
 fi
 
-CHECKED_COUNT=$(echo "$SECTION" | grep -cE '^\s*- \[x\]' || true)
+CHECKED_COUNT=$(printf '%s\n' "$SECTION" | grep -ciE '^\s*- \[x\]' || true)
 if [ "$CHECKED_COUNT" -eq 0 ]; then
   echo "error: PR #$PR_NUMBER has a 'Human spec approval' section but no checkboxes" >&2
   exit 1
