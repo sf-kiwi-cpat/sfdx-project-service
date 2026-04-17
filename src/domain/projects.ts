@@ -95,6 +95,7 @@ const META_FILE = '.project-meta.json';
 
 interface ProjectMeta {
   name: string;
+  lastAccessedAt?: string;
 }
 
 function generateName(): string {
@@ -116,6 +117,12 @@ async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
   }
 }
 
+export async function updateLastAccessed(projectDir: string): Promise<void> {
+  const meta = await readProjectMeta(projectDir);
+  meta.lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, meta);
+}
+
 export class TemplateNotFoundError extends Error {
   constructor(templateId: string) {
     super(`Template not found: ${templateId}`);
@@ -133,6 +140,7 @@ export class ProjectNotFoundError extends Error {
 export interface ProjectResult {
   id: string;
   name: string;
+  lastAccessedAt?: string;
   targetOrg?: string;
 }
 
@@ -196,7 +204,8 @@ export async function createBlankProject(orgAlias?: string): Promise<ProjectResu
 
   const projectDir = path.join(projectsRoot, projectId);
   const name = generateName();
-  await writeProjectMeta(projectDir, { name });
+  const lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
   // Persist target-org if orgAlias was provided
   if (orgAlias) {
@@ -241,7 +250,8 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   }
 
   const name = generateName();
-  await writeProjectMeta(projectDir, { name });
+  const lastAccessedAt = new Date().toISOString();
+  await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
   logger.info({ projectId, templateId, name }, 'Project created from template');
   return { id: projectId, name };
@@ -268,7 +278,8 @@ export async function listProjects(): Promise<ProjectResult[]> {
     const stat = await fs.stat(entryPath);
     if (!stat.isDirectory()) continue;
     const meta = await readProjectMeta(entryPath);
-    results.push({ id: entry, name: meta.name });
+    const lastAccessedAt = meta.lastAccessedAt ?? stat.birthtime.toISOString();
+    results.push({ id: entry, name: meta.name, lastAccessedAt });
   }
   return results;
 }
@@ -278,8 +289,12 @@ export async function listProjects(): Promise<ProjectResult[]> {
  */
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
   const projectDir = await getProjectDir(projectId);
-  const meta: ProjectMeta = { name };
-  await writeProjectMeta(projectDir, meta);
+  const existingMeta = await readProjectMeta(projectDir);
+  await writeProjectMeta(projectDir, {
+    ...existingMeta,
+    name,
+    lastAccessedAt: new Date().toISOString(),
+  });
   logger.info({ projectId, name }, 'Project renamed');
   return { id: projectId, name };
 }

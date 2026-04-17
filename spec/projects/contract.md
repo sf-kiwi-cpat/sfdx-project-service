@@ -4,7 +4,7 @@
 
 ## Overview
 
-The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later.
+The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later. Each project tracks a **lastAccessedAt** timestamp that updates whenever the project is accessed by ID.
 
 ## Endpoints
 
@@ -54,11 +54,13 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - **200 OK** — Array of projects
   ```json
   [
-    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon" },
-    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river" }
+    { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "brave-falcon", "lastAccessedAt": "2026-04-13T12:00:00.000Z" },
+    { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "swift-river", "lastAccessedAt": "2026-04-13T12:01:00.000Z" }
   ]
   ```
-  - Each element has `id` (string) and `name` (non-empty string)
+  - Each element has `id` (string), `name` (non-empty string), and `lastAccessedAt` (ISO 8601 string)
+  - `lastAccessedAt` is a valid ISO 8601 timestamp; sorting is left to the client
+  - A freshly created project's `lastAccessedAt` equals its creation time
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
 
@@ -120,6 +122,13 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Names can be changed via PATCH — the generated name is a default, not permanent
 - Name format is an implementation detail; the contract only guarantees a non-empty string
 
+### Projects Track Last Access
+- Every project records a `lastAccessedAt` ISO 8601 timestamp
+- `lastAccessedAt` is initialized to the project's creation time
+- `lastAccessedAt` is updated whenever the project is accessed by ID (PATCH, tree, file read)
+- Only `GET /v1/projects` returns `lastAccessedAt`; other responses do not include it
+- Sorting by `lastAccessedAt` is left to the client
+
 ### Templates Are Optional
 - `POST /projects {}` (no template) is a first-class creation path, not an error
 - Blank projects are scaffolded in-memory — no zip file, no disk lookup
@@ -150,7 +159,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 ## Test Summary
 
 - **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
-- **GET /projects**: 3 tests (array contents, element shape, empty state)
+- **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
 - **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 16 contract tests, 4 describe blocks
+- **Total**: 18 contract tests, 4 describe blocks

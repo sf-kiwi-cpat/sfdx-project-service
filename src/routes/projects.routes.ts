@@ -24,6 +24,7 @@ import {
   getProjectDir,
   listProjects,
   renameProject,
+  updateLastAccessed,
 } from '../domain/projects.js';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
 
@@ -91,6 +92,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
       const { path } = request.query as { path: string };
       const projectDir = await getProjectDir(id);
+      await updateLastAccessed(projectDir);
       const content = await readFile(path, projectDir);
       return reply.type('text/plain').send(content);
     }
@@ -108,6 +110,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const projectDir = await getProjectDir(id);
+      await updateLastAccessed(projectDir);
       const tree = await buildTree(undefined, projectDir);
       return reply.send(tree);
     }

@@ -20,10 +20,12 @@
  *
  * These tests define the contract for the Projects API:
  *   - POST /projects        — create a project (returns id + generated name)
- *   - GET /projects          — list all projects (id + name)
+ *   - GET /projects          — list all projects (id + name + lastAccessedAt)
  *   - PATCH /projects/:id    — rename a project
  *   - GET /projects/:id/tree — file tree for a project
  *
+ * Accessing a project by :id (PATCH, tree, file) updates its lastAccessedAt.
+ * A freshly created project's lastAccessedAt equals its creation time.
  * They are the source of truth for these endpoints' external behavior.
  * The AI implementation agent must NOT modify this file.
  */
@@ -149,7 +151,7 @@ describe('Projects API', () => {
       expect(ids).toContain(res2.body.id);
     });
 
-    it('each project has id and name', async () => {
+    it('each project has id, name, and lastAccessedAt', async () => {
       await request(app.server).post('/v1/projects').send({}).expect(201);
 
       const res = await request(app.server).get('/v1/projects').expect(200);
@@ -160,6 +162,73 @@ describe('Projects API', () => {
         expect(project).toHaveProperty('name');
         expect(typeof project.name).toBe('string');
         expect(project.name.length).toBeGreaterThan(0);
+        expect(project).toHaveProperty('lastAccessedAt');
+        expect(typeof project.lastAccessedAt).toBe('string');
+        expect(new Date(project.lastAccessedAt).toISOString()).toBe(project.lastAccessedAt);
+      }
+    });
+
+    it('accessing a project updates its lastAccessedAt', async () => {
+      // Use an isolated directory so we control the full list
+      const accessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-access-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = accessDir;
+
+      try {
+        const accessApp = createApp();
+        await accessApp.ready();
+
+        // Create a project
+        const createRes = await request(accessApp.server).post('/v1/projects').send({}).expect(201);
+
+        // Capture initial lastAccessedAt
+        const list1 = await request(accessApp.server).get('/v1/projects').expect(200);
+        const initial = list1.body.find((p: { id: string }) => p.id === createRes.body.id);
+        const initialTimestamp = initial.lastAccessedAt;
+
+        // Small delay to ensure timestamp difference is observable
+        await new Promise((r) => setTimeout(r, 50));
+
+        // Access the project (GET tree triggers lastAccessedAt update)
+        await request(accessApp.server).get(`/v1/projects/${createRes.body.id}/tree`).expect(200);
+
+        // Capture updated lastAccessedAt
+        const list2 = await request(accessApp.server).get('/v1/projects').expect(200);
+        const updated = list2.body.find((p: { id: string }) => p.id === createRes.body.id);
+
+        // lastAccessedAt must have advanced
+        expect(updated.lastAccessedAt > initialTimestamp).toBe(true);
+
+        await accessApp.close();
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(accessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('freshly created project has lastAccessedAt set to creation time', async () => {
+      const accessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-projects-initial-'));
+      const originalRoot = process.env.PROJECTS_ROOT;
+      process.env.PROJECTS_ROOT = accessDir;
+
+      try {
+        const freshApp = createApp();
+        await freshApp.ready();
+
+        const before = new Date().toISOString();
+        await request(freshApp.server).post('/v1/projects').send({}).expect(201);
+        const after = new Date().toISOString();
+
+        const res = await request(freshApp.server).get('/v1/projects').expect(200);
+        const project = res.body[0];
+
+        expect(project.lastAccessedAt >= before).toBe(true);
+        expect(project.lastAccessedAt <= after).toBe(true);
+
+        await freshApp.close();
+      } finally {
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(accessDir, { recursive: true, force: true });
       }
     });
 
