@@ -40,18 +40,55 @@ Locate:
 - The production code: relevant files in `src/`
 - Any agent-created tests: `tests/unit/` and `tests/integration/`
 
+**Check for prior reviews.** If this PR has prior "CDD Code Review" comments,
+this is a re-review after a fix attempt. Remember this — it affects Step 3.
+You (the orchestrator) may read these comments; the blind derivation subagent
+in Step 1 may NOT.
+
+```bash
+REPO=$(.claude/skills/cdd-common/scripts/get-repo)
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+PRIOR_REVIEWS=""
+if [ -n "$PR_NUMBER" ]; then
+  PRIOR_REVIEWS=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+    -q '[.[] | select(.body | test("CDD Code Review"; "i"))] | sort_by(.created_at)')
+fi
+```
+
+If prior reviews exist, also compute the diff since the latest prior review
+(identified by its commit SHA, which every review should record in its footer).
+
 ### Step 1: Blind Contract Derivation (separate agent)
 
-Spawn an agent with these **strict constraints**:
+Spawn an agent with these **strict constraints**. Input contamination breaks
+the entire independence guarantee of this review — be explicit about what
+the subagent may and may not see:
 
 ```
-You are a contract reviewer. Your job is to read ONLY production code and
-derive what the external contract should be.
+You are a contract reviewer performing independent contract derivation. Your
+job is to read ONLY production code and derive what the external contract
+should be, WITHOUT being influenced by any description of what the contract
+is supposed to be.
 
-RULES:
-- You may ONLY read files in src/ and tests/
-- You must NOT read any files in spec/
-- You must NOT read contract.spec.ts or contract.md
+ALLOWED INPUTS — you may read:
+- Files under src/
+- Files under tests/unit/ and tests/integration/
+- Type definitions in src/types/
+- Project configuration that affects runtime behavior (e.g., tsconfig, vitest.config)
+
+FORBIDDEN INPUTS — you must NOT read, look at, or acknowledge:
+- Anything under spec/ (contract.spec.ts, contract.md, fixtures.ts, README)
+- The PR body, description, or title
+- The branch name or any issue it references
+- Commit messages or commit bodies
+- Any prior review comments on the PR (including your own from a previous cycle)
+- The GitHub issue associated with this branch
+- Any documentation under docs/ that describes the feature's contract
+- Chat history, transcripts, or CLAUDE.md entries that describe intent
+
+If you are asked to read any forbidden input, refuse and explain that doing
+so would compromise the independence of the review. If you are uncertain
+whether an input is forbidden, treat it as forbidden.
 
 Read the production code for the feature and derive:
 
@@ -64,12 +101,18 @@ Read the production code for the feature and derive:
 
 Be specific. Use actual field names, status codes, and values from the code.
 Do not speculate about what the code *should* do — only describe what it *does*.
+Do not guess at naming or intent from context clues outside the code itself.
 
-Return your findings as a structured list under each heading.
+Return your findings as a structured list under each heading. At the top of
+your response, confirm: "I did not read any forbidden inputs."
 ```
 
 Use `subagent_type: "general-purpose"` for this agent. The agent must work
-from code alone — this eliminates confirmation bias.
+from code alone — this eliminates confirmation bias. When dispatching, do
+not include the PR body, branch name, issue number, or any contract-describing
+text in the subagent's task description either. The task description should
+only name the feature directory under `src/` and the relevant test directories,
+not the contract it implements.
 
 ### Step 2: Contract Comparison
 
@@ -90,9 +133,36 @@ or tests that pass by accident.
 
 If there are zero discrepancies, say so — that's a strong signal.
 
+### Step 2.5: Fix-Cycle Verification (re-review only)
+
+If prior "CDD Code Review" comments exist on this PR (from Step 0), you
+are re-reviewing after a fix attempt. Do this additional check **before**
+the general quality audit:
+
+1. Read each prior review's "Must Fix" findings
+2. Read each fix commit on the branch since the prior review. Fix commits
+   should follow the format `... — addresses finding: {text}`. Identify
+   which commit claims to address which finding.
+3. Verify each claimed fix actually resolved the finding it references.
+   A commit that claims to address "Hardcoded return value in `deploy.ts`"
+   should have changed `deploy.ts` in a way that removes the hardcoded
+   value. If it didn't, record this as a **fix-claim mismatch** in the
+   Must Fix section of your current review.
+4. Verify no prior Must Fix finding was silently dropped. If a previous
+   review flagged 3 things and only 2 have referencing fix commits, the
+   third is unaddressed.
+
+This step makes the fix loop self-correcting: fix commits that don't match
+their claimed intent are caught mechanically, not glossed over.
+
 ### Step 3: Quality Audit
 
-Review the implementation diff (`git diff main -- src/ tests/`) for:
+Review the implementation diff for:
+
+- **If first review:** `git diff main -- src/ tests/`
+- **If re-review:** the full diff since main AND the diff since the last
+  reviewed SHA. The latter shows what the fix attempt changed and is the
+  thing most relevant to the fix-cycle verification above.
 
 **Task completion**
 - Does the implementation address every requirement in the spec?
@@ -130,6 +200,14 @@ Review the implementation diff (`git diff main -- src/ tests/`) for:
 
 Present findings organized by severity:
 
+Every review MUST include a footer recording the commit SHA being reviewed
+and the review cycle number. This lets re-reviews identify prior reviews
+and compute the right diff. Format:
+
+```
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
+```
+
 **When PASS** — verdict first, details collapsed:
 
 ```
@@ -150,6 +228,8 @@ Present findings organized by severity:
 - [Style preferences, minor improvements]
 
 </details>
+
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
 ```
 
 **When NEEDS WORK** — verdict first, details expanded (no collapse):
@@ -160,6 +240,8 @@ Present findings organized by severity:
 
 ## Must Fix
 - [Critical issues: missing functionality, security problems, broken contracts]
+- [Fix-claim mismatches from Step 2.5, if any]
+- [Unaddressed prior findings from Step 2.5, if any]
 
 ## Contract Verification
 [List of under/over/drift findings]
@@ -173,7 +255,12 @@ Present findings organized by severity:
 - [Style preferences]
 
 </details>
+
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
 ```
+
+`<SHA>` is the HEAD commit at review time (`git rev-parse HEAD`). `<N>` is
+the count of prior CDD Code Review comments on this PR plus one.
 
 If the verdict is NEEDS WORK, transition labels to `impl:agent-comments` so
 the state machine clearly reflects that fixes are needed. This prevents the
@@ -201,6 +288,7 @@ if [ -n "$ISSUE_NUMBER" ]; then
   if [ -n "$PR_NUMBER" ]; then
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-approved"
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-reviewing"
+    gh pr ready "$PR_NUMBER"
   fi
 fi
 ```
@@ -218,6 +306,12 @@ if [ -n "$ISSUE_NUMBER" ]; then
   fi
 fi
 ```
+
+### Step 6: Slack Summary (PASS only)
+
+Post a concise summary to the PR's Slack thread via `/slack-notify`.
+Include the verdict, contract verification result, and what the human
+reviewer should focus on.
 
 ---
 
@@ -254,7 +348,4 @@ is real, not advisory.
 - **`/gh-comment`** — Posts findings to the PR with standard agent branding
 
 **Automation:** `cdd-code-review-monitor` detects `impl:agent-reviewing`
-PRs and runs `/cdd-code-review` automatically. If review passes, labels
-transition to `impl:agent-approved` and Slack is notified. If review fails,
-labels transition to `impl:agent-comments` and `cdd-impl-fix-monitor` picks
-up the fixes.
+PRs and runs this skill automatically. See `.claude/loops/` for setup.

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# check-needs-review — Called by PostToolUse hook after git push.
+# Checks if the current branch's PR needs an agent code review.
+# Exits 0 (silent) if review is not needed. Prints a message to stderr
+# if a non-draft PR is missing an agent review comment.
+#
+# Logic:
+#   1. Not a git push       → exit (irrelevant)
+#   2. No PR for branch     → exit (nothing to review)
+#   3. PR is draft           → exit (WIP or CDD pipeline handles it)
+#   4. Has review comment    → exit (already reviewed)
+#   5. Otherwise             → remind to run agent code review
+#
+# Usage: echo '{"tool_input":{"command":"git push ..."}}' | check-needs-review
+
+set -euo pipefail
+
+# Only act on git push commands — read stdin directly into jq (no cat/echo)
+CMD=$(jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
+case "$CMD" in
+  git\ push*|git\ -c\ *push*) ;;
+  *) exit 0 ;;
+esac
+
+BRANCH=$(git branch --show-current 2>/dev/null) || exit 0
+[ -z "$BRANCH" ] && exit 0
+
+# Check if a PR exists for this branch
+PR_JSON=$(gh pr list --head "$BRANCH" --json number,isDraft --limit 1 -q '.[0]' 2>/dev/null) || exit 0
+[ -z "$PR_JSON" ] || [ "$PR_JSON" = "null" ] && exit 0
+
+# Extract both fields in one jq call
+read -r PR_NUMBER IS_DRAFT < <(echo "$PR_JSON" | jq -r '[.number, .isDraft] | @tsv')
+
+# Draft PRs don't need the reminder — CDD drafts are handled by the
+# pipeline, and non-CDD drafts are WIP. Review triggers when the PR
+# is about to be marked ready, not on every WIP push.
+[ "$IS_DRAFT" = "true" ] && exit 0
+
+# Get repo name from git remote (no API call needed)
+REPO=$(git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||') || exit 0
+
+# Check if any agent code review comment already exists on the PR.
+# Use per_page=100 instead of --paginate to bound the query.
+REVIEW_COUNT=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+  -q '[.[] | select(.body | test("CDD Agent.*code-review|CDD Code Review|Agent.*code.review"; "i"))] | length' 2>/dev/null) || REVIEW_COUNT=0
+
+if [ "$REVIEW_COUNT" -gt "0" ]; then
+  exit 0
+fi
+
+echo "POST-PUSH: PR #${PR_NUMBER} has no agent code review. Use the code-review agent (Agent tool with subagent_type: system-agents:code-review) to review the changes and post findings to the PR via /gh-comment before marking it ready for human review." >&2

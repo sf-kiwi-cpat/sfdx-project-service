@@ -1,49 +1,27 @@
-# CDD Spec Fix Monitor Loop
+# CDD Spec Fix Monitor
 
-Detects `spec:agent-comments` PRs assigned to the local user, reads spec review findings, fixes the spec, and relabels for re-review.
+Poll for `spec:agent-comments` PRs, fix spec issues from review findings, and resubmit for review.
 
 ## Start
 
 ```
-/loop 5m Run .claude/skills/cdd-common/scripts/find-my-prs "spec:agent-comments" to get a JSON array of matching PRs (filters by current user and label). If the array is empty, do nothing. For each matching PR: extract the issue number from the branch name using .claude/skills/cdd-common/scripts/get-issue-number "$branch", find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing. Count how many CDD Spec Review comments exist on the PR — if 3 or more, do NOT fix; instead post to #app-studio-alerts (C0ANF2KL5HT) in the PR's thread with "Spec fix loop hit max retries (3) — human intervention needed" and skip this PR. Otherwise: read the most recent CDD Spec Review comment on the PR to understand what needs fixing. Find the spec files in spec/ for the feature. Address each finding from the review — fix ambiguities, add missing scenarios, tighten assertions, improve mock boundaries. Run the contract spec tests to confirm they still pass. Commit the fixes, push, then transition labels: remove spec:agent-comments and add spec:agent-reviewing on both the issue and PR. Post fix summary and label transition to the PR's Slack thread via /slack-notify.
+/loop 5m Follow the loop preamble (.claude/skills/cdd-common/loop-preamble.md) for label "spec:agent-comments" with max-retries 3 and review-header "CDD Spec Review". For each ready PR: EnterWorktree at its worktree path. Read all prior "CDD Spec Review" comments on the PR (not just the latest) — the latest is what you act on, the prior ones are context for detecting recurrences. Before fixing, check each finding in the latest review: if the same issue was flagged in any prior review on this PR, stop fixing, post a top-level message to #app-studio-alerts (C0ANF2KL5HT) tagging the PR assignee explaining the recurrence, and move on to the next PR — do not attempt another fix. Otherwise, fix each finding in the latest review. Make one commit per finding addressed, with the commit message format: "spec({scope}): {short description} — addresses finding: {exact finding text, truncated to 80 chars}". Run contract tests to confirm they pass. Sync the PR description. Push. Then transition labels from spec:agent-comments to spec:agent-reviewing on issue and PR.
 ```
 
-## Max retry safety
-
-Before fixing, count how many `CDD Spec Review` comments exist on the PR
-(each review→fix cycle adds one). If there are already **3 or more**, stop
-auto-fixing: leave the label as `spec:agent-comments` and post to the PR's
-Slack thread asking the human to intervene.
-
-## What happens each cycle
-
-1. Find matching PRs: `.claude/skills/cdd-common/scripts/find-my-prs "spec:agent-comments"` (returns JSON array filtered by current user + label)
-2. If empty array, do nothing (wait for next cycle)
-3. For each PR found:
-   - Extract issue number: `.claude/skills/cdd-common/scripts/get-issue-number "$branch"`
-   - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
-   - If no worktree found, create one: `git worktree add .claude/worktrees/$slug $branch` (slug is the branch suffix, e.g. `issue-42-foo` from `t/user/issue-42-foo`)
-   - Enter worktree via `EnterWorktree`
-   - `npm install` if `node_modules/` missing
-   - Count `CDD Spec Review` comments on the PR — if ≥ 3, skip and notify human
-   - Read the most recent `CDD Spec Review` comment on the PR for findings
-   - Find spec files: `find spec -name "contract.spec.ts" -type f`
-   - Fix each finding from the review
-   - Run contract spec tests to confirm they pass
-   - Commit, push
-4. Sync PR description: read the current PR body (`gh pr view $PR_NUMBER --json body -q .body`), rebuild it to reflect the current state of spec contracts and any implementation already on the branch. Use the `Write` tool to create `/tmp/gh-body-spec-fix.md` with the full PR template (Summary, Issue with `Closes #N`, Test plan with actual results), then `gh pr edit $PR_NUMBER --body-file /tmp/gh-body-spec-fix.md`.
-5. Transition labels:
-   - Remove `spec:agent-comments`, add `spec:agent-reviewing` (on issue and PR)
-7. Run `/slack-notify $PR_NUMBER CDD Spec Fix :wrench: Spec fixes pushed\n{bullet list of fixes applied}\nLabels: \`spec:agent-comments\` → \`spec:agent-reviewing\``
-   - If max retries hit: `/slack-notify $PR_NUMBER CDD Spec Fix :rotating_light: Max retries (3) — human intervention needed`
-
-## Slack notifications
-
-Use the `/slack-notify` skill for all Slack posts. See
-`.claude/skills/slack-notify/SKILL.md` for the full procedure.
-
-## Label transitions
+## Labels
 
 ```
-spec:agent-comments  →  spec:agent-reviewing  (after fixes pushed)
+spec:agent-comments → spec:agent-reviewing (fixed) | stays (max retries → alert | recurrence → alert)
 ```
+
+## Why this shape
+
+Spec fix cycles have the same risk profile as impl fix cycles: an LLM
+patching LLM-generated spec critiques can drift from the human's original
+intent. Two guardrails:
+
+1. **Recurrence detection** — a finding resurfacing after a fix attempt
+   means the previous patch didn't resolve the underlying concern. A human
+   should weigh in rather than the loop patching again.
+2. **One commit per finding, referenced by text** — makes each spec change
+   auditable against the specific feedback that motivated it.

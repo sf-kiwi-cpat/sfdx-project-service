@@ -41,6 +41,22 @@ Locate:
 - `spec/<feature>/fixtures.ts` — shared test fixtures (if they exist)
 - Any existing implementation in `src/` for context on what already exists
 
+**Check for prior reviews.** If this PR has prior "CDD Spec Review" comments,
+this is a re-review after a fix attempt.
+
+```bash
+REPO=$(.claude/skills/cdd-common/scripts/get-repo)
+PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number) || true
+PRIOR_REVIEWS=""
+if [ -n "$PR_NUMBER" ]; then
+  PRIOR_REVIEWS=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+    -q '[.[] | select(.body | test("CDD Spec Review"; "i"))] | sort_by(.created_at)')
+fi
+```
+
+If prior reviews exist, Step 2 below includes an additional fix-cycle
+verification pass.
+
 ### Step 1: Read the Spec
 
 Read all spec files for the feature. Understand the full contract:
@@ -92,9 +108,35 @@ Can an implementation agent satisfy these tests without modifying the spec?
 - Any shared mutable state between tests that could cause order-dependence?
 - Are test descriptions consistent in style and specificity?
 
+### Step 2.5: Fix-Cycle Verification (re-review only)
+
+If prior "CDD Spec Review" comments exist on this PR (from Step 0), you
+are re-reviewing after a fix attempt. Do this additional check **before**
+writing the report:
+
+1. Read each prior review's "Must Address" findings
+2. Read each spec commit on the branch since the prior review. Fix commits
+   should follow the format `... — addresses finding: {text}`. Identify
+   which commit claims to address which finding.
+3. Verify each claimed fix actually resolved the finding. A commit claiming
+   to address "Missing test for empty project ID" should have added that
+   test. If it didn't, record this as a **fix-claim mismatch** in the
+   Must Address section of your current review.
+4. Verify no prior Must Address finding was silently dropped.
+
+This makes the spec fix loop self-correcting.
+
 ### Step 3: Report & Post to PR
 
 Present findings organized by impact:
+
+Every review MUST include a footer recording the commit SHA being reviewed
+and the review cycle number. This lets re-reviews identify prior reviews
+and compute the right diff. Format:
+
+```
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
+```
 
 **When SOLID** — verdict first, details collapsed:
 
@@ -116,6 +158,8 @@ Present findings organized by impact:
 - [Notes on spec structure, style, patterns]
 
 </details>
+
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
 ```
 
 **When HAS GAPS** — verdict first, details expanded (no collapse):
@@ -127,10 +171,17 @@ Present findings organized by impact:
 ## Must Address
 - [Ambiguities that would force the implementation agent to guess]
 - [Missing error cases that are likely to matter in production]
+- [Fix-claim mismatches from Step 2.5, if any]
+- [Unaddressed prior findings from Step 2.5, if any]
 
 ## Worth Considering
 - [Coverage gaps, mock boundary adjustments]
+
+<!-- cdd-review-meta: sha=<SHA> cycle=<N> -->
 ```
+
+`<SHA>` is the HEAD commit at review time (`git rev-parse HEAD`). `<N>` is
+the count of prior CDD Spec Review comments on this PR plus one.
 
 **Post the report to the PR** using the `/gh-comment` skill with comment
 name `CDD Spec Review`. Read `.claude/skills/gh-comment/SKILL.md` and
@@ -139,9 +190,8 @@ the header — the skill adds the `🤖 CDD Spec Review` header for you).
 
 **Label transition based on assessment:**
 
-**If SOLID** — transition to `spec:agent-approved` and mark the PR as
-ready for review (undraft). This is the signal to humans that the agent
-has cleared the spec and it's ready for their approval.
+**If SOLID** — transition to `spec:agent-approved`. This signals the human
+that the agent has cleared the spec for their approval.
 
 **Do NOT use `gh pr edit` / `gh issue edit` for labels** — they fail silently
 due to GitHub's Projects Classic deprecation. Use the label script instead:
@@ -154,7 +204,6 @@ if [ -n "$ISSUE_NUMBER" ]; then
   if [ -n "$PR_NUMBER" ]; then
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "spec:agent-approved"
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "spec:agent-reviewing"
-    gh pr ready "$PR_NUMBER"
   fi
 fi
 ```

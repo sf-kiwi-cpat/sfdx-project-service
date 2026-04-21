@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# check-spec-approval — Verify the "Human spec approval" checklist in a PR
+# body is fully checked. Exits 0 if all boxes under the checklist section
+# are ticked, 1 otherwise with a summary of unchecked items on stderr.
+#
+# Usage: check-spec-approval <pr-number>
+# Env:   OWNER_REPO — skip the repo lookup
+#
+# This is called by cdd-implement-monitor before running /cdd-implement.
+# If a human applies spec:human-approved without completing the checklist,
+# the monitor uses this script to catch it, revert the label, and post a
+# comment explaining.
+
+set -euo pipefail
+
+SCRIPTS_DIR=$(cd "$(dirname "$0")" && pwd)
+
+if [ $# -lt 1 ]; then
+  echo "usage: check-spec-approval <pr-number>" >&2
+  exit 2
+fi
+
+PR_NUMBER="$1"
+REPO=${OWNER_REPO:-$("$SCRIPTS_DIR/get-repo")}
+
+BODY=$(gh api "repos/$REPO/pulls/$PR_NUMBER" -q '.body // ""')
+
+if [ -z "$BODY" ]; then
+  echo "error: PR #$PR_NUMBER has no body" >&2
+  exit 1
+fi
+
+# Extract the checklist section. The section header is
+# "## Human spec approval" and it ends at the next "##" heading.
+SECTION=$(printf '%s\n' "$BODY" | awk '
+  /^## Human spec approval/ { in_section = 1; next }
+  in_section && /^## / { in_section = 0 }
+  in_section { print }
+')
+
+if [ -z "$SECTION" ]; then
+  echo "error: PR #$PR_NUMBER body is missing the 'Human spec approval' section" >&2
+  exit 1
+fi
+
+UNCHECKED=$(printf '%s\n' "$SECTION" | grep -iE '^\s*- \[ \]' || true)
+
+if [ -n "$UNCHECKED" ]; then
+  echo "Human spec approval checklist is incomplete. Unchecked items:" >&2
+  printf '%s\n' "$UNCHECKED" >&2
+  exit 1
+fi
+
+CHECKED_COUNT=$(printf '%s\n' "$SECTION" | grep -ciE '^\s*- \[x\]' || true)
+if [ "$CHECKED_COUNT" -eq 0 ]; then
+  echo "error: PR #$PR_NUMBER has a 'Human spec approval' section but no checkboxes" >&2
+  exit 1
+fi
+
+exit 0

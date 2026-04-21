@@ -126,11 +126,26 @@ Once human approves both artifacts:
     # when merged. The description is a living document that later steps
     # (/cdd-implement, fix monitors) will update as work progresses.
     #
+    # The "Human spec approval" checklist is load-bearing: downstream
+    # automation (cdd-implement-monitor) gates on it. If any box is
+    # unchecked when a human applies spec:human-approved, the monitor
+    # reverts the label and refuses to implement. This keeps the approval
+    # step from collapsing into a rubber stamp at scale.
+    #
     #   ## Summary
     #   - {bullet points describing the contracts}
     #
     #   ## Issue
     #   Closes #N
+    #
+    #   ## Human spec approval (required before applying spec:human-approved)
+    #   Before applying spec:human-approved, confirm ALL of these are true
+    #   by checking each box. cdd-implement-monitor gates on this.
+    #   - [ ] I read each `it()` assertion in contract.spec.ts, not just the names
+    #   - [ ] The error cases cover the failure modes I want to handle in production
+    #   - [ ] The mock boundary matches reality (not mocking away bugs)
+    #   - [ ] No aspirational fields in contract.md that aren't tested
+    #   - [ ] I traced through at least one request/response end-to-end mentally
     #
     #   ## Test plan
     #   - [ ] Spec agent review
@@ -142,8 +157,7 @@ Once human approves both artifacts:
       --body-file /tmp/gh-body-spec.md
     PR_NUMBER=$(.claude/skills/cdd-common/scripts/get-pr-number "$BRANCH")
   else
-    # Ensure existing PR is in draft mode and has an assignee
-    gh pr ready "$PR_NUMBER" --undo 2>/dev/null || true
+    # Ensure existing PR has an assignee
     gh pr edit "$PR_NUMBER" --add-assignee "$ME"
   fi
   ```

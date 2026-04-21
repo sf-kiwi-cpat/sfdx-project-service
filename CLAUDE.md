@@ -43,22 +43,67 @@ use CDD. Everything else, just start coding.
 
 ```
 /cdd-brief or /cdd-spec    → assign user to issue
-/cdd-spec                   → spec:agent-reviewing (draft PR)
+/cdd-spec                   → spec:agent-reviewing (draft PR with approval checklist)
 cdd-spec-review-monitor     → /cdd-spec-review:
-                                 SOLID    → spec:agent-approved (PR marked ready)
+                                 SOLID    → spec:agent-approved (PR stays draft)
                                  HAS GAPS → spec:agent-comments
 cdd-spec-fix-monitor        → fixes spec → spec:agent-reviewing (re-review)
-Human approves              → spec:human-approved
-cdd-implement-monitor       → impl:agent-in-progress → impl:agent-reviewing
+Human approves (ticks all   → spec:human-approved
+ checklist items, then
+ applies label)
+cdd-implement-monitor       → checklist gate:
+                                 complete   → impl:agent-in-progress → impl:agent-reviewing
+                                 incomplete → reverts to spec:agent-approved + PR comment
 cdd-code-review-monitor     → /cdd-code-review:
-                                 PASS       → impl:agent-approved
+                                 PASS       → impl:agent-approved (PR marked ready)
                                  NEEDS WORK → impl:agent-comments
-cdd-impl-fix-monitor        → fixes code → impl:agent-reviewing (re-review)
-Human merges PR
+cdd-impl-fix-monitor        → recurrence check:
+                                 new findings → fixes code → impl:agent-reviewing
+                                 recurring    → stops, escalates to Slack
+CODEOWNERS → app-studio-reviewers notified
+Human reviews + merges PR
 ```
 
 Loops are **assignee-scoped** — each local loop only picks up issues/PRs
 assigned to the machine's `gh` user. See `.claude/loops/` for setup.
+
+### Policies
+
+- **Agent review required:** All PRs need an agent code review before
+  being marked ready. CDD PRs get this via `/cdd-code-review`. Non-CDD
+  PRs use the `system-agents:code-review` agent + `/gh-comment`. A
+  `PostToolUse` hook on `git push` reminds if a review is missing.
+- **Draft until reviewed:** PRs stay draft until agent code review passes.
+  Only `/cdd-code-review` (PASS verdict) calls `gh pr ready`. No other
+  skill or loop unmarks draft.
+- **Notify on handoff only:** Slack notifications fire when ownership
+  transfers from agent to human (the `gh pr ready` moment). Agent-to-agent
+  transitions (label changes, fix pushes, re-reviews) are silent.
+- **Max retries:** Fix loops stop after 3 review-fix cycles and escalate
+  to `#app-studio-alerts`. The PR stays in its current label state.
+- **Recurrence escalation:** Fix loops stop before even attempting a fix
+  if a current finding was already flagged in any prior review on the
+  same PR. A recurring finding means the last fix missed intent; a human
+  decides rather than another LLM cycle. Escalates to `#app-studio-alerts`.
+- **Human spec approval checklist:** `/cdd-spec` inserts a checklist into
+  the PR body. `cdd-implement-monitor` validates all items are ticked
+  before running `/cdd-implement`. If the human applies
+  `spec:human-approved` without completing the checklist, the monitor
+  reverts the label and posts a PR comment. Mechanically enforces that
+  the approval step is not a rubber stamp.
+- **Blind review independence:** The code-review subagent that derives
+  the contract from production code is explicitly forbidden from reading
+  spec files, PR bodies, branch names, issue text, commit messages, or
+  prior review comments. Any one of those leaks the contract and breaks
+  the independence guarantee.
+- **Fix commits reference findings:** Fix-loop commits follow the format
+  `{type}({scope}): {description} — addresses finding: {finding text}`.
+  Re-review verifies each claimed fix actually resolved its referenced
+  finding, and flags fix-claim mismatches as Must Fix.
+
+CODEOWNERS (`.github/CODEOWNERS`) auto-requests review from
+`app-studio-reviewers` when a PR is marked ready, and the GitHub Slack
+app notifies the team.
 
 ### Guardrails
 

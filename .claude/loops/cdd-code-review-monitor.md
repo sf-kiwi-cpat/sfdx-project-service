@@ -1,39 +1,15 @@
-# CDD Code Review Monitor Loop
+# CDD Code Review Monitor
 
-Detects `impl:agent-reviewing` PRs assigned to the local user, runs `/cdd-code-review`, and sends Slack notification.
+Poll for `impl:agent-reviewing` PRs and run `/cdd-code-review` in each PR's worktree.
 
 ## Start
 
 ```
-/loop 5m Run .claude/skills/cdd-common/scripts/find-my-prs "impl:agent-reviewing" to get a JSON array of matching PRs (filters by current user and label). If the array is empty, do nothing. For each matching PR: extract the issue number from the branch name using .claude/skills/cdd-common/scripts/get-issue-number "$branch", find the matching worktree via git worktree list. If no worktree exists for the branch, create one with git worktree add .claude/worktrees/$SLUG $BRANCH where SLUG is the branch name after the user prefix (e.g. for t/user/issue-42-foo the slug is issue-42-foo). Enter the worktree with EnterWorktree, run npm install if node_modules is missing, then run /cdd-code-review. If review verdict is PASS: labels transition to impl:agent-approved, post verdict and label transition to the PR's Slack thread via /slack-notify. If verdict is NEEDS WORK: labels transition to impl:agent-comments, post verdict and label transition to the PR's Slack thread via /slack-notify.
+/loop 5m Follow the loop preamble (.claude/skills/cdd-common/loop-preamble.md) for label "impl:agent-reviewing". For each ready PR: EnterWorktree at its worktree path, then run /cdd-code-review.
 ```
 
-## What happens each cycle
-
-1. Find matching PRs: `.claude/skills/cdd-common/scripts/find-my-prs "impl:agent-reviewing"` (returns JSON array filtered by current user + label)
-2. If empty array, do nothing (wait for next cycle)
-3. For each PR found:
-   - Extract issue number: `.claude/skills/cdd-common/scripts/get-issue-number "$branch"`
-   - Find worktree: `git worktree list --porcelain | grep -B2 "branch.*$branch"`
-   - If no worktree found, create one: `git worktree add .claude/worktrees/$slug $branch` (slug is the branch suffix, e.g. `issue-42-foo` from `t/user/issue-42-foo`)
-   - Enter worktree via `EnterWorktree`
-   - `npm install` if `node_modules/` missing
-   - Run `/cdd-code-review`
-6. If verdict is PASS:
-   - Labels transition to `impl:agent-approved`
-   - Run `/slack-notify $PR_NUMBER CDD Code Review :white_check_mark: *PASS* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-approved\``
-7. If verdict is NEEDS WORK:
-   - Labels transition to `impl:agent-comments`
-   - Run `/slack-notify $PR_NUMBER CDD Code Review :warning: *NEEDS WORK* — {summary}\nLabels: \`impl:agent-reviewing\` → \`impl:agent-comments\``
-
-## Slack notifications
-
-Use the `/slack-notify` skill for all Slack posts. See
-`.claude/skills/slack-notify/SKILL.md` for the full procedure.
-
-## Label transitions
+## Labels
 
 ```
-impl:agent-reviewing  →  impl:agent-approved   (after /cdd-code-review passes)
-impl:agent-reviewing  →  impl:agent-comments   (after /cdd-code-review finds issues)
+impl:agent-reviewing → impl:agent-approved (PASS) | impl:agent-comments (NEEDS WORK)
 ```
