@@ -83,6 +83,12 @@ Emitted when a file is deleted. `content` is always absent.
 }
 ```
 
+> **Note on payload assertions.** Tests use `toMatchObject` / explicit
+> property checks, which are intentionally permissive. Extra properties on
+> event payloads are allowed so that future non-breaking additions
+> (e.g. `timestamp`, `size`) remain forward-compatible without requiring a
+> spec change.
+
 ---
 
 ## Event Payload Semantics
@@ -93,22 +99,63 @@ Emitted when a file is deleted. `content` is always absent.
   forward slashes (e.g., `src/components/App.js`).
 - Nested paths are preserved (no flattening).
 
-### Content
+### Content inclusion rules
 
-- `content` is included on `file-added` and `file-changed` **when**:
-  - The file extension is **not** in the known-binary list
-    (`.png`, `.jpg`, `.gif`, `.webp`, `.pdf`, `.zip`, `.woff`, `.woff2`, `.ttf`).
-    All nine extensions are asserted in the contract tests.
-  - The file is **smaller than 100KB**.
-  - The file was still readable when the debounce timer flushed (a race
-    with a subsequent `unlink` may cause content to be gracefully omitted).
-- `content` is **never** included on `file-removed`.
+`content` is included on `file-added` and `file-changed` when **both** of the
+following hold:
+
+- **Extension is not binary.** The binary extension list is a **deny-list**:
+  `.png`, `.jpg`, `.gif`, `.webp`, `.pdf`, `.zip`, `.woff`, `.woff2`, `.ttf`.
+  All nine extensions are asserted in the contract tests. Files with
+  **unknown or missing extensions** (e.g. `script.sh`, `Makefile`,
+  `unknown.foo`) default to **text** and include content.
+- **File size is strictly less than 100KB** (i.e.
+  `byteLength < 100 * 1024`). The boundary is pinned by two tests:
+  - A file of exactly **99 * 1024 bytes** includes content.
+  - A file of **100 * 1024 + 1 bytes** omits content.
+
+Additional runtime consideration: the file must still be readable when the
+debounce timer flushes (a race with a subsequent `unlink` may cause content
+to be gracefully omitted).
+
+`content` is **never** included on `file-removed`.
+
+### Directories
+
+- **Directory creation and deletion do not produce `file-*` events.**
+  `FileEvent.type` is `'add' | 'change' | 'unlink'` and applies only to files.
+- Creating an empty directory emits **no** events.
+- Creating a file inside a new directory emits exactly **one** `file-added`
+  event — for the file itself, not the containing directory.
+
+### Renames
+
+A rename (`fs.rename(a, b)`) is reported as **two** events:
+
+- `file-removed` for the source path.
+- `file-added` for the destination path, with content included (subject to
+  the usual deny-list + size rules).
+
+The watcher does **not** coalesce renames into a synthetic `change` on the
+new path. This is required for editors that save via rename (tempfile +
+rename).
+
+### Initial state on subscribe
+
+- The watcher runs with `ignoreInitial: true`. A project that already
+  contains files does **not** surface `file-added` events for those
+  pre-existing files when a new client subscribes. Only writes made **after**
+  subscription produce events.
 
 ### Debouncing
 
-Rapid successive writes to the same path are collapsed into a single event
-within a debounce window. The event carries the **latest** content at the
-time the window flushes (last-write-wins).
+Rapid successive writes are collapsed within a debounce window. Debouncing
+is **per-path**:
+
+- Multiple writes to the **same path** within the window yield **one**
+  event carrying the **latest** content (last-write-wins).
+- Writes to **different paths** within the same window yield **one event
+  per path** — debouncing is keyed by path, not global.
 
 ---
 
@@ -173,6 +220,21 @@ opened for a failing request.
 
 ---
 
+## Configuration Surface
+
+The following environment variables are expected to be read by the watcher
+subsystem (both are set in the contract test setup to shrink timing):
+
+| Env var                   | Getter                     | Default (prod) | Purpose                                                                 |
+|---------------------------|----------------------------|----------------|-------------------------------------------------------------------------|
+| `WATCHER_DEBOUNCE_MS`     | `getWatcherDebounceMs()`   | `300` ms       | Per-path debounce window; rapid writes inside this window coalesce.     |
+| `WATCHER_STABILITY_MS`    | `getWatcherStabilityMs()`  | `200` ms       | chokidar `awaitWriteFinish.stabilityThreshold` — file quiescence.       |
+
+Overriding these env vars must not change watcher **behaviour** — only
+timing.
+
+---
+
 ## Design Principles
 
 ### Source-agnostic
@@ -186,10 +248,17 @@ Text content under 100KB ships with the event, enabling zero-round-trip
 updates for downstream consumers. Binary files and large files get a
 notification without content — the consumer can decide whether to fetch.
 
-### Last-write-wins debouncing
+### Deny-list classification
+Files are assumed text unless their extension appears in the binary
+deny-list. This keeps unknown / ad-hoc text files (`Makefile`, `.sh`,
+novel codebase-specific extensions) useful to downstream consumers without
+requiring an allow-list to stay in sync with every new text format.
+
+### Per-path, last-write-wins debouncing
 Editors that save via rename (many editors write to a tempfile then rename)
 and tools that perform quick successive writes collapse into a single
-event so consumers aren't spammed.
+event so consumers aren't spammed. Debouncing is keyed by path, so writes
+to distinct files in the same window all surface.
 
 ### Refcounted watcher lifecycle
 Watchers are started lazily on first subscriber and torn down when the
@@ -205,9 +274,9 @@ external contract. The contract is defined entirely by the observable
 behavior above.
 
 - **Watcher:** `chokidar` with `persistent: true`, `ignoreInitial: true`,
-  `awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }`.
-- **Debounce window:** 300ms by default (configurable via
-  `WATCHER_DEBOUNCE_MS` for tests).
+  `awaitWriteFinish: { stabilityThreshold: <WATCHER_STABILITY_MS>, pollInterval: 50 }`.
+- **Debounce window:** `<WATCHER_DEBOUNCE_MS>` (default 300ms, override for
+  tests).
 - **Manager:** `WatcherManager` singleton with
   `subscribe(projectId, projectDir, listener)` → unsubscribe, and
   `closeAll()` for graceful shutdown from `app.onClose`.
@@ -239,6 +308,17 @@ data: {"path":"src/App.js","type":"change","content":"...new..."}
 # Deleted
 event: file-removed
 data: {"path":"src/App.js","type":"unlink"}
+```
+
+### Rename
+
+```bash
+# fs.rename('a.txt', 'b.txt')
+event: file-removed
+data: {"path":"a.txt","type":"unlink"}
+
+event: file-added
+data: {"path":"b.txt","type":"add","content":"..."}
 ```
 
 ### Not a valid project

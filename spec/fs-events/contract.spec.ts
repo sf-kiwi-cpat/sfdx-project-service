@@ -176,8 +176,10 @@ describe('GET /v1/projects/:id/fs/events', () => {
     process.env.PROJECTS_ROOT = tmpDir;
     // Shrink the debounce so tests don't have to wait 300ms per event. The
     // production default is 300ms; watcher behaviour is unchanged by the
-    // override — only timing.
-    process.env.WATCHER_DEBOUNCE_MS = '50';
+    // override — only timing. 200ms is large enough that three awaited
+    // `fs.writeFile` calls on slow CI still land inside the window (a 50ms
+    // window was flaky).
+    process.env.WATCHER_DEBOUNCE_MS = '200';
     // Shrink awaitWriteFinish stability so tests don't wait 200ms per write.
     process.env.WATCHER_STABILITY_MS = '30';
   });
@@ -384,6 +386,166 @@ describe('GET /v1/projects/:id/fs/events', () => {
       }
     });
 
+    it('includes content at the 100KB boundary: 99KB file includes content', async () => {
+      // Pin the cutoff as STRICT less-than using 100 * 1024 bytes.
+      // 99 * 1024 bytes is well below the threshold and must include content.
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        const content = 'a'.repeat(99 * 1024);
+        await fs.writeFile(path.join(projectDir, 'nearly-big.txt'), content);
+
+        const evt = await client.waitForEvent(
+          (e) => e.event === 'file-added' && (e.data as { path: string }).path === 'nearly-big.txt'
+        );
+        const data = evt.data as { path: string; type: string; content?: string };
+        expect(data.path).toBe('nearly-big.txt');
+        expect(data.type).toBe('add');
+        expect(data.content).toBe(content);
+      } finally {
+        client.close();
+      }
+    });
+
+    it('omits content at the 100KB boundary: 100KB + 1 byte omits content', async () => {
+      // 100 * 1024 + 1 bytes — one byte over the strict `<` cutoff.
+      // This, combined with the 99KB test, pins the boundary unambiguously:
+      // `content.length < 100 * 1024` includes content; `>=` omits.
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        const content = 'a'.repeat(100 * 1024 + 1);
+        await fs.writeFile(path.join(projectDir, 'just-over.txt'), content);
+
+        const evt = await client.waitForEvent(
+          (e) => e.event === 'file-added' && (e.data as { path: string }).path === 'just-over.txt'
+        );
+        const data = evt.data as { path: string; type: string; content?: string };
+        expect(data.path).toBe('just-over.txt');
+        expect(data.type).toBe('add');
+        expect(data.content).toBeUndefined();
+      } finally {
+        client.close();
+      }
+    });
+
+    it.each([['script.sh'], ['Makefile'], ['unknown.foo']])(
+      'includes content for files with unknown or missing extensions (%s)',
+      async (filename) => {
+        // Pins classifier semantics as DENY-LIST (binary list), not allow-list.
+        // Files without a recognised extension default to text — content is
+        // included (subject to the size cutoff).
+        const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+        try {
+          await client.waitForEvent((e) => e.event === 'connected');
+          const body = '#!/bin/sh\necho hello\n';
+          await fs.writeFile(path.join(projectDir, filename), body);
+
+          const evt = await client.waitForEvent(
+            (e) => e.event === 'file-added' && (e.data as { path: string }).path === filename
+          );
+          expect(evt.data).toMatchObject({
+            path: filename,
+            type: 'add',
+            content: body,
+          });
+        } finally {
+          client.close();
+        }
+      }
+    );
+
+    it('emits no events when an empty directory is created', async () => {
+      // chokidar fires `addDir` — the service must not forward this as a
+      // `file-*` event. `FileEvent.type` is `'add' | 'change' | 'unlink'`
+      // and applies only to files.
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        await fs.mkdir(path.join(projectDir, 'emptyDir'));
+
+        const newEvents = await client.collectEvents(300);
+        const fileEvents = newEvents.filter((e) => e.event.startsWith('file-'));
+        expect(fileEvents).toEqual([]);
+      } finally {
+        client.close();
+      }
+    });
+
+    it('emits exactly one `file-added` when a file is created inside a new directory', async () => {
+      // When a new directory is created with a file inside, the only observable
+      // event is a single `file-added` for the file. The containing dir is not
+      // reported as a `file-*` event.
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        const newDir = path.join(projectDir, 'newdir');
+        await fs.mkdir(newDir);
+        await fs.writeFile(path.join(newDir, 'inside.txt'), 'payload');
+
+        // Let all events land for the mkdir + writeFile sequence
+        await new Promise((r) => setTimeout(r, 500));
+        const fileEvents = client.events.filter((e) => e.event.startsWith('file-'));
+        expect(fileEvents.length).toBe(1);
+        expect(fileEvents[0].event).toBe('file-added');
+        expect(fileEvents[0].data).toMatchObject({
+          path: 'newdir/inside.txt',
+          type: 'add',
+          content: 'payload',
+        });
+      } finally {
+        client.close();
+      }
+    });
+
+    it('rename: emits `file-removed` for source AND `file-added` for destination with content', async () => {
+      // Editors that save via rename (many editors write to a tempfile and
+      // rename) rely on this decomposition. The watcher must NOT coalesce a
+      // rename into a synthetic `change` on the new path.
+      const source = path.join(projectDir, 'a.txt');
+      await fs.writeFile(source, 'rename me');
+
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        await fs.rename(source, path.join(projectDir, 'b.txt'));
+
+        const removed = await client.waitForEvent(
+          (e) => e.event === 'file-removed' && (e.data as { path: string }).path === 'a.txt'
+        );
+        const added = await client.waitForEvent(
+          (e) => e.event === 'file-added' && (e.data as { path: string }).path === 'b.txt'
+        );
+        expect((removed.data as { type: string }).type).toBe('unlink');
+        expect(added.data).toMatchObject({
+          path: 'b.txt',
+          type: 'add',
+          content: 'rename me',
+        });
+      } finally {
+        client.close();
+      }
+    });
+
+    it('does not emit `file-added` for pre-existing files on subscribe (ignoreInitial)', async () => {
+      // Pin that `ignoreInitial: true` is active — a project that already
+      // contains files must NOT surface spurious add events to a new
+      // subscriber. Only writes made after subscription produce events.
+      await fs.writeFile(path.join(projectDir, 'pre-existing-1.txt'), 'one');
+      await fs.writeFile(path.join(projectDir, 'pre-existing-2.txt'), 'two');
+
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        // Collect for 100ms (plus one debounce window) and assert no adds
+        const quiet = await client.collectEvents(100);
+        const adds = quiet.filter((e) => e.event === 'file-added');
+        expect(adds).toEqual([]);
+      } finally {
+        client.close();
+      }
+    });
+
     it('debounces rapid writes to the same path into a single event with the latest content', async () => {
       const target = path.join(projectDir, 'rapid.txt');
       await fs.writeFile(target, 'v0');
@@ -391,13 +553,13 @@ describe('GET /v1/projects/:id/fs/events', () => {
       const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
       try {
         await client.waitForEvent((e) => e.event === 'connected');
-        // Several writes inside one debounce window
+        // Several writes inside one debounce window (200ms — room for slow CI)
         await fs.writeFile(target, 'v1');
         await fs.writeFile(target, 'v2');
         await fs.writeFile(target, 'v3');
 
         // Wait past the debounce window and collect everything that landed
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 500));
         const rapidEvents = client.events.filter(
           (e) =>
             (e.event === 'file-added' || e.event === 'file-changed') &&
@@ -405,6 +567,37 @@ describe('GET /v1/projects/:id/fs/events', () => {
         );
         expect(rapidEvents.length).toBe(1);
         expect((rapidEvents[0].data as { content: string }).content).toBe('v3');
+      } finally {
+        client.close();
+      }
+    });
+
+    it('debounces per-path — writes to different paths in one window yield separate events', async () => {
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        // Two writes to two different paths inside a single debounce window
+        await fs.writeFile(path.join(projectDir, 'a.txt'), 'alpha');
+        await fs.writeFile(path.join(projectDir, 'b.txt'), 'bravo');
+
+        // Wait past the debounce window and collect both events
+        await new Promise((r) => setTimeout(r, 500));
+        const pathEvents = client.events.filter(
+          (e) =>
+            e.event === 'file-added' &&
+            ((e.data as { path: string }).path === 'a.txt' ||
+              (e.data as { path: string }).path === 'b.txt')
+        );
+        // Keyed-by-path debouncing yields two distinct events, not one
+        expect(pathEvents.length).toBe(2);
+        const byPath = new Map(
+          pathEvents.map((e) => [
+            (e.data as { path: string }).path,
+            (e.data as { content: string }).content,
+          ])
+        );
+        expect(byPath.get('a.txt')).toBe('alpha');
+        expect(byPath.get('b.txt')).toBe('bravo');
       } finally {
         client.close();
       }
