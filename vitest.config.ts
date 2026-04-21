@@ -39,6 +39,14 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts', 'spec/**/*.spec.ts'],
+    // Run test files serially. Several specs perform global-state
+    // operations (spec/npm-package runs `npm run build`, which wipes
+    // and regenerates templates/dist/; spec/fs-events spawns chokidar
+    // watchers on the shared templates output). When these files run
+    // concurrently, one's mutations race against another's reads and
+    // cause non-deterministic failures. Tests must be deterministic
+    // (see tests/CLAUDE.md), and the cost of serialisation is small.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],

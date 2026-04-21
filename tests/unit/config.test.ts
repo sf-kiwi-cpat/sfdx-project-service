@@ -17,17 +17,27 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { getProjectPath, getProjectsRoot, getTemplatesDir } from '../../src/config.js';
+import {
+  getProjectPath,
+  getProjectsRoot,
+  getTemplatesDir,
+  getWatcherDebounceMs,
+  getWatcherStabilityMs,
+} from '../../src/config.js';
 
 describe('config', () => {
   let originalProjectRoot: string | undefined;
   let originalProjectsRoot: string | undefined;
   let originalTemplatesDir: string | undefined;
+  let originalWatcherDebounce: string | undefined;
+  let originalWatcherStability: string | undefined;
 
   beforeEach(() => {
     originalProjectRoot = process.env.PROJECT_ROOT;
     originalProjectsRoot = process.env.PROJECTS_ROOT;
     originalTemplatesDir = process.env.TEMPLATES_DIR;
+    originalWatcherDebounce = process.env.WATCHER_DEBOUNCE_MS;
+    originalWatcherStability = process.env.WATCHER_STABILITY_MS;
   });
 
   afterEach(() => {
@@ -45,6 +55,16 @@ describe('config', () => {
       delete process.env.TEMPLATES_DIR;
     } else {
       process.env.TEMPLATES_DIR = originalTemplatesDir;
+    }
+    if (originalWatcherDebounce === undefined) {
+      delete process.env.WATCHER_DEBOUNCE_MS;
+    } else {
+      process.env.WATCHER_DEBOUNCE_MS = originalWatcherDebounce;
+    }
+    if (originalWatcherStability === undefined) {
+      delete process.env.WATCHER_STABILITY_MS;
+    } else {
+      process.env.WATCHER_STABILITY_MS = originalWatcherStability;
     }
   });
 
@@ -83,6 +103,55 @@ describe('config', () => {
       const result = getTemplatesDir();
       expect(result).toContain('templates');
       expect(path.isAbsolute(result)).toBe(true);
+    });
+  });
+
+  describe('getWatcherDebounceMs', () => {
+    it('falls back to 300 when WATCHER_DEBOUNCE_MS is unset', () => {
+      delete process.env.WATCHER_DEBOUNCE_MS;
+      expect(getWatcherDebounceMs()).toBe(300);
+    });
+
+    it('returns parsed value when WATCHER_DEBOUNCE_MS is a positive integer', () => {
+      process.env.WATCHER_DEBOUNCE_MS = '50';
+      expect(getWatcherDebounceMs()).toBe(50);
+    });
+
+    it('falls back to default when WATCHER_DEBOUNCE_MS is zero', () => {
+      process.env.WATCHER_DEBOUNCE_MS = '0';
+      expect(getWatcherDebounceMs()).toBe(300);
+    });
+
+    it('falls back to default when WATCHER_DEBOUNCE_MS is negative', () => {
+      process.env.WATCHER_DEBOUNCE_MS = '-10';
+      expect(getWatcherDebounceMs()).toBe(300);
+    });
+
+    it('falls back to default when WATCHER_DEBOUNCE_MS is not a number', () => {
+      process.env.WATCHER_DEBOUNCE_MS = 'abc';
+      expect(getWatcherDebounceMs()).toBe(300);
+    });
+
+    it('falls back to default when WATCHER_DEBOUNCE_MS is a float', () => {
+      process.env.WATCHER_DEBOUNCE_MS = '12.5';
+      expect(getWatcherDebounceMs()).toBe(300);
+    });
+  });
+
+  describe('getWatcherStabilityMs', () => {
+    it('falls back to 200 when WATCHER_STABILITY_MS is unset', () => {
+      delete process.env.WATCHER_STABILITY_MS;
+      expect(getWatcherStabilityMs()).toBe(200);
+    });
+
+    it('returns parsed value when WATCHER_STABILITY_MS is a positive integer', () => {
+      process.env.WATCHER_STABILITY_MS = '75';
+      expect(getWatcherStabilityMs()).toBe(75);
+    });
+
+    it('falls back to default when WATCHER_STABILITY_MS is invalid', () => {
+      process.env.WATCHER_STABILITY_MS = 'not-a-number';
+      expect(getWatcherStabilityMs()).toBe(200);
     });
   });
 });

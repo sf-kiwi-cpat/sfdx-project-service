@@ -39,3 +39,41 @@ export function getProjectsRoot(): string {
 export function getTemplatesDir(): string {
   return process.env.TEMPLATES_DIR ?? path.resolve(import.meta.dirname, '..', 'templates', 'dist');
 }
+
+/**
+ * Default production debounce window (ms) for the filesystem watcher.
+ * Rapid successive writes to the same path within this window collapse into
+ * a single event carrying the latest content.
+ */
+const DEFAULT_WATCHER_DEBOUNCE_MS = 300;
+
+/**
+ * Default production stability threshold (ms) — chokidar
+ * `awaitWriteFinish.stabilityThreshold`. Writes are only surfaced after the
+ * file has been quiet for this long.
+ */
+const DEFAULT_WATCHER_STABILITY_MS = 200;
+
+function parsePositiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return fallback;
+  return n;
+}
+
+/**
+ * Per-path debounce window (ms) for the filesystem event watcher.
+ * Override with WATCHER_DEBOUNCE_MS. Used by `src/domain/watcher.ts`.
+ */
+export function getWatcherDebounceMs(): number {
+  return parsePositiveIntEnv(process.env.WATCHER_DEBOUNCE_MS, DEFAULT_WATCHER_DEBOUNCE_MS);
+}
+
+/**
+ * Stability threshold (ms) for chokidar's `awaitWriteFinish`. A file must
+ * remain unchanged for this long before chokidar surfaces the event.
+ * Override with WATCHER_STABILITY_MS.
+ */
+export function getWatcherStabilityMs(): number {
+  return parsePositiveIntEnv(process.env.WATCHER_STABILITY_MS, DEFAULT_WATCHER_STABILITY_MS);
+}
