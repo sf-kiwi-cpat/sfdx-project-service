@@ -19,15 +19,16 @@
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for the Projects API:
- *   - POST /projects        — create a project (returns id + generated name)
+ *   - POST /projects        — create a project (returns id + name + lastAccessedAt)
  *   - GET /projects          — list all projects (id + name + lastAccessedAt)
- *   - PATCH /projects/:id    — rename a project
+ *   - PATCH /projects/:id    — rename a project (returns id + name + lastAccessedAt)
  *   - GET /projects/:id/tree — file tree for a project
  *
- * Accessing a project by :id (PATCH, tree, file) updates its lastAccessedAt.
- * A freshly created project's lastAccessedAt equals its creation time.
- * They are the source of truth for these endpoints' external behavior.
- * The AI implementation agent must NOT modify this file.
+ * Every response that references a project includes lastAccessedAt. Create and
+ * rename operations bump it; accessing a project by :id (PATCH, tree, file)
+ * also updates it. A freshly created project's lastAccessedAt equals its
+ * creation time. They are the source of truth for these endpoints' external
+ * behavior. The AI implementation agent must NOT modify this file.
  */
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
@@ -60,7 +61,7 @@ describe('Projects API', () => {
   });
 
   describe('POST /projects', () => {
-    it('returns 201 with id and name when given a valid template', async () => {
+    it('returns 201 with id, name, and lastAccessedAt when given a valid template', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test' })
@@ -74,6 +75,9 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
+      expect(res.body).toHaveProperty('lastAccessedAt');
+      expect(typeof res.body.lastAccessedAt).toBe('string');
+      expect(new Date(res.body.lastAccessedAt).toISOString()).toBe(res.body.lastAccessedAt);
     });
 
     it('returns 400 when template is unknown', async () => {
@@ -86,7 +90,7 @@ describe('Projects API', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('returns 201 with id and name when no template is provided', async () => {
+    it('returns 201 with id, name, and lastAccessedAt when no template is provided', async () => {
       const res = await request(app.server).post('/v1/projects').send({}).expect(201);
 
       expect(res.body).toHaveProperty('id');
@@ -97,6 +101,19 @@ describe('Projects API', () => {
       expect(res.body).toHaveProperty('name');
       expect(typeof res.body.name).toBe('string');
       expect(res.body.name.length).toBeGreaterThan(0);
+      expect(res.body).toHaveProperty('lastAccessedAt');
+      expect(typeof res.body.lastAccessedAt).toBe('string');
+      expect(new Date(res.body.lastAccessedAt).toISOString()).toBe(res.body.lastAccessedAt);
+    });
+
+    it('created project lastAccessedAt matches the value in GET /projects', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const listRes = await request(app.server).get('/v1/projects').expect(200);
+      const listed = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+
+      expect(listed).toBeDefined();
+      expect(listed.lastAccessedAt).toBe(createRes.body.lastAccessedAt);
     });
 
     it('blank project contains sfdx-project.json', async () => {
@@ -254,8 +271,11 @@ describe('Projects API', () => {
   });
 
   describe('PATCH /projects/:id', () => {
-    it('returns 200 with updated name', async () => {
+    it('returns 200 with updated name and lastAccessedAt', async () => {
       const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      // Small delay so the rename timestamp differs from create timestamp
+      await new Promise((r) => setTimeout(r, 10));
 
       const res = await request(app.server)
         .patch(`/v1/projects/${createRes.body.id}`)
@@ -264,6 +284,10 @@ describe('Projects API', () => {
 
       expect(res.body).toHaveProperty('id', createRes.body.id);
       expect(res.body).toHaveProperty('name', 'my-custom-name');
+      expect(res.body).toHaveProperty('lastAccessedAt');
+      expect(typeof res.body.lastAccessedAt).toBe('string');
+      expect(new Date(res.body.lastAccessedAt).toISOString()).toBe(res.body.lastAccessedAt);
+      expect(res.body.lastAccessedAt > createRes.body.lastAccessedAt).toBe(true);
     });
 
     it('persists the renamed value', async () => {
@@ -278,6 +302,20 @@ describe('Projects API', () => {
       const project = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
       expect(project).toBeDefined();
       expect(project.name).toBe('renamed-project');
+    });
+
+    it('rename response lastAccessedAt matches the value in GET /projects', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const patchRes = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'renamed-sync' })
+        .expect(200);
+
+      const listRes = await request(app.server).get('/v1/projects').expect(200);
+      const listed = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+      expect(listed).toBeDefined();
+      expect(listed.lastAccessedAt).toBe(patchRes.body.lastAccessedAt);
     });
 
     it('returns 404 for nonexistent project', async () => {

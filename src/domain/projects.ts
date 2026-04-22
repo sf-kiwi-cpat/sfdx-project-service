@@ -140,7 +140,7 @@ export class ProjectNotFoundError extends Error {
 export interface ProjectResult {
   id: string;
   name: string;
-  lastAccessedAt?: string;
+  lastAccessedAt: string;
   targetOrg?: string;
 }
 
@@ -211,11 +211,11 @@ export async function createBlankProject(orgAlias?: string): Promise<ProjectResu
   if (orgAlias) {
     await writeProjectTargetOrg(projectDir, orgAlias);
     logger.info({ projectId, name, orgAlias }, 'Blank project created with target-org');
-    return { id: projectId, name, targetOrg: orgAlias };
+    return { id: projectId, name, lastAccessedAt, targetOrg: orgAlias };
   }
 
   logger.info({ projectId, name }, 'Blank project created');
-  return { id: projectId, name };
+  return { id: projectId, name, lastAccessedAt };
 }
 
 /**
@@ -254,7 +254,7 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
   logger.info({ projectId, templateId, name }, 'Project created from template');
-  return { id: projectId, name };
+  return { id: projectId, name, lastAccessedAt };
 }
 
 /**
@@ -290,13 +290,14 @@ export async function listProjects(): Promise<ProjectResult[]> {
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
   const projectDir = await getProjectDir(projectId);
   const existingMeta = await readProjectMeta(projectDir);
+  const lastAccessedAt = new Date().toISOString();
   await writeProjectMeta(projectDir, {
     ...existingMeta,
     name,
-    lastAccessedAt: new Date().toISOString(),
+    lastAccessedAt,
   });
   logger.info({ projectId, name }, 'Project renamed');
-  return { id: projectId, name };
+  return { id: projectId, name, lastAccessedAt };
 }
 
 /**
