@@ -61,6 +61,11 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
+        // @fastify/cors runs in the Fastify response pipeline, which we bypass
+        // via reply.hijack() for SSE. Set the header explicitly so browsers
+        // don't block cross-origin EventSource subscriptions (matches the
+        // pattern in deploy.routes.ts).
+        'Access-Control-Allow-Origin': '*',
       });
 
       // Subscribe first — awaits chokidar's initial scan so writes made
