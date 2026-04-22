@@ -201,15 +201,18 @@ export class WatcherManager {
     // redundant and in practice drops events for very small writes —
     // keep it off.
     //
-    // Use polling rather than native FSEvents/inotify. On macOS, FSEvents
-    // is unreliable right after subscribing (a small window where writes
-    // are silently dropped), which surfaces as intermittent failures under
-    // rapid watcher create/destroy cycles. Polling has deterministic delivery
-    // guarantees at the cost of a small amount of CPU — acceptable for a
-    // service that watches one project directory at a time. `usePolling`
-    // can be disabled via `WATCHER_USE_POLLING=0` for deployments where
-    // native watchers are known-good.
-    const usePolling = process.env.WATCHER_USE_POLLING !== '0';
+    // Polling is only needed on macOS, where FSEvents is unreliable right
+    // after subscribing (a small window where writes are silently dropped),
+    // surfacing as intermittent failures under rapid watcher create/destroy
+    // cycles. Linux inotify and Windows ReadDirectoryChangesW are robust —
+    // polling a large project every 50ms there is wasted CPU with no
+    // correctness benefit. `WATCHER_USE_POLLING=0` force-disables polling
+    // (useful for macOS deployments that have validated FSEvents);
+    // `WATCHER_USE_POLLING=1` force-enables it (for diagnosing native-watcher
+    // issues on any platform).
+    const pollingEnv = process.env.WATCHER_USE_POLLING;
+    const usePolling =
+      pollingEnv === '1' ? true : pollingEnv === '0' ? false : process.platform === 'darwin';
     const watcher = chokidar.watch(projectDir, {
       persistent: true,
       ignoreInitial: true,
@@ -224,6 +227,15 @@ export class WatcherManager {
       },
     });
 
+    // Memory note: `initialSnap` gets one {size, mtimeMs} entry per
+    // pre-existing file at startup and only shrinks when a file is touched
+    // or unlinked post-ready. For a large project where most files stay
+    // untouched, these entries persist for the watcher's lifetime.
+    // The cost is bounded (one entry per file, no growth) and well under
+    // the FD/process limits that dominate first — acceptable for now. If a
+    // project's steady-state memory becomes a concern, prune entries once
+    // FSEvents replay can no longer produce false `change` events (e.g.
+    // after a bounded post-ready delay).
     const initialSnap = new Map<string, { size: number; mtimeMs: number }>();
     const readyHandled = { done: false };
 
