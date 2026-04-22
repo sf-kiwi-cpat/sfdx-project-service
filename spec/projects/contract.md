@@ -4,7 +4,7 @@
 
 ## Overview
 
-The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later. Each project tracks a **lastAccessedAt** timestamp that updates whenever the project is accessed by ID.
+The projects system manages SFDX project creation, listing, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later. Each project tracks a **lastAccessedAt** ISO 8601 timestamp that updates whenever the project is accessed by ID. Every response that references a project includes `lastAccessedAt`.
 
 ## Endpoints
 
@@ -23,12 +23,15 @@ The projects system manages SFDX project creation, listing, naming, and file tre
   ```json
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "name": "brave-falcon"
+    "name": "brave-falcon",
+    "lastAccessedAt": "2026-04-22T14:00:00.000Z"
   }
   ```
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
   - `name` is a non-empty string (auto-generated)
+  - `lastAccessedAt` is a valid ISO 8601 timestamp equal to the creation time
   - Returned for both template-based and blank projects
+  - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
 
 - **400 Bad Request** — Invalid input
   - Template name is not recognized
@@ -79,10 +82,13 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   ```json
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "name": "my-custom-name"
+    "name": "my-custom-name",
+    "lastAccessedAt": "2026-04-22T14:05:00.000Z"
   }
   ```
   - Name change is persisted and reflected in subsequent `GET /v1/projects` calls
+  - `lastAccessedAt` is bumped to the rename time (strictly greater than the prior value)
+  - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
 
 - **400 Bad Request** — Invalid input
   - `name` field is missing or empty string
@@ -109,6 +115,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   ```
   - `children` is an array of nested file/directory entries
   - Works identically for both template-based and blank projects
+  - Accessing the tree updates the project's `lastAccessedAt`
 
 - **404 Not Found** — Project does not exist
   - Response: RFC 9457 Problem Detail (`application/problem+json`)
@@ -126,7 +133,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Every project records a `lastAccessedAt` ISO 8601 timestamp
 - `lastAccessedAt` is initialized to the project's creation time
 - `lastAccessedAt` is updated whenever the project is accessed by ID (PATCH, tree, file read)
-- Only `GET /v1/projects` returns `lastAccessedAt`; other responses do not include it
+- **Every response that references a project includes `lastAccessedAt`** — POST create, PATCH rename, and GET list all return it consistently
 - Sorting by `lastAccessedAt` is left to the client
 
 ### Templates Are Optional
@@ -135,9 +142,10 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
 
 ### Uniform Response Shape
-- Both blank and template-based creation return the same `{ id, name }` response
+- Both blank and template-based creation return the same `{ id, name, lastAccessedAt }` response
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
+- Response shape is consistent across create, rename, and list — clients never have to reconstruct `lastAccessedAt` themselves
 
 ### Stateless
 - No "active project" concept — every request identifies the project by ID
@@ -158,8 +166,8 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Test Summary
 
-- **POST /projects**: 5 tests (2 with template, 2 blank, 1 error)
+- **POST /projects**: 6 tests (2 with template, 2 blank, 1 error, 1 create/list consistency)
 - **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
-- **PATCH /projects/:id**: 5 tests (rename, persistence, 404, missing name, empty name)
+- **PATCH /projects/:id**: 6 tests (rename with lastAccessedAt bump, persistence, rename/list consistency, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 18 contract tests, 4 describe blocks
+- **Total**: 20 contract tests, 4 describe blocks
