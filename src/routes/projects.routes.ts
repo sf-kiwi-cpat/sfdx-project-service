@@ -52,26 +52,24 @@ const ProjectSummary = Type.Object(
   }
 );
 
-const TreeNodeSchema = Type.Recursive(
-  (Node) =>
-    Type.Object(
-      {
-        name: Type.String({ description: 'Directory or file basename.' }),
-        path: Type.String({
-          description: 'Path relative to the project root (forward slashes on all platforms).',
-        }),
-        type: Type.Union([Type.Literal('file'), Type.Literal('directory')], {
-          description: 'Whether the node is a file or a directory.',
-        }),
-        children: Type.Optional(
-          Type.Array(Node, {
-            description: 'Nested children (omitted for file nodes).',
-          })
-        ),
-      },
-      { additionalProperties: true }
-    ),
-  { $id: 'TreeNode' }
+const TreeNodeSchema = Type.Recursive((Node) =>
+  Type.Object(
+    {
+      name: Type.String({ description: 'Directory or file basename.' }),
+      path: Type.String({
+        description: 'Path relative to the project root (forward slashes on all platforms).',
+      }),
+      type: Type.Union([Type.Literal('file'), Type.Literal('directory')], {
+        description: 'Whether the node is a file or a directory.',
+      }),
+      children: Type.Optional(
+        Type.Array(Node, {
+          description: 'Nested children (omitted for file nodes).',
+        })
+      ),
+    },
+    { additionalProperties: true }
+  )
 );
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
