@@ -120,6 +120,18 @@ to be gracefully omitted).
 
 `content` is **never** included on `file-removed`.
 
+### Content encoding
+
+Inline `content` is decoded as **UTF-8**. Files written in other encodings
+(Windows-1252, Latin-1, Shift-JIS, UTF-16 without BOM handling, etc.) decode
+with the Unicode replacement character (U+FFFD) wherever bytes cannot be
+interpreted as UTF-8.
+
+This is documented behaviour, not a bug: the watcher prioritises a fast,
+JSON-safe payload on the hot path over encoding detection. Consumers that
+require byte-exact content for non-UTF-8 encodings are out of scope for this
+endpoint.
+
 ### Directories
 
 - **Directory creation and deletion do not produce `file-*` events.**
@@ -253,6 +265,15 @@ Files are assumed text unless their extension appears in the binary
 deny-list. This keeps unknown / ad-hoc text files (`Makefile`, `.sh`,
 novel codebase-specific extensions) useful to downstream consumers without
 requiring an allow-list to stay in sync with every new text format.
+
+### UTF-8 only on the hot path
+Text content is decoded as UTF-8 without encoding detection. Encoding
+sniffing (chardet, jschardet) is probabilistic, adds CPU to a latency-
+sensitive path, and is unnecessary for the modern codebases this service
+targets (LWC, TypeScript, JSON, Markdown — all UTF-8 by convention).
+Legacy-encoded files degrade to replacement characters but remain
+JSON-safe; byte-exact handling, if needed, is out of scope for this
+endpoint.
 
 ### Per-path, last-write-wins debouncing
 Editors that save via rename (many editors write to a tempfile then rename)

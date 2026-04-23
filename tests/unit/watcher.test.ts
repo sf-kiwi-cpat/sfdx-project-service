@@ -236,4 +236,24 @@ describe('WatcherManager', () => {
 
     expect(events.filter((e) => e.path === '.project-meta.json')).toHaveLength(0);
   });
+
+  it('decodes file content as UTF-8 — non-UTF-8 bytes become U+FFFD', async () => {
+    // Pins the UTF-8 assumption at the watcher layer. The contract-level
+    // test covers the full SSE round-trip; this is a fast isolated check
+    // that readContentIfEligible hands back a UTF-8-decoded string with
+    // replacement characters for invalid byte sequences rather than raw
+    // bytes or a thrown error.
+    const events: FileEvent[] = [];
+    await manager.subscribe('pid', projectDir, (e) => events.push(e));
+
+    // "price: £10" in Windows-1252 — 0xA3 is not a valid UTF-8 start byte.
+    const latin1 = Buffer.from([0x70, 0x72, 0x69, 0x63, 0x65, 0x3a, 0x20, 0xa3, 0x31, 0x30]);
+    await fs.writeFile(path.join(projectDir, 'latin1.txt'), latin1);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const match = events.find((e) => e.path === 'latin1.txt');
+    expect(match).toBeDefined();
+    // U+FFFD (replacement character) stands in for the undecodable 0xA3.
+    expect(match?.content).toBe('price: �10');
+  });
 });
