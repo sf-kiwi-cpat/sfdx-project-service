@@ -71,6 +71,11 @@ const EXTRA_IGNORED_NAMES = new Set(['.project-meta.json']);
 
 export type FileEventListener = (evt: FileEvent) => void;
 
+export interface BufferedEvent {
+  absPath: string;
+  type: FileEventType;
+}
+
 /**
  * Buffers filesystem events that arrive between chokidar's `ready` event
  * firing and the watcher manager finishing its post-ready bookkeeping
@@ -85,7 +90,7 @@ export type FileEventListener = (evt: FileEvent) => void;
  */
 export class PreReadyEventBuffer {
   private released = false;
-  private readonly buffered: Array<{ absPath: string; type: FileEventType }> = [];
+  private readonly buffered: BufferedEvent[] = [];
 
   /**
    * Offer an event to the buffer. Returns `'buffer'` if the event was
@@ -104,15 +109,10 @@ export class PreReadyEventBuffer {
    * calls return `'forward'`. Calling `release` more than once returns an
    * empty array on subsequent calls.
    */
-  release(): ReadonlyArray<{ absPath: string; type: FileEventType }> {
+  release(): ReadonlyArray<BufferedEvent> {
     if (this.released) return [];
     this.released = true;
     return this.buffered.splice(0);
-  }
-
-  /** `true` once `release` has been called. */
-  get isReleased(): boolean {
-    return this.released;
   }
 }
 
@@ -314,10 +314,17 @@ export class WatcherManager {
             );
           }
         }
-        Promise.all(snapshots).then(() => {
+        Promise.all(snapshots).then(async () => {
           const replayed = preReadyBuffer.release();
+          // Await each replayed enqueue so a later buffered event cannot
+          // overtake an earlier one while the earlier is suspended on
+          // `fs.stat` inside enqueue's initialSnap check. Without this
+          // serialization, a buffered sequence like `change` then `unlink`
+          // for the same path would reorder: the `unlink` would land first
+          // and install pending state, then the resumed `change` would
+          // overwrite it and emit a phantom `change` for a deleted file.
           for (const evt of replayed) {
-            void this.enqueue(entry, evt.absPath, evt.type);
+            await this.enqueue(entry, evt.absPath, evt.type);
           }
           resolve();
         });
@@ -334,11 +341,12 @@ export class WatcherManager {
     };
 
     const handle = (absPath: string, type: FileEventType): void => {
-      // Pre-ready `add` never fires (ignoreInitial: true); `change` and
-      // `unlink` can. Buffering all types preserves ordering for the rare
-      // case of a file created-and-deleted inside the window — replaying
-      // add-then-unlink through the normal enqueue path lets the existing
-      // debounce/coalesce logic resolve it correctly.
+      // `ignoreInitial: true` suppresses adds for files that already existed
+      // when the watcher attached. It does NOT suppress events for files
+      // created, changed, or deleted during the startup window (after attach,
+      // before `ready`). Buffering all three event types preserves ordering
+      // for those window-events so the normal enqueue path can resolve
+      // them through its debounce + coalesce logic.
       if (preReadyBuffer.accept(absPath, type) === 'buffer') return;
       void this.enqueue(entry, absPath, type);
     };

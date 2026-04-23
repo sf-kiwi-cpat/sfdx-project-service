@@ -32,13 +32,11 @@ describe('PreReadyEventBuffer', () => {
     const buf = new PreReadyEventBuffer();
     expect(buf.accept('/p/a.txt', 'add')).toBe('buffer');
     expect(buf.accept('/p/b.txt', 'change')).toBe('buffer');
-    expect(buf.isReleased).toBe(false);
   });
 
   it('forwards events once released', () => {
     const buf = new PreReadyEventBuffer();
     buf.release();
-    expect(buf.isReleased).toBe(true);
     expect(buf.accept('/p/a.txt', 'add')).toBe('forward');
   });
 
