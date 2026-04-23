@@ -23,6 +23,7 @@ import fastifySwaggerUi from '@fastify/swagger-ui';
 import { logger } from './logger.js';
 import { routes } from './routes/index.js';
 import { errorToProblem, problemDetail, PROBLEM_JSON } from './errors.js';
+import { watcherManager } from './domain/watcher.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
 
@@ -79,6 +80,12 @@ export function createApp() {
     }
 
     reply.status(problem.status).type(PROBLEM_JSON).send(problem);
+  });
+
+  // Close any active filesystem watchers on graceful shutdown. Prevents
+  // leaked chokidar instances between test runs and during SIGTERM.
+  app.addHook('onClose', async () => {
+    await watcherManager.closeAll();
   });
 
   return app;
