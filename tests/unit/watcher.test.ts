@@ -24,8 +24,55 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { WatcherManager, watcherManager } from '../../src/domain/watcher.js';
+import { PreReadyEventBuffer, WatcherManager, watcherManager } from '../../src/domain/watcher.js';
 import type { FileEvent } from '../../src/domain/watcher.js';
+
+describe('PreReadyEventBuffer', () => {
+  it('buffers events until released', () => {
+    const buf = new PreReadyEventBuffer();
+    expect(buf.accept('/p/a.txt', 'add')).toBe('buffer');
+    expect(buf.accept('/p/b.txt', 'change')).toBe('buffer');
+    expect(buf.isReleased).toBe(false);
+  });
+
+  it('forwards events once released', () => {
+    const buf = new PreReadyEventBuffer();
+    buf.release();
+    expect(buf.isReleased).toBe(true);
+    expect(buf.accept('/p/a.txt', 'add')).toBe('forward');
+  });
+
+  it('release returns every buffered event in insertion order', () => {
+    const buf = new PreReadyEventBuffer();
+    buf.accept('/p/a.txt', 'add');
+    buf.accept('/p/b.txt', 'change');
+    buf.accept('/p/a.txt', 'unlink');
+    expect(buf.release()).toEqual([
+      { absPath: '/p/a.txt', type: 'add' },
+      { absPath: '/p/b.txt', type: 'change' },
+      { absPath: '/p/a.txt', type: 'unlink' },
+    ]);
+  });
+
+  it('release is idempotent — subsequent calls return an empty array', () => {
+    const buf = new PreReadyEventBuffer();
+    buf.accept('/p/a.txt', 'add');
+    expect(buf.release()).toHaveLength(1);
+    expect(buf.release()).toEqual([]);
+    expect(buf.release()).toEqual([]);
+  });
+
+  it('events offered after release are not buffered', () => {
+    const buf = new PreReadyEventBuffer();
+    buf.accept('/p/a.txt', 'add');
+    const replayed = buf.release();
+    expect(replayed).toEqual([{ absPath: '/p/a.txt', type: 'add' }]);
+    // This is the post-window case: the event must flow normally, not be
+    // retained for a second replay.
+    expect(buf.accept('/p/b.txt', 'add')).toBe('forward');
+    expect(buf.release()).toEqual([]);
+  });
+});
 
 describe('WatcherManager', () => {
   let tmpDir: string;
