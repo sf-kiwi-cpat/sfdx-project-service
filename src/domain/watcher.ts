@@ -71,6 +71,51 @@ const EXTRA_IGNORED_NAMES = new Set(['.project-meta.json']);
 
 export type FileEventListener = (evt: FileEvent) => void;
 
+export interface BufferedEvent {
+  absPath: string;
+  type: FileEventType;
+}
+
+/**
+ * Buffers filesystem events that arrive between chokidar's `ready` event
+ * firing and the watcher manager finishing its post-ready bookkeeping
+ * (stat'ing every pre-existing file to populate `initialSnap`). Without this
+ * buffer, any `add` delivered inside that window would be dropped, causing
+ * the file's first surfaced event to be `change` (or nothing) when it
+ * should be `add`.
+ *
+ * Factored out of WatcherManager so the pre/post-ready state machine can
+ * be unit tested without real chokidar or fs timing. Extracted as the
+ * resolution to issue #185.
+ */
+export class PreReadyEventBuffer {
+  private released = false;
+  private readonly buffered: BufferedEvent[] = [];
+
+  /**
+   * Offer an event to the buffer. Returns `'buffer'` if the event was
+   * captured for later replay; `'forward'` if the caller should handle it
+   * normally (the buffer has already been released).
+   */
+  accept(absPath: string, type: FileEventType): 'buffer' | 'forward' {
+    if (this.released) return 'forward';
+    this.buffered.push({ absPath, type });
+    return 'buffer';
+  }
+
+  /**
+   * Mark the buffer as released (no further events will be captured) and
+   * return every buffered event in insertion order. Subsequent `accept`
+   * calls return `'forward'`. Calling `release` more than once returns an
+   * empty array on subsequent calls.
+   */
+  release(): ReadonlyArray<BufferedEvent> {
+    if (this.released) return [];
+    this.released = true;
+    return this.buffered.splice(0);
+  }
+}
+
 interface PerProjectWatcher {
   projectDir: string;
   watcher: FSWatcher;
@@ -237,7 +282,10 @@ export class WatcherManager {
     // FSEvents replay can no longer produce false `change` events (e.g.
     // after a bounded post-ready delay).
     const initialSnap = new Map<string, { size: number; mtimeMs: number }>();
-    const readyHandled = { done: false };
+    // Captures events that arrive after chokidar fires `ready` but before
+    // `Promise.all(snapshots)` resolves. Releasing the buffer replays
+    // events in insertion order through `enqueue`.
+    const preReadyBuffer = new PreReadyEventBuffer();
 
     const ready = new Promise<void>((resolve) => {
       watcher.once('ready', () => {
@@ -266,8 +314,18 @@ export class WatcherManager {
             );
           }
         }
-        Promise.all(snapshots).then(() => {
-          readyHandled.done = true;
+        Promise.all(snapshots).then(async () => {
+          const replayed = preReadyBuffer.release();
+          // Await each replayed enqueue so a later buffered event cannot
+          // overtake an earlier one while the earlier is suspended on
+          // `fs.stat` inside enqueue's initialSnap check. Without this
+          // serialization, a buffered sequence like `change` then `unlink`
+          // for the same path would reorder: the `unlink` would land first
+          // and install pending state, then the resumed `change` would
+          // overwrite it and emit a phantom `change` for a deleted file.
+          for (const evt of replayed) {
+            await this.enqueue(entry, evt.absPath, evt.type);
+          }
           resolve();
         });
       });
@@ -282,14 +340,19 @@ export class WatcherManager {
       initialSnap,
     };
 
-    watcher.on('add', (absPath) => {
-      // Pre-ready `add` never fires (ignoreInitial: true). Post-ready
-      // `add` is always legitimate — forward it.
-      if (!readyHandled.done) return;
-      this.enqueue(entry, absPath, 'add');
-    });
-    watcher.on('change', (absPath) => this.enqueue(entry, absPath, 'change'));
-    watcher.on('unlink', (absPath) => this.enqueue(entry, absPath, 'unlink'));
+    const handle = (absPath: string, type: FileEventType): void => {
+      // `ignoreInitial: true` suppresses adds for files that already existed
+      // when the watcher attached. It does NOT suppress events for files
+      // created, changed, or deleted during the startup window (after attach,
+      // before `ready`). Buffering all three event types preserves ordering
+      // for those window-events so the normal enqueue path can resolve
+      // them through its debounce + coalesce logic.
+      if (preReadyBuffer.accept(absPath, type) === 'buffer') return;
+      void this.enqueue(entry, absPath, type);
+    };
+    watcher.on('add', (absPath) => handle(absPath, 'add'));
+    watcher.on('change', (absPath) => handle(absPath, 'change'));
+    watcher.on('unlink', (absPath) => handle(absPath, 'unlink'));
     watcher.on('error', (err) => {
       logger.warn({ err, projectId }, 'fs-events watcher error');
     });
