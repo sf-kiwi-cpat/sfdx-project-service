@@ -28,11 +28,15 @@
  *
  * The contract asserts STRUCTURAL COMPLETENESS, not prose. It never
  * pins specific wording — only that every route declares what a
- * consumer needs: summary, description, tags, response schemas for
- * real status codes, parameter descriptions, field descriptions, and
- * documented auth. Because the "every operation" invariants enumerate
- * dynamically over `paths`, new routes are automatically covered —
- * you can't add an undocumented endpoint without breaking this spec.
+ * consumer needs: summary, description, tags, response schemas (with
+ * a concrete $ref or type — not an empty `{}`) for real status codes,
+ * non-JSON content types pinned where they matter (text/plain,
+ * text/event-stream), application/problem+json for every 4xx response
+ * (matching the real RFC 9457 responses the service returns),
+ * parameter descriptions, field descriptions, and documented auth.
+ * Because the "every operation" invariants enumerate dynamically over
+ * `paths`, new routes are automatically covered — you can't add an
+ * undocumented endpoint without breaking this spec.
  *
  * The AI implementation agent must NOT modify this file.
  */
@@ -48,9 +52,18 @@ type Parameter = {
   schema?: unknown;
 };
 
+type Schema = {
+  type?: string;
+  properties?: Record<string, Schema>;
+  $ref?: string;
+  required?: string[];
+  items?: Schema;
+  description?: string;
+};
+
 type Response = {
   description?: string;
-  content?: Record<string, { schema?: unknown }>;
+  content?: Record<string, { schema?: Schema }>;
 };
 
 type Operation = {
@@ -78,6 +91,7 @@ type OpenApiDoc = {
       string,
       { type?: string; scheme?: string; in?: string; name?: string }
     >;
+    schemas?: Record<string, Schema>;
   };
 };
 
@@ -252,11 +266,10 @@ describe('OpenAPI document completeness', () => {
     ];
 
     for (const { method, path, code } of expectations) {
-      it(`${method} ${path} declares ${code} with a response schema`, () => {
+      it(`${method} ${path} declares ${code} with a non-empty response schema`, () => {
         const op = getOp(spec, method, path);
         const resp = op.responses?.[code];
         expect(resp, `${method} ${path} must declare ${code}`).toBeDefined();
-        // SSE endpoints declare text/event-stream; everything else declares a JSON schema.
         const content = resp!.content ?? {};
         const contentTypes = Object.keys(content);
         expect(
@@ -264,27 +277,54 @@ describe('OpenAPI document completeness', () => {
           `${method} ${path} response ${code} must declare a content type`
         ).toBeGreaterThan(0);
         for (const ct of contentTypes) {
+          const schema = content[ct].schema;
           expect(
-            content[ct].schema,
+            schema,
             `${method} ${path} response ${code} (${ct}) must declare a schema`
           ).toBeDefined();
+          // Closes the `schema: {}` loophole — an empty schema conveys nothing
+          // to consumers. Require either a $ref or a concrete type without
+          // pinning the shape itself.
+          const hasStructure = Boolean(schema?.$ref) || Boolean(schema?.type);
+          expect(
+            hasStructure,
+            `${method} ${path} response ${code} (${ct}) schema must declare $ref or type`
+          ).toBe(true);
         }
       });
     }
   });
 
-  describe('SSE endpoints declare text/event-stream', () => {
-    const sseEndpoints: Array<{ method: string; path: string }> = [
-      { method: 'GET', path: '/v1/projects/{id}/deployments/{deploymentId}/events' },
-      { method: 'GET', path: '/v1/projects/{id}/fs/events' },
+  describe('Non-JSON content types are pinned where they matter', () => {
+    // When a route intentionally returns something other than JSON, pin the
+    // content type so it can't be silently re-documented as application/json.
+    const nonJsonExpectations: Array<{
+      method: string;
+      path: string;
+      code: string;
+      contentType: string;
+    }> = [
+      { method: 'GET', path: '/v1/projects/{id}/file', code: '200', contentType: 'text/plain' },
+      {
+        method: 'GET',
+        path: '/v1/projects/{id}/deployments/{deploymentId}/events',
+        code: '200',
+        contentType: 'text/event-stream',
+      },
+      {
+        method: 'GET',
+        path: '/v1/projects/{id}/fs/events',
+        code: '200',
+        contentType: 'text/event-stream',
+      },
     ];
 
-    for (const { method, path } of sseEndpoints) {
-      it(`${method} ${path} declares 200 with text/event-stream`, () => {
+    for (const { method, path, code, contentType } of nonJsonExpectations) {
+      it(`${method} ${path} declares ${code} with ${contentType}`, () => {
         const op = getOp(spec, method, path);
-        const resp = op.responses?.['200'];
+        const resp = op.responses?.[code];
         expect(resp).toBeDefined();
-        expect(resp!.content?.['text/event-stream']).toBeDefined();
+        expect(resp!.content?.[contentType]).toBeDefined();
       });
     }
   });
@@ -318,6 +358,49 @@ describe('OpenAPI document completeness', () => {
       for (const { method, path } of projectIdRoutes) {
         const op = getOp(spec, method, path);
         if (!op.responses?.['404']) offenders.push(`${method} ${path}`);
+      }
+      expect(offenders).toEqual([]);
+    });
+  });
+
+  describe('Error response shape (RFC 9457 problem+json)', () => {
+    // The service uniformly serves errors as application/problem+json per
+    // src/errors.ts (PROBLEM_JSON, problemDetail). The OpenAPI doc must
+    // advertise that same media type — otherwise consumers build error
+    // handling against application/json and are surprised in production.
+
+    it('declares a reusable Problem schema in components.schemas with the RFC 9457 fields', () => {
+      const schemas = spec.components?.schemas ?? {};
+      // The exact schema name is not pinned; any schema whose required fields
+      // match the RFC 9457 shape (status, title, detail) counts.
+      const candidates = Object.values(schemas).filter((s) => {
+        const props = s.properties ?? {};
+        return 'status' in props && 'title' in props && 'detail' in props;
+      });
+      expect(
+        candidates.length,
+        'components.schemas must declare a reusable Problem schema with status/title/detail'
+      ).toBeGreaterThan(0);
+    });
+
+    it('every documented 4xx response declares application/problem+json with a schema', () => {
+      const offenders: string[] = [];
+      for (const entry of allOperations(spec)) {
+        for (const [status, resp] of Object.entries(entry.op.responses ?? {})) {
+          if (!/^4\d\d$/.test(status)) continue;
+          const problem = resp.content?.['application/problem+json'];
+          if (!problem) {
+            offenders.push(`${label(entry)} → ${status}: missing application/problem+json`);
+            continue;
+          }
+          const schema = problem.schema;
+          const hasStructure = Boolean(schema?.$ref) || Boolean(schema?.type);
+          if (!hasStructure) {
+            offenders.push(
+              `${label(entry)} → ${status}: application/problem+json schema must declare $ref or type`
+            );
+          }
+        }
       }
       expect(offenders).toEqual([]);
     });

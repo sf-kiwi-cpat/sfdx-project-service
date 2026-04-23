@@ -32,9 +32,22 @@ text — only that every route declares what a consumer needs.
   over `paths` × HTTP methods. Any new route automatically inherits
   the invariants — you cannot ship an undocumented endpoint.
 - **Exact success codes.** Success-code invariants pin the exact code
-  each route returns (201 for `POST /projects`, 202 for `POST /deployments`,
-  200 for reads). Accidental code changes break the contract rather
-  than slipping through.
+  each route returns today (201 for `POST /projects`, 202 for
+  `POST /deployments`, 200 for reads). Accidental code changes break
+  the contract rather than slipping through.
+- **Schemas must be concrete.** Every declared response schema must
+  declare either a `$ref` or a `type`. An empty `{}` satisfies the
+  letter of "has a schema" but conveys nothing — this closes that
+  loophole without pinning shape.
+- **Non-JSON content types are pinned where they matter.** When a
+  route intentionally returns something other than JSON
+  (`text/plain`, `text/event-stream`), the content type is pinned so
+  it cannot be silently re-documented as JSON.
+- **Error responses must match reality.** The service serves every
+  4xx error as `application/problem+json` per RFC 9457. The contract
+  requires the OpenAPI doc to advertise that same media type, so
+  consumers build error handling against what the service actually
+  returns.
 - **Dual failure reporting.** Per-invariant checks collect all
   offending operations into a single assertion so a missing tag on
   one route produces one clear failure listing every offender, not a
@@ -70,7 +83,8 @@ Applies to every (path, HTTP method) pair in `paths`.
 ## Success response codes (exact code per route)
 
 Each route must declare the exact success code it returns today, and
-that response must declare a content type and schema.
+that response must declare a content type and a schema with either a
+`$ref` or a `type`.
 
 | Method | Path                                                          | Code |
 | ------ | ------------------------------------------------------------- | ---- |
@@ -84,13 +98,16 @@ that response must declare a content type and schema.
 | GET    | `/v1/projects/{id}/deployments/{deploymentId}/events`         | 200  |
 | GET    | `/v1/projects/{id}/fs/events`                                 | 200  |
 
-## SSE endpoints
+## Non-JSON content types
 
-Server-sent-event endpoints declare `200` with content type
-`text/event-stream` (not JSON).
+Routes that intentionally return something other than JSON pin their
+content type so it cannot be silently re-documented as JSON.
 
-- `GET /v1/projects/{id}/deployments/{deploymentId}/events`
-- `GET /v1/projects/{id}/fs/events`
+| Method | Path                                                          | Code | Content type        |
+| ------ | ------------------------------------------------------------- | ---- | ------------------- |
+| GET    | `/v1/projects/{id}/file`                                      | 200  | `text/plain`        |
+| GET    | `/v1/projects/{id}/deployments/{deploymentId}/events`         | 200  | `text/event-stream` |
+| GET    | `/v1/projects/{id}/fs/events`                                 | 200  | `text/event-stream` |
 
 ## Documented error responses
 
@@ -120,6 +137,20 @@ The following routes must all declare a `404` response for unknown project ids:
 - `GET /v1/projects/{id}/deployments/{deploymentId}/events`
 - `GET /v1/projects/{id}/fs/events`
 
+## Error response shape (RFC 9457 `problem+json`)
+
+The service uniformly serves errors as `application/problem+json` per
+`src/errors.ts` (`PROBLEM_JSON`, `problemDetail`). The OpenAPI doc
+must advertise the same media type.
+
+- `components.schemas` declares at least one reusable schema whose
+  properties include `status`, `title`, and `detail` (matching the
+  RFC 9457 shape produced by `problemDetail()`). The schema name is
+  not pinned — any schema with those fields counts.
+- Every documented `4xx` response on every operation declares
+  `application/problem+json` as a content type, with a schema that
+  declares either a `$ref` or a `type`.
+
 ## Authentication
 
 The deploy route accepts two credential headers:
@@ -140,6 +171,7 @@ The deploy route accepts two credential headers:
 - 1 document-level section (4 assertions)
 - 6 every-operation invariants
 - 9 success-code assertions (one per route)
-- 2 SSE content-type assertions
-- 4 error-response assertions
+- 3 non-JSON content-type assertions (1 text/plain + 2 text/event-stream)
+- 4 error-response presence assertions
+- 2 error-response shape assertions (RFC 9457 problem+json)
 - 3 authentication assertions
