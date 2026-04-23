@@ -203,7 +203,6 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
           'are rejected with 400. Restricted paths (`.git/`, `.sf/`, ' +
           '`node_modules/`, dotfiles) return 400.',
         tags: ['Projects'],
-        produces: ['text/plain'],
         params: Type.Object({
           id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
         }),
