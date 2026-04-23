@@ -31,15 +31,78 @@ import {
   getProgressEvents,
 } from '../deployments.js';
 
-const ProjectParams = Type.Object({ id: Type.String() });
-const DeploymentParams = Type.Object({ id: Type.String(), deploymentId: Type.String() });
+const ProjectParams = Type.Object({
+  id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+});
+const DeploymentParams = Type.Object({
+  id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+  deploymentId: Type.String({
+    description: 'Deployment identifier returned by `POST /v1/projects/{id}/deployments`.',
+  }),
+});
+
+/** Request header schema for the companion `X-Salesforce-Instance-Url` credential. */
+const DeployHeaders = Type.Object({
+  'x-salesforce-instance-url': Type.Optional(
+    Type.String({
+      description:
+        'Salesforce org instance URL paired with the bearer access token ' +
+        '(e.g. `https://mycompany.my.salesforce.com`). Required when the project ' +
+        'has no configured `target-org` and no global default org is available.',
+    })
+  ),
+});
+
+/** Shared OpenAPI fragment for responses served as `application/problem+json`. */
+const problemJsonResponse = (description: string): Record<string, unknown> => ({
+  description,
+  content: {
+    [PROBLEM_JSON]: {
+      schema: { $ref: 'Problem#' },
+    },
+  },
+});
 
 export async function deployRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/projects/:id/deployments',
     {
       schema: {
+        summary: 'Start an asynchronous metadata deployment',
+        description:
+          'Kicks off a metadata deployment to the authenticated Salesforce org ' +
+          'and returns a deployment id to use with the SSE stream at ' +
+          '`GET /v1/projects/{id}/deployments/{deploymentId}/events`. Auth is ' +
+          'resolved from (1) the project `target-org`, (2) the global default ' +
+          'org, or (3) the `Authorization` + `X-Salesforce-Instance-Url` headers. ' +
+          'If none yield credentials, the request fails with 400.',
+        tags: ['Deployments'],
+        security: [{ bearerAuth: [] }],
         params: ProjectParams,
+        headers: DeployHeaders,
+        response: {
+          202: {
+            description:
+              'Deployment accepted. The returned `deploymentId` can be used to stream progress events.',
+            ...Type.Object({
+              deploymentId: Type.String({
+                description: 'Unique identifier for the in-flight deployment.',
+              }),
+              status: Type.String({
+                description: "Initial deployment status — always `'Queued'` on acceptance.",
+              }),
+            }),
+          },
+          400: problemJsonResponse(
+            'No authentication is available — the project has no target-org, no ' +
+              'global default org is configured, and the Authorization / ' +
+              'X-Salesforce-Instance-Url headers are missing or invalid.'
+          ),
+          404: problemJsonResponse('No project exists with the supplied id.'),
+          502: problemJsonResponse(
+            'The Salesforce org rejected the connection or the deployment failed to start.'
+          ),
+        },
       },
     },
     async (request, reply) => {
@@ -97,7 +160,31 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     '/projects/:id/deployments/:deploymentId/events',
     {
       schema: {
+        summary: 'Stream deployment progress as Server-Sent Events',
+        description:
+          'Subscribes to the deployment identified by `deploymentId`, emitting ' +
+          'SSE `start`, `progress`, and `complete` events until the deployment ' +
+          'reaches a terminal state and the stream closes.',
+        tags: ['Deployments'],
         params: DeploymentParams,
+        response: {
+          200: {
+            description: 'Server-Sent Events stream of deployment progress.',
+            content: {
+              'text/event-stream': {
+                schema: {
+                  type: 'string',
+                  description:
+                    'Server-Sent Events stream. Event types: `start`, `progress`, `complete`. ' +
+                    'Each `data:` payload is a JSON-encoded deployment event.',
+                },
+              },
+            },
+          },
+          404: problemJsonResponse(
+            'Either the project or the supplied deployment id does not exist.'
+          ),
+        },
       },
     },
     async (request, reply) => {
