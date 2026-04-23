@@ -113,8 +113,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
         }),
         response: {
           201: {
-            description: 'The newly created project.',
             ...ProjectSummary,
+            description: 'The newly created project.',
           },
           400: problemJsonResponse(
             'The request body is invalid — for example, `template` references an ' +
@@ -174,8 +174,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
         }),
         response: {
           200: {
-            description: 'The renamed project.',
             ...ProjectSummary,
+            description: 'The renamed project.',
           },
           400: problemJsonResponse(
             'The request body is invalid — `name` is missing, empty, or not a string.'
