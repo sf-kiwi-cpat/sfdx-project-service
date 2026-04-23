@@ -17,7 +17,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { problemDetail, PROBLEM_JSON } from '../errors.js';
+import { problemDetail, problemJsonResponse, PROBLEM_JSON } from '../errors.js';
 import { extractOptionalCredentials } from '../utils/auth.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
 import { DeploymentError } from '../errors.js';
@@ -51,16 +51,6 @@ const DeployHeaders = Type.Object({
         'has no configured `target-org` and no global default org is available.',
     })
   ),
-});
-
-/** Shared OpenAPI fragment for responses served as `application/problem+json`. */
-const problemJsonResponse = (description: string): Record<string, unknown> => ({
-  description,
-  content: {
-    [PROBLEM_JSON]: {
-      schema: { $ref: 'Problem#' },
-    },
-  },
 });
 
 export async function deployRoutes(app: FastifyInstance): Promise<void> {

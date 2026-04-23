@@ -26,17 +26,7 @@ import {
   renameProject,
   updateLastAccessed,
 } from '../domain/projects.js';
-import { problemDetail, PROBLEM_JSON } from '../errors.js';
-
-/** Shared OpenAPI fragment for responses served as `application/problem+json`. */
-const problemJsonResponse = (description: string): Record<string, unknown> => ({
-  description,
-  content: {
-    [PROBLEM_JSON]: {
-      schema: { $ref: 'Problem#' },
-    },
-  },
-});
+import { problemDetail, problemJsonResponse, PROBLEM_JSON } from '../errors.js';
 
 /**
  * Response shape for endpoints that return a project record. Marked

@@ -19,20 +19,10 @@ import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { getProjectDir } from '../domain/projects.js';
 import { watcherManager, type FileEvent } from '../domain/watcher.js';
-import { PROBLEM_JSON } from '../errors.js';
+import { problemJsonResponse } from '../errors.js';
 
 const ProjectParams = Type.Object({
   id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
-});
-
-/** Shared OpenAPI fragment for responses served as `application/problem+json`. */
-const problemJsonResponse = (description: string): Record<string, unknown> => ({
-  description,
-  content: {
-    [PROBLEM_JSON]: {
-      schema: { $ref: 'Problem#' },
-    },
-  },
 });
 
 /** Map from the internal `FileEvent.type` to the SSE `event:` name. */
