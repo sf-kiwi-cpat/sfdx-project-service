@@ -62,6 +62,12 @@ shape and are served as `application/problem+json`:
 - Returns 400 when the body contains only a coined unknown property
   (e.g. `{ sproingyWidget: 'value' }`). The `detail` includes the
   property name (`sproingyWidget`) and schema-validation boilerplate.
+- Returns 400 naming exactly one unknown property when the body
+  contains multiple unknown keys. The contract does not pin *which*
+  key is named (Ajv's order-of-checks is an implementation detail),
+  only that the `detail` mentions one and not both — the UX surfaces
+  one offending key per response rather than listing every unknown
+  key at once.
 - No project is created as a side effect of a rejected request — the
   `GET /v1/projects` list is unchanged across a rejected POST (the
   assertion compares before/after lists, not against an empty list).

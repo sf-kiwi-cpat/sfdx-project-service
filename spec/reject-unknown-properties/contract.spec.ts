@@ -103,6 +103,27 @@ describe('Reject unknown request body properties', () => {
       expect(res.body.detail).toMatch(/additional|unknown/i);
     });
 
+    it('names only one unknown property when multiple are present', async () => {
+      // Ajv default (allErrors: false) reports only the first error,
+      // which pins the UX: callers see one offending key per 400 and
+      // fix them incrementally. This test prevents a future switch to
+      // `allErrors: true` (or equivalent) that would silently broaden
+      // the contract to mention every unknown key at once. The test
+      // does not pin *which* key is named — Ajv's order of checks is
+      // an implementation detail of the validator — only that exactly
+      // one is named.
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ firstUnknownKey: 1, secondUnknownKey: 2 })
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+      const namesFirst = res.body.detail.includes('firstUnknownKey');
+      const namesSecond = res.body.detail.includes('secondUnknownKey');
+      // Exactly one — not both, not neither.
+      expect(namesFirst !== namesSecond).toBe(true);
+    });
+
     it('returns 400 when the body contains a coined unknown property on an otherwise empty body', async () => {
       // Use a coined token (unlikely to appear in any unrelated error
       // message) so the assertion pins schema-validation behavior
