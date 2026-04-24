@@ -57,10 +57,11 @@ shape and are served as `application/problem+json`:
 **400**
 - Returns 400 when the body contains an unknown property alongside a known one
   (e.g. `{ template: 'local-react-test', name: 'my-project' }`). The `detail`
-  includes the offending property name (`name`).
-- Returns 400 when the body contains only an unknown property
-  (e.g. `{ unexpected: 'value' }`). The `detail` includes the offending
-  property name (`unexpected`).
+  includes the quoted property name (`'name'`) and schema-validation
+  boilerplate (`additional` or `unknown`).
+- Returns 400 when the body contains only a coined unknown property
+  (e.g. `{ sproingyWidget: 'value' }`). The `detail` includes the
+  property name (`sproingyWidget`) and schema-validation boilerplate.
 - No project is created as a side effect of a rejected request —
   `GET /v1/projects` after a rejected POST still returns the empty list.
 

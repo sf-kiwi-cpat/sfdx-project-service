@@ -94,18 +94,28 @@ describe('Reject unknown request body properties', () => {
       expect(res.body.status).toBe(400);
       expect(res.body.title).toBe('Bad Request');
       expect(typeof res.body.detail).toBe('string');
-      expect(res.body.detail).toContain('name');
+      // 'name' is a common word that could appear in unrelated error
+      // strings; require the schema-validation quoted form and either
+      // 'additional' or 'unknown' boilerplate so a stray
+      // template-validation message that happens to contain "name"
+      // can't satisfy this assertion.
+      expect(res.body.detail).toContain("'name'");
+      expect(res.body.detail).toMatch(/additional|unknown/i);
     });
 
-    it('returns 400 when the body contains an unknown property on an otherwise empty body', async () => {
+    it('returns 400 when the body contains a coined unknown property on an otherwise empty body', async () => {
+      // Use a coined token (unlikely to appear in any unrelated error
+      // message) so the assertion pins schema-validation behavior
+      // rather than accidentally matching other 400 paths.
       const res = await request(app.server)
         .post('/v1/projects')
-        .send({ unexpected: 'value' })
+        .send({ sproingyWidget: 'value' })
         .expect(400);
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(400);
-      expect(res.body.detail).toContain('unexpected');
+      expect(res.body.detail).toContain('sproingyWidget');
+      expect(res.body.detail).toMatch(/additional|unknown/i);
     });
 
     it('does not create a project when the body has an unknown property', async () => {
