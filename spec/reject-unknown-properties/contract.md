@@ -62,8 +62,9 @@ shape and are served as `application/problem+json`:
 - Returns 400 when the body contains only a coined unknown property
   (e.g. `{ sproingyWidget: 'value' }`). The `detail` includes the
   property name (`sproingyWidget`) and schema-validation boilerplate.
-- No project is created as a side effect of a rejected request —
-  `GET /v1/projects` after a rejected POST still returns the empty list.
+- No project is created as a side effect of a rejected request — the
+  `GET /v1/projects` list is unchanged across a rejected POST (the
+  assertion compares before/after lists, not against an empty list).
 
 **201**
 - Continues to accept a valid body with only known properties

@@ -119,13 +119,18 @@ describe('Reject unknown request body properties', () => {
     });
 
     it('does not create a project when the body has an unknown property', async () => {
+      // Capture the list before the rejected POST so the assertion is
+      // independent of test order and any shared PROJECTS_ROOT state
+      // from sibling tests (or describe blocks added later).
+      const before = await request(app.server).get('/v1/projects').expect(200);
+
       await request(app.server)
         .post('/v1/projects')
         .send({ template: 'local-react-test', name: 'my-project' })
         .expect(400);
 
-      const list = await request(app.server).get('/v1/projects').expect(200);
-      expect(list.body).toEqual([]);
+      const after = await request(app.server).get('/v1/projects').expect(200);
+      expect(after.body).toEqual(before.body);
     });
 
     it('still accepts a valid body with only known properties', async () => {
