@@ -28,12 +28,20 @@
  * misunderstanding immediately.
  *
  * Scope:
- *   - Applies to every endpoint whose route declares a body schema.
- *   - Covered here: POST /v1/projects and PATCH /v1/projects/:id (the
- *     two body-accepting endpoints with schemas today).
- *   - Endpoints without a body schema (e.g. the deployments POST) are
- *     out of scope — this contract governs schema-validated bodies, not
- *     whether a route should add a schema.
+ *   - Applies to every endpoint that declares (or must declare) a body
+ *     schema.
+ *   - Covered here: POST /v1/projects and PATCH /v1/projects/:id.
+ *     POST /v1/projects already declares a body schema today. PATCH
+ *     /v1/projects/:id does NOT yet declare one — it validates `name`
+ *     imperatively inside the handler. Satisfying this contract requires
+ *     the implementation to add a body schema to PATCH so Ajv can
+ *     enforce `additionalProperties: false`. PATCH is therefore listed
+ *     above because this contract forces it to gain a schema.
+ *   - Endpoints that do not declare a body schema (e.g. the deployments
+ *     POST) are out of scope — this contract governs schema-validated
+ *     bodies, not whether a route should add a schema. The PATCH
+ *     clarification above is the one exception: this contract prescribes
+ *     that PATCH gain a schema as part of adoption.
  *
  * Error shape: responses follow the project's existing RFC 9457
  * problem-detail shape ({ status, title, detail }) served as

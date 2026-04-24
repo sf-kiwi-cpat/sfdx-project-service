@@ -18,13 +18,18 @@ same request returns 400 naming `name` as the offending property.
 
 ## Scope
 
-- Applies to every endpoint whose route declares a body schema.
-- Body-accepting endpoints with schemas today:
-  - `POST /v1/projects`
-  - `PATCH /v1/projects/:id`
-- Endpoints that do not declare a body schema are out of scope for this
-  contract. This contract does not prescribe *which* routes should have
-  a body schema, only how routes with a schema must validate bodies.
+- Applies to every endpoint that declares (or must declare) a body schema.
+- Body-accepting endpoints covered by this contract:
+  - `POST /v1/projects` — already declares a body schema today.
+  - `PATCH /v1/projects/:id` — does **not** yet declare a body schema.
+    It validates `name` imperatively inside the handler. Satisfying this
+    contract requires the implementation to add a body schema to PATCH
+    so Ajv can enforce `additionalProperties: false`.
+- Endpoints that do not declare a body schema (e.g. the deployments POST)
+  are out of scope. This contract governs schema-validated bodies, not
+  whether a route should have a schema — the PATCH clarification above
+  is the one exception, because this contract forces PATCH to gain a
+  schema as part of adoption.
 
 ## Error Response
 
