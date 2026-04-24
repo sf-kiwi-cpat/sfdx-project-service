@@ -61,6 +61,28 @@ describe('SFDX Project Service API', () => {
     });
   });
 
+  describe('Schema validation error formatter', () => {
+    // Exercises the non-additionalProperties branch of the custom
+    // schemaErrorFormatter in createApp(). POST body validation fails
+    // via Ajv's `type` keyword (a nested object vs string), which the
+    // formatter must pass through unchanged — only additionalProperties
+    // errors get the ": 'propertyName'" suffix.
+    it('passes through non-additionalProperties validation errors unchanged', async () => {
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: { nested: 'object' } })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+      expect(res.body.title).toBe('Bad Request');
+      // Fastify's default wording — no quoted-property suffix because
+      // this is a `type` error, not `additionalProperties`.
+      expect(res.body.detail).toMatch(/must be string/i);
+      expect(res.body.detail).not.toMatch(/additional properties/i);
+    });
+  });
+
   describe('Error handler', () => {
     it('returns 500 with generic message for non-Error thrown values', async () => {
       // Mock listTemplates to reject with a string (not an Error instance)
