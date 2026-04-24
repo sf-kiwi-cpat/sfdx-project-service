@@ -75,6 +75,10 @@ shape and are served as `application/problem+json`:
 - Returns 400 when the body contains an unknown property alongside `name`
   (e.g. `{ name: 'renamed', extraField: 'value' }`). The `detail` includes
   the offending property name (`extraField`).
+- Returns 400 naming the unknown property when the body contains only an
+  unknown property and no `name` (e.g. `{ wrongField: 'x' }`). The
+  `additionalProperties` check fires before the "name is required" check,
+  so the `detail` names the unknown property (`wrongField`), not `name`.
 - No rename is performed as a side effect of a rejected request — the
   project's name is unchanged in `GET /v1/projects` after a rejected PATCH.
 

@@ -146,6 +146,25 @@ describe('Reject unknown request body properties', () => {
       expect(res.body.detail).toContain('extraField');
     });
 
+    it('returns 400 naming the unknown property when the body has only an unknown property and no name', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ wrongField: 'x' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+      expect(res.body.title).toBe('Bad Request');
+      expect(typeof res.body.detail).toBe('string');
+      // The additionalProperties check must fire before the "name required"
+      // check, so a typo like { wrongField: 'x' } surfaces the unknown
+      // property name — not a generic "name is required" message.
+      expect(res.body.detail).toContain('wrongField');
+      expect(res.body.detail).not.toContain('name is required');
+    });
+
     it('does not rename the project when the body has an unknown property', async () => {
       const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
       const originalName = createRes.body.name;
