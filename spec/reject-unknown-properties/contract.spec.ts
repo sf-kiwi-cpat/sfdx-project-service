@@ -158,6 +158,21 @@ describe('Reject unknown request body properties', () => {
       expect(after.body).toEqual(before.body);
     });
 
+    it('rejects a case-variant of a known property as unknown', async () => {
+      // `Template` (capitalised) is a realistic typo that must NOT be
+      // silently accepted or case-folded to `template`. The unknown-
+      // property check is case-sensitive, which is the JSON Schema
+      // default for `additionalProperties: false`.
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ Template: 'local-react-test' })
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+      expect(res.body.detail).toContain('Template');
+      expect(res.body.detail).toMatch(/additional|unknown/i);
+    });
+
     it('still accepts a valid body with only known properties', async () => {
       await request(app.server)
         .post('/v1/projects')

@@ -72,6 +72,10 @@ shape and are served as `application/problem+json`:
   only that the `detail` mentions one and not both — the UX surfaces
   one offending key per response rather than listing every unknown
   key at once.
+- Returns 400 when a known property is misspelled as a case variant
+  (e.g. `{ Template: '...' }` is rejected as an unknown property, not
+  silently coerced to `template`). The unknown-property check is
+  case-sensitive.
 - No project is created as a side effect of a rejected request — the
   `GET /v1/projects` list is unchanged across a rejected POST (the
   assertion compares before/after lists, not against an empty list).
