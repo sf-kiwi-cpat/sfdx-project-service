@@ -30,6 +30,10 @@ same request returns 400 naming `name` as the offending property.
   whether a route should have a schema — the PATCH clarification above
   is the one exception, because this contract forces PATCH to gain a
   schema as part of adoption.
+- Non-object request bodies (JSON arrays, strings, numbers, null) are
+  out of scope. `Type.Object(...)` already rejects them with a 400 via
+  Fastify's type validator; the precise wording of that 400 is not
+  pinned by this contract.
 
 ## Error Response
 
