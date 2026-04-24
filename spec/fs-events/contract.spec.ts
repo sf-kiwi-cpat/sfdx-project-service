@@ -237,6 +237,20 @@ describe('GET /v1/projects/:id/fs/events', () => {
       }
     });
 
+    it('returns 400 Bad Request when Accept header is not text/event-stream', async () => {
+      // SSE endpoints require the SSE content negotiation header. Clients
+      // asking for anything else (e.g., `application/json`) are rejected
+      // before any stream setup. Real `EventSource` always sends the SSE
+      // header, so this only bites programmatic/misconfigured clients.
+      const res = await request(app.server)
+        .get(`/v1/projects/${projectId}/fs/events`)
+        .set('Accept', 'application/json')
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
     it('emits a `connected` event with the projectId on subscription', async () => {
       const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
       try {

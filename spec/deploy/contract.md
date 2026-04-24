@@ -39,6 +39,13 @@ The deployment system implements an **asynchronous deployment workflow** using S
 ### 2. GET `/v1/projects/:id/deployments/:deploymentId/events`
 **Stream deployment events in real-time (SSE)**
 
+**Required headers:**
+- `Accept: text/event-stream` — SSE content-negotiation header. Requests
+  without this header are rejected with **400 Bad Request**
+  (`application/problem+json`) before any stream setup. Real browser
+  `EventSource` always sends this header automatically; this only
+  affects programmatic or misconfigured clients.
+
 **Response:**
 - **200 OK** with `Content-Type: text/event-stream` and `Cache-Control: no-cache`
 - Streams Server-Sent Events as deployment progresses
@@ -97,6 +104,8 @@ data: <JSON>
   - No `WebApplication` component is in the deployment
 
 **Error Responses:**
+- **400 Bad Request** — `Accept` header is missing or not `text/event-stream`
+  - Returns `application/problem+json` (not SSE, client failed to connect)
 - **404 Not Found** — Project or deployment does not exist
   - Returns HTTP 404 (not SSE, client failed to connect)
 
@@ -183,8 +192,9 @@ data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...],"a
 ### Input Validation
 | Error | HTTP | Title | Detail |
 |-------|------|-------|--------|
-| Missing credentials | 400 | Bad Request | Authorization header is missing |
-| `instanceUrl` not a valid URL | 400 | Bad Request | instanceUrl must be a valid URL |
+| Missing credentials (POST) | 400 | Bad Request | Authorization header is missing |
+| `instanceUrl` not a valid URL (POST) | 400 | Bad Request | instanceUrl must be a valid URL |
+| `Accept` not `text/event-stream` (SSE GET) | 400 | Bad Request | SSE requires Accept: text/event-stream |
 | Project does not exist | 404 | Not Found | Project not found |
 
 ### Runtime
