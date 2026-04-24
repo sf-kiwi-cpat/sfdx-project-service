@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.claude/skills/cdd-common/scripts/*:*)"
+      "Bash(.claude/skills/cdd-common/scripts/find-my-prs *)"
     ],
     "deny": [
       "Bash(git * --no-verify*)"
