@@ -25,12 +25,13 @@ import { createApp } from '../../src/app.js';
 
 /**
  * Read just the response headers for an SSE endpoint and close immediately.
- * The route uses `reply.hijack()` so supertest would buffer forever — we need
- * a raw request to grab headers and abort before the stream starts flowing.
+ * supertest would buffer the stream forever — we need a raw request to grab
+ * headers and abort before the stream starts flowing.
  */
 async function readResponseHeaders(
   app: ReturnType<typeof createApp>,
-  url: string
+  url: string,
+  extraHeaders: Record<string, string> = {}
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders }> {
   await app.ready();
   const address = app.server.address();
@@ -46,7 +47,7 @@ async function readResponseHeaders(
         port,
         path: url,
         method: 'GET',
-        headers: { accept: 'text/event-stream' },
+        headers: { accept: 'text/event-stream', ...extraHeaders },
       },
       (res) => {
         const status = res.statusCode ?? 0;
@@ -89,17 +90,20 @@ describe('fs-events routes integration — SSE response headers', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('sets Access-Control-Allow-Origin so browsers permit cross-origin EventSource subscriptions', async () => {
-    // Regression: @fastify/cors runs in the Fastify response pipeline, which
-    // `reply.hijack()` bypasses for SSE. The route must set the CORS header
-    // explicitly on the raw response — otherwise browsers block the
-    // EventSource with a CORS error even though the request itself succeeds.
+  it('echoes the request Origin in Access-Control-Allow-Origin so browsers permit cross-origin EventSource subscriptions', async () => {
+    // @fastify/cors runs in the Fastify response pipeline with `origin: true`
+    // (see src/app.ts). Since @fastify/sse does not hijack the reply, the
+    // CORS plugin now runs on SSE routes the same as any other — a real
+    // browser `EventSource` sends `Origin` and gets it echoed back,
+    // unblocking the cross-origin subscription.
+    const origin = 'https://app.example.com';
     const { status, headers } = await readResponseHeaders(
       app,
-      `/v1/projects/${projectId}/fs/events`
+      `/v1/projects/${projectId}/fs/events`,
+      { origin }
     );
 
     expect(status).toBe(200);
-    expect(headers['access-control-allow-origin']).toBe('*');
+    expect(headers['access-control-allow-origin']).toBe(origin);
   });
 });
