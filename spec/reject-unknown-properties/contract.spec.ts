@@ -55,6 +55,13 @@
  * Valid requests (no unknown properties) must continue to succeed — the
  * fix must not introduce a regression for well-formed callers.
  *
+ * Fixture note: the negative (400) tests in this file intentionally
+ * avoid the template resolution path. Schema validation fires before
+ * template lookup, so the 400 tests all pass in a bare checkout without
+ * `npm run build` first. Only the positive 201 tests that send
+ * `{ template: 'local-react-test' }` depend on the local test template
+ * being built.
+ *
  * The AI implementation agent must NOT modify this file.
  */
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
