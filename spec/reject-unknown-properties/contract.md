@@ -70,6 +70,13 @@ shape and are served as `application/problem+json`:
   (`{ template: 'local-react-test' }`).
 - Continues to accept an empty body (`{}`).
 
+**Regression guard**
+- `orgAlias` is a known property and must not be rejected as an
+  unknown property. A body like `{ orgAlias: 'nonexistent' }` resolves
+  through the normal alias-lookup path (which produces a 400 when the
+  alias is absent) — the 400 is not an `additional properties` schema
+  error.
+
 ### PATCH `/v1/projects/:id`
 
 **400**

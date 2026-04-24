@@ -138,6 +138,24 @@ describe('Reject unknown request body properties', () => {
     it('still accepts an empty body', async () => {
       await request(app.server).post('/v1/projects').send({}).expect(201);
     });
+
+    it('treats orgAlias as a known property (regression guard)', async () => {
+      // `orgAlias` is a legitimate POST property today. If the schema is
+      // mis-configured (e.g. orgAlias left out of the Type.Object), it
+      // would be rejected as an unknown property instead of triggering
+      // the normal "alias not found" path. This test pins that the
+      // contract does not accidentally add orgAlias to the unknown list.
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ orgAlias: 'nonexistent-alias-abc123' })
+        .expect(400);
+
+      expect(res.body.status).toBe(400);
+      // The failure must be about the alias not being found, NOT about
+      // the schema rejecting `orgAlias` as an additional property.
+      expect(res.body.detail).not.toMatch(/additional properties/i);
+      expect(res.body.detail).not.toContain("'orgAlias'");
+    });
   });
 
   describe('PATCH /v1/projects/:id', () => {
