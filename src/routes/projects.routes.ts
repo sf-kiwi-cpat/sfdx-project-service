@@ -21,6 +21,7 @@ import { buildTree, readFile } from '../domain/files.js';
 import {
   createBlankProject,
   createProject,
+  getProject,
   getProjectDir,
   listProjects,
   renameProject,
@@ -50,6 +51,20 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const projects = await listProjects();
     return reply.send(projects);
   });
+
+  app.get(
+    '/projects/:id',
+    {
+      schema: {
+        params: Type.Object({ id: Type.String() }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const result = await getProject(id);
+      return reply.send(result);
+    }
+  );
 
   app.patch(
     '/projects/:id',

@@ -22,6 +22,7 @@ import os from 'node:os';
 import {
   createBlankProject,
   createProject,
+  getProject,
   getProjectDir,
   TemplateNotFoundError,
   ProjectNotFoundError,
@@ -181,6 +182,37 @@ describe('createProject', () => {
       } finally {
         await fs.chmod(projectsRoot, 0o755);
       }
+    });
+  });
+
+  describe('getProject', () => {
+    it('throws ProjectNotFoundError for a nonexistent project', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000000';
+      await expect(getProject(fakeUuid)).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('throws ProjectNotFoundError for malformed UUIDs', async () => {
+      await expect(getProject('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('falls back to new Date().toISOString() when meta has no lastAccessedAt', async () => {
+      // Create a project dir with a meta file that has no lastAccessedAt
+      // (simulates a legacy project on disk; updateLastAccessed runs first
+      // and writes the field, so this really only tests the defensive fallback).
+      const fakeUuid = '00000000-0000-0000-0000-00000000abcd';
+      const dirPath = path.join(projectsRoot, fakeUuid);
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.writeFile(
+        path.join(dirPath, '.project-meta.json'),
+        JSON.stringify({ name: 'legacy-project' })
+      );
+
+      const result = await getProject(fakeUuid);
+
+      expect(result.id).toBe(fakeUuid);
+      expect(result.name).toBe('legacy-project');
+      expect(typeof result.lastAccessedAt).toBe('string');
+      expect(new Date(result.lastAccessedAt).toISOString()).toBe(result.lastAccessedAt);
     });
   });
 });

@@ -285,6 +285,22 @@ export async function listProjects(): Promise<ProjectResult[]> {
 }
 
 /**
+ * Get a project by ID. Bumps lastAccessedAt and returns the post-bump
+ * record. Throws ProjectNotFoundError if the project does not exist or
+ * the ID fails UUID validation.
+ */
+export async function getProject(projectId: string): Promise<ProjectResult> {
+  const projectDir = await getProjectDir(projectId);
+  await updateLastAccessed(projectDir);
+  const meta = await readProjectMeta(projectDir);
+  return {
+    id: projectId,
+    name: meta.name,
+    lastAccessedAt: meta.lastAccessedAt ?? new Date().toISOString(),
+  };
+}
+
+/**
  * Rename a project. Throws if the project doesn't exist.
  */
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
