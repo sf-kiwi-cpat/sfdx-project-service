@@ -21,11 +21,12 @@
  * These tests define the contract for the Projects API:
  *   - POST /projects        — create a project (returns id + name + lastAccessedAt)
  *   - GET /projects          — list all projects (id + name + lastAccessedAt)
+ *   - GET /projects/:id      — retrieve a project by ID (id + name + lastAccessedAt)
  *   - PATCH /projects/:id    — rename a project (returns id + name + lastAccessedAt)
  *   - GET /projects/:id/tree — file tree for a project
  *
  * Every response that references a project includes lastAccessedAt. Create and
- * rename operations bump it; accessing a project by :id (PATCH, tree, file)
+ * rename operations bump it; accessing a project by :id (GET, PATCH, tree, file)
  * also updates it. A freshly created project's lastAccessedAt equals its
  * creation time. They are the source of truth for these endpoints' external
  * behavior. The AI implementation agent must NOT modify this file.
@@ -35,6 +36,7 @@ import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { createApp } from '../../src/app.js';
 
 describe('Projects API', () => {
@@ -267,6 +269,77 @@ describe('Projects API', () => {
         process.env.PROJECTS_ROOT = originalRoot;
         await fs.rm(emptyDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('GET /projects/:id', () => {
+    it('returns 200 with id, name, and lastAccessedAt for an existing project', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body).toHaveProperty('id', createRes.body.id);
+      expect(res.body).toHaveProperty('name');
+      expect(typeof res.body.name).toBe('string');
+      expect(res.body.name.length).toBeGreaterThan(0);
+      expect(res.body.name).toBe(createRes.body.name);
+      expect(res.body).toHaveProperty('lastAccessedAt');
+      expect(typeof res.body.lastAccessedAt).toBe('string');
+      expect(new Date(res.body.lastAccessedAt).toISOString()).toBe(res.body.lastAccessedAt);
+    });
+
+    it('bumps lastAccessedAt past the creation time', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      // Small delay so the access timestamp is observably later than creation.
+      await new Promise((r) => setTimeout(r, 10));
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body.lastAccessedAt > createRes.body.lastAccessedAt).toBe(true);
+    });
+
+    it('returned lastAccessedAt matches the value in GET /projects', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const getRes = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      const listRes = await request(app.server).get('/v1/projects').expect(200);
+      const listed = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+
+      expect(listed).toBeDefined();
+      expect(listed.lastAccessedAt).toBe(getRes.body.lastAccessedAt);
+    });
+
+    it('returns the renamed name after PATCH', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'my-custom-name' })
+        .expect(200);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body).toHaveProperty('name', 'my-custom-name');
+    });
+
+    it('returns 404 Problem Detail for a valid UUID that does not exist', async () => {
+      const missingId = randomUUID();
+
+      const res = await request(app.server).get(`/v1/projects/${missingId}`).expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+      expect(res.body).toHaveProperty('title');
+    });
+
+    it('returns 404 Problem Detail when the id is not a UUID', async () => {
+      const res = await request(app.server).get('/v1/projects/not-a-uuid').expect(404);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+      expect(res.body).toHaveProperty('title');
     });
   });
 
