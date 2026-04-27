@@ -311,17 +311,38 @@ describe('Projects API', () => {
       expect(listed.lastAccessedAt).toBe(getRes.body.lastAccessedAt);
     });
 
-    it('returns the renamed name after PATCH', async () => {
+    it('returns the renamed name and bumps lastAccessedAt past the PATCH time', async () => {
       const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
 
-      await request(app.server)
+      const patchRes = await request(app.server)
         .patch(`/v1/projects/${createRes.body.id}`)
         .send({ name: 'my-custom-name' })
         .expect(200);
 
+      // Small delay so the GET timestamp is observably later than the PATCH.
+      await new Promise((r) => setTimeout(r, 10));
+
       const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
 
       expect(res.body).toHaveProperty('name', 'my-custom-name');
+      expect(res.body.lastAccessedAt > patchRes.body.lastAccessedAt).toBe(true);
+    });
+
+    it('every GET bumps lastAccessedAt (not just the first access)', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const firstGet = await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+
+      // Small delay so the second bump is observably later than the first.
+      await new Promise((r) => setTimeout(r, 10));
+
+      const secondGet = await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+
+      expect(secondGet.body.lastAccessedAt > firstGet.body.lastAccessedAt).toBe(true);
     });
 
     it('returns 404 Problem Detail for a valid UUID that does not exist', async () => {

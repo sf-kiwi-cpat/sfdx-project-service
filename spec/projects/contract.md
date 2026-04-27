@@ -89,7 +89,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   - `id` equals the path parameter
   - `name` is the current name from the project's metadata (non-empty string); reflects any prior PATCH rename
   - `lastAccessedAt` is a valid ISO 8601 timestamp
-  - **Access side effect:** retrieval bumps `lastAccessedAt` to the current time. The returned value is the post-bump value, and is strictly greater than the creation time.
+  - **Access side effect:** every retrieval bumps `lastAccessedAt` to the current time, not just the first access after a mutation. The returned value is the post-bump value, and is strictly greater than both the creation time and any prior PATCH-time `lastAccessedAt`.
   - The returned `lastAccessedAt` matches the value that the next `GET /v1/projects` will report for this project
 
 - **404 Not Found** — Project does not exist, or `id` does not match the UUID shape
@@ -203,7 +203,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 - **POST /projects**: 6 tests (2 with template, 2 blank, 1 error, 1 create/list consistency)
 - **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
-- **GET /projects/:id**: 6 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name, 404 for valid-UUID miss, 404 for non-UUID)
+- **GET /projects/:id**: 7 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID)
 - **PATCH /projects/:id**: 6 tests (rename with lastAccessedAt bump, persistence, rename/list consistency, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 26 contract tests, 5 describe blocks
+- **Total**: 27 contract tests, 5 describe blocks
