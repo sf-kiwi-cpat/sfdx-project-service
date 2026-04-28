@@ -16,6 +16,7 @@ SF Project Service is a stateless Express REST API that manages SFDX projects an
 │  │ Router                             │  │
 │  │ ├─ GET /templates                 │  │
 │  │ ├─ POST /projects                 │  │
+│  │ ├─ GET /projects/:id              │  │
 │  │ ├─ GET /projects/:id/tree         │  │
 │  │ └─ POST /projects/:id/deploy      │  │
 │  └────────────────────────────────────┘  │
@@ -155,7 +156,7 @@ RFC 9457 Problem Details error handling:
 ### Routes (`routes/*.ts`)
 Express route handlers. Each module creates a router and defines one or more endpoints:
 - `templates.routes.ts` — GET /templates
-- `projects.routes.ts` — POST /projects, GET /projects/:id/tree
+- `projects.routes.ts` — POST /projects, GET /projects/:id, GET /projects/:id/tree
 - `deploy.routes.ts` — POST /projects/:id/deploy
 
 ## Security Architecture

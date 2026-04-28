@@ -1,6 +1,6 @@
 # API Reference
 
-SF Project Service provides four core endpoints for template listing, project creation, file inspection, and deployment.
+SF Project Service provides core endpoints for template listing, project creation and retrieval, file inspection, and deployment.
 
 ## Base URL
 
@@ -63,11 +63,19 @@ Create a new project from a template.
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440000"
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "brave-falcon",
+  "lastAccessedAt": "2026-04-27T12:00:00.000Z",
+  "initialMessages": [
+    { "role": "user", "content": "Build me something" },
+    { "role": "assistant", "content": "On it!" }
+  ]
 }
 ```
 
-The `id` is a UUID that uniquely identifies the created project and is used in subsequent operations.
+The `id` is a UUID that uniquely identifies the created project and is used in subsequent operations. `name` is an auto-generated human-readable identifier that can be renamed via `PATCH /projects/:id`. `lastAccessedAt` is an ISO 8601 timestamp that updates on every access by ID.
+
+`initialMessages` is only present when the project was created from a template whose `template.json` declares a non-empty `initialMessages` array. Blank projects and templates without `initialMessages` omit the field entirely.
 
 **Response: 400 Bad Request**
 
@@ -88,6 +96,46 @@ The `id` is a UUID that uniquely identifies the created project and is used in s
   "detail": "Template not found: unknown-template"
 }
 ```
+
+---
+
+### GET /projects/:id
+
+Retrieve a project by ID.
+
+**Path Parameters**
+
+- `id` (string, UUID): Project identifier
+
+**Response: 200 OK**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "brave-falcon",
+  "lastAccessedAt": "2026-04-27T12:00:00.000Z",
+  "initialMessages": [
+    { "role": "user", "content": "Build me something" },
+    { "role": "assistant", "content": "On it!" }
+  ]
+}
+```
+
+Every retrieval bumps `lastAccessedAt` to the current time. The returned value is strictly greater than the creation time (and any prior rename time).
+
+`initialMessages` is only present when the project was created from a template that defined them. Blank projects and templates without `initialMessages` omit the field entirely. PATCH rename preserves `initialMessages` untouched.
+
+**Response: 404 Not Found** (if project doesn't exist or `id` is not a UUID)
+
+```json
+{
+  "status": 404,
+  "title": "Project Not Found",
+  "detail": "Project not found: invalid-id"
+}
+```
+
+Malformed UUIDs are treated as "not found" — the only answerable question about a project ID is whether the project exists.
 
 ---
 

@@ -19,9 +19,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import AdmZip from 'adm-zip';
 import {
   createBlankProject,
   createProject,
+  getProject,
   getProjectDir,
   TemplateNotFoundError,
   ProjectNotFoundError,
@@ -140,6 +142,124 @@ describe('createProject', () => {
     });
   });
 
+  async function createTemplateWithZip(
+    templateId: string,
+    templateJson: Record<string, unknown>
+  ): Promise<void> {
+    const templateDir = path.join(templatesDir, templateId);
+    await fs.mkdir(templateDir, { recursive: true });
+
+    const zip = new AdmZip();
+    zip.addFile('README.md', Buffer.from('# Test'));
+    zip.writeZip(path.join(templateDir, 'content.zip'));
+
+    await fs.writeFile(path.join(templateDir, 'template.json'), JSON.stringify(templateJson));
+  }
+
+  describe('initialMessages', () => {
+    it('persists initialMessages from template.json into .project-meta.json', async () => {
+      const messages = [
+        { role: 'user', content: 'Build me something' },
+        { role: 'assistant', content: 'On it!' },
+      ];
+      await createTemplateWithZip('with-messages', {
+        id: 'with-messages',
+        name: 'With Messages',
+        description: 'test',
+        initialMessages: messages,
+      });
+
+      const result = await createProject('with-messages');
+
+      expect(result.initialMessages).toEqual(messages);
+      const meta = JSON.parse(
+        await fs.readFile(path.join(projectsRoot, result.id, '.project-meta.json'), 'utf-8')
+      );
+      expect(meta.initialMessages).toEqual(messages);
+    });
+
+    it('omits initialMessages when template.json has no initialMessages key', async () => {
+      await createTemplateWithZip('no-messages', {
+        id: 'no-messages',
+        name: 'No Messages',
+        description: 'test',
+      });
+
+      const result = await createProject('no-messages');
+
+      expect(result.initialMessages).toBeUndefined();
+      const meta = JSON.parse(
+        await fs.readFile(path.join(projectsRoot, result.id, '.project-meta.json'), 'utf-8')
+      );
+      expect(meta.initialMessages).toBeUndefined();
+    });
+
+    it('omits initialMessages when template.json has an empty array', async () => {
+      await createTemplateWithZip('empty-messages', {
+        id: 'empty-messages',
+        name: 'Empty Messages',
+        description: 'test',
+        initialMessages: [],
+      });
+
+      const result = await createProject('empty-messages');
+
+      expect(result.initialMessages).toBeUndefined();
+      const meta = JSON.parse(
+        await fs.readFile(path.join(projectsRoot, result.id, '.project-meta.json'), 'utf-8')
+      );
+      expect(meta.initialMessages).toBeUndefined();
+    });
+
+    it('still creates the project when template.json is missing', async () => {
+      const templateDir = path.join(templatesDir, 'zip-only');
+      await fs.mkdir(templateDir, { recursive: true });
+      const zip = new AdmZip();
+      zip.addFile('README.md', Buffer.from('# Test'));
+      zip.writeZip(path.join(templateDir, 'content.zip'));
+
+      const result = await createProject('zip-only');
+
+      expect(result.id).toBeDefined();
+      expect(result.initialMessages).toBeUndefined();
+    });
+
+    it('filters out malformed elements from template.json initialMessages', async () => {
+      // Mix of valid and malformed entries: missing content, missing role,
+      // wrong types, a non-object primitive, and one valid message.
+      await createTemplateWithZip('mixed-messages', {
+        id: 'mixed-messages',
+        name: 'Mixed Messages',
+        description: 'test',
+        initialMessages: [
+          { role: 'user' }, // missing content
+          { content: 'no role' }, // missing role
+          { role: 42, content: 'bad role type' },
+          42,
+          null,
+          { role: 'user', content: 'the one good one' },
+        ],
+      });
+
+      const result = await createProject('mixed-messages');
+
+      expect(result.initialMessages).toEqual([{ role: 'user', content: 'the one good one' }]);
+    });
+
+    it('omits initialMessages when every element is malformed', async () => {
+      await createTemplateWithZip('all-bad-messages', {
+        id: 'all-bad-messages',
+        name: 'All Bad Messages',
+        description: 'test',
+        initialMessages: [{ role: 'user' }, 42, null],
+      });
+
+      const result = await createProject('all-bad-messages');
+
+      expect(result.initialMessages).toBeUndefined();
+    });
+  });
+
   describe('getProjectDir', () => {
     it('throws ProjectNotFoundError for invalid UUID format', async () => {
       await expect(getProjectDir('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
@@ -181,6 +301,63 @@ describe('createProject', () => {
       } finally {
         await fs.chmod(projectsRoot, 0o755);
       }
+    });
+  });
+
+  describe('getProject', () => {
+    it('throws ProjectNotFoundError for a nonexistent project', async () => {
+      const fakeUuid = '00000000-0000-0000-0000-000000000000';
+      await expect(getProject(fakeUuid)).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('throws ProjectNotFoundError for malformed UUIDs', async () => {
+      await expect(getProject('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it('falls back to new Date().toISOString() when meta has no lastAccessedAt', async () => {
+      // Create a project dir with a meta file that has no lastAccessedAt
+      // (simulates a legacy project on disk; updateLastAccessed runs first
+      // and writes the field, so this really only tests the defensive fallback).
+      const fakeUuid = '00000000-0000-0000-0000-00000000abcd';
+      const dirPath = path.join(projectsRoot, fakeUuid);
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.writeFile(
+        path.join(dirPath, '.project-meta.json'),
+        JSON.stringify({ name: 'legacy-project' })
+      );
+
+      const result = await getProject(fakeUuid);
+
+      expect(result.id).toBe(fakeUuid);
+      expect(result.name).toBe('legacy-project');
+      expect(typeof result.lastAccessedAt).toBe('string');
+      expect(new Date(result.lastAccessedAt).toISOString()).toBe(result.lastAccessedAt);
+    });
+
+    it('surfaces initialMessages when present in project meta', async () => {
+      const messages = [
+        { role: 'user', content: 'Build me something' },
+        { role: 'assistant', content: 'On it!' },
+      ];
+      await createTemplateWithZip('get-with-messages', {
+        id: 'get-with-messages',
+        name: 'Get With Messages',
+        description: 'test',
+        initialMessages: messages,
+      });
+      const { id } = await createProject('get-with-messages');
+
+      const result = await getProject(id);
+
+      expect(result.initialMessages).toEqual(messages);
+    });
+
+    it('omits initialMessages when not present in project meta', async () => {
+      const { id } = await createBlankProject();
+
+      const result = await getProject(id);
+
+      expect(result.initialMessages).toBeUndefined();
     });
   });
 });
