@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
+import fastifySSE from '@fastify/sse';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { logger } from './logger.js';
@@ -37,6 +38,13 @@ export function createApp() {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   });
+
+  // SSE routes opt in via `{ sse: true }`. 15s heartbeat matches the pre-plugin
+  // hand-rolled cadence so nginx/proxies tuned to the old interval keep
+  // working unchanged. `.default` is the CJS→ESM interop shape: the plugin
+  // ships CJS with an ESM-style .d.ts, so TypeScript needs `.default` to type
+  // the register call (runtime resolves to the same function either way).
+  app.register(fastifySSE.default, { heartbeatInterval: 15_000 });
 
   app.register(fastifySwagger, {
     openapi: {
