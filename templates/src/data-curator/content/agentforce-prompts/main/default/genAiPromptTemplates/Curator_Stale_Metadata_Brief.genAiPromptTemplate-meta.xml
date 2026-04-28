@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenAiPromptTemplate xmlns="http://soap.sforce.com/2006/04/metadata">
+    <developerName>Curator_Stale_Metadata_Brief</developerName>
+    <masterLabel>Curator Stale Metadata Brief</masterLabel>
+    <templateVersions>
+        <content>You are helping a Salesforce admin assess stale metadata risk.
+
+Task:
+{!$Input:request_context}
+
+Stale Review Snapshot:
+{!$Input:inventory_snapshot}
+
+Produce:
+1. A short risk summary
+2. Which assets need re-attestation
+3. Which assets look like archival candidates
+4. A recommended next step
+
+Highlight critical-process risk when the snapshot indicates it.</content>
+        <inputs>
+            <apiName>request_context</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:request_context</referenceName>
+            <required>true</required>
+        </inputs>
+        <inputs>
+            <apiName>inventory_snapshot</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:inventory_snapshot</referenceName>
+            <required>true</required>
+        </inputs>
+        <primaryModel>sfdc_ai__DefaultGPT4Omni</primaryModel>
+        <status>Published</status>
+    </templateVersions>
+    <type>einstein_gpt__flex</type>
+    <visibility>Global</visibility>
+</GenAiPromptTemplate>

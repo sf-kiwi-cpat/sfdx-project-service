@@ -1,0 +1,11 @@
+{
+  "orgName": "Data Curator",
+  "edition": "Enterprise",
+  "features": ["PromptBuilder", "Einstein1AIPlatform"],
+  "settings": {
+    "einsteinGptSettings": {
+      "enableEinsteinGptPlatform": true
+    }
+  }
+}
+
