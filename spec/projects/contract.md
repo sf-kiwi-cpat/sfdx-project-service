@@ -6,6 +6,8 @@
 
 The projects system manages SFDX project creation, listing, retrieval, naming, and file tree browsing. Projects can be created from a **named template** (unzipped from disk) or as a **blank project** (minimal SFDX scaffold generated in-memory). Every project receives a human-readable **name** at creation time, and can be renamed later. Each project tracks a **lastAccessedAt** ISO 8601 timestamp that updates whenever the project is accessed by ID. Every response that references a project includes `lastAccessedAt`.
 
+Templates may optionally declare an `initialMessages` array in their `template.json`. When a project is created from such a template, those messages are persisted to the project's metadata and surfaced on both `POST /projects` (create) and `GET /projects/:id` (retrieve) responses so a downstream UI (e.g., an agentic chat panel) can seed a conversation with pre-written context.
+
 ## Endpoints
 
 ### POST `/v1/projects`
@@ -24,14 +26,21 @@ The projects system manages SFDX project creation, listing, retrieval, naming, a
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     "name": "brave-falcon",
-    "lastAccessedAt": "2026-04-22T14:00:00.000Z"
+    "lastAccessedAt": "2026-04-22T14:00:00.000Z",
+    "initialMessages": [
+      { "role": "user", "content": "Build me something" },
+      { "role": "assistant", "content": "On it!" }
+    ]
   }
   ```
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
   - `name` is a non-empty string (auto-generated)
   - `lastAccessedAt` is a valid ISO 8601 timestamp equal to the creation time
-  - Returned for both template-based and blank projects
+  - `initialMessages` (optional) — present as a non-empty array when the template's `template.json` declares `initialMessages`; each element has non-empty `role` (string) and non-empty `content` (string)
+  - `initialMessages` is omitted entirely (not an empty array) when the project was created blank or the template does not declare them
+  - Returned for both template-based and blank projects (with the `initialMessages` rules above)
   - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
+  - The returned `initialMessages` (when present) matches the value that `GET /v1/projects/:id` will return for this project
 
 - **400 Bad Request** — Invalid input
   - Template name is not recognized
@@ -66,6 +75,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   - A freshly created project's `lastAccessedAt` equals its creation time
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
+  - `initialMessages` is intentionally NOT surfaced in the list response (detail-only field; see GET `/v1/projects/:id`)
 
 ---
 
@@ -83,12 +93,19 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     "name": "brave-falcon",
-    "lastAccessedAt": "2026-04-27T21:13:06.000Z"
+    "lastAccessedAt": "2026-04-27T21:13:06.000Z",
+    "initialMessages": [
+      { "role": "user", "content": "Build me something" },
+      { "role": "assistant", "content": "On it!" }
+    ]
   }
   ```
   - `id` equals the path parameter
   - `name` is the current name from the project's metadata (non-empty string); reflects any prior PATCH rename
   - `lastAccessedAt` is a valid ISO 8601 timestamp
+  - `initialMessages` (optional) — present as a non-empty array when the project was created from a template whose `template.json` declared initialMessages; each element has non-empty `role` (string) and non-empty `content` (string)
+  - `initialMessages` is omitted entirely (not an empty array) for blank projects or projects created from templates without initialMessages
+  - `initialMessages` is preserved across PATCH rename — rename does not clear or modify it
   - **Access side effect:** every retrieval bumps `lastAccessedAt` to the current time, not just the first access after a mutation. The returned value is the post-bump value, and is strictly greater than both the creation time and any prior PATCH-time `lastAccessedAt`.
   - The returned `lastAccessedAt` matches the value that the next `GET /v1/projects` will report for this project
 
@@ -117,6 +134,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
   - Name change is persisted and reflected in subsequent `GET /v1/projects` calls
   - `lastAccessedAt` is bumped to the rename time (strictly greater than the prior value)
   - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
+  - `initialMessages`, when set at project creation, is preserved through rename and can be observed via a subsequent `GET /v1/projects/:id`
 
 - **400 Bad Request** — Invalid input
   - `name` field is missing or empty string
@@ -170,9 +188,17 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Blank projects are scaffolded in-memory — no zip file, no disk lookup
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
 
+### Templates Can Seed Initial Agent Messages
+- Templates may declare an `initialMessages` array in their `template.json`, each element `{ role: string, content: string }`
+- When a project is created from such a template, those messages are persisted into the project's metadata (`.project-meta.json`) at creation time
+- Both the `POST /v1/projects` create response and the `GET /v1/projects/:id` retrieve response surface `initialMessages` when present — clients can seed an agent conversation without re-fetching
+- Blank projects and templates without `initialMessages` omit the field entirely — never returned as an empty array
+- `initialMessages` is read-only post-creation: no endpoint mutates it, and PATCH rename leaves it untouched
+- Role vocabulary and content length are unconstrained by this contract; downstream consumers (UI, agent service) are responsible for validating what they accept
+
 ### Uniform Response Shape
-- Both blank and template-based creation return the same `{ id, name, lastAccessedAt }` response
-- `GET /v1/projects/:id` returns the same shape, matching create, rename, and list
+- Both blank and template-based creation return the same core `{ id, name, lastAccessedAt }` response; optional fields (`initialMessages`, `targetOrg`) appear when set
+- `GET /v1/projects/:id` returns the same shape, matching create, rename, and list for the core fields, and additionally surfaces `initialMessages` when present
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
 - Response shape is consistent across create, retrieve, rename, and list — clients never have to reconstruct `lastAccessedAt` themselves
@@ -181,6 +207,10 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 - Requests whose `:id` path parameter does not match the UUID shape are rejected as 404, not 400
 - This keeps the contract honest: the only answerable question about a project ID is "does this project exist?" A malformed ID is just one kind of "no"
 - Consistent across GET `/:id`, PATCH `/:id`, and GET `/:id/tree`
+
+### Initial Messages Are Detail-Only
+- Like `targetOrg`, `initialMessages` is not surfaced in `GET /v1/projects` (list) — clients fetch the field per-project via `GET /:id` or receive it inline on `POST /projects` creation
+- Keeps the list response compact for UIs that only need ID, name, and recency
 
 ### Stateless
 - No "active project" concept — every request identifies the project by ID
@@ -201,9 +231,9 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 
 ## Test Summary
 
-- **POST /projects**: 6 tests (2 with template, 2 blank, 1 error, 1 create/list consistency)
+- **POST /projects**: 9 tests (2 with template, 2 blank, 1 error, 1 create/list consistency, 1 initialMessages from template, 1 initialMessages absent on blank, 1 create/get initialMessages consistency)
 - **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
-- **GET /projects/:id**: 7 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID)
+- **GET /projects/:id**: 10 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH)
 - **PATCH /projects/:id**: 6 tests (rename with lastAccessedAt bump, persistence, rename/list consistency, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Total**: 27 contract tests, 5 describe blocks
+- **Total**: 33 contract tests, 5 describe blocks

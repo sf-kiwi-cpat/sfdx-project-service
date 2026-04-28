@@ -19,17 +19,26 @@
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for the Projects API:
- *   - POST /projects        — create a project (returns id + name + lastAccessedAt)
+ *   - POST /projects        — create a project (returns id + name + lastAccessedAt, + initialMessages when template defines them)
  *   - GET /projects          — list all projects (id + name + lastAccessedAt)
- *   - GET /projects/:id      — retrieve a project by ID (id + name + lastAccessedAt)
+ *   - GET /projects/:id      — retrieve a project by ID (id + name + lastAccessedAt, + initialMessages when present)
  *   - PATCH /projects/:id    — rename a project (returns id + name + lastAccessedAt)
  *   - GET /projects/:id/tree — file tree for a project
  *
  * Every response that references a project includes lastAccessedAt. Create and
  * rename operations bump it; accessing a project by :id (GET, PATCH, tree, file)
  * also updates it. A freshly created project's lastAccessedAt equals its
- * creation time. They are the source of truth for these endpoints' external
- * behavior. The AI implementation agent must NOT modify this file.
+ * creation time.
+ *
+ * Templates may declare an initialMessages array in their template.json. When
+ * a project is created from such a template, those messages are persisted to
+ * the project's metadata and surfaced on both POST /projects (create) and
+ * GET /projects/:id (retrieve) responses. initialMessages is detail-only — it
+ * is NOT included in GET /projects (list). Blank projects and templates
+ * without initialMessages omit the field entirely (not an empty array).
+ *
+ * They are the source of truth for these endpoints' external behavior. The
+ * AI implementation agent must NOT modify this file.
  */
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
@@ -150,6 +159,39 @@ describe('Projects API', () => {
       const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
       expect(config.packageDirectories).toBeInstanceOf(Array);
       expect(config.packageDirectories.length).toBeGreaterThan(0);
+    });
+
+    it('returns initialMessages when the template defines them', async () => {
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      expect(Array.isArray(res.body.initialMessages)).toBe(true);
+      expect(res.body.initialMessages.length).toBeGreaterThan(0);
+      for (const msg of res.body.initialMessages) {
+        expect(typeof msg.role).toBe('string');
+        expect(msg.role.length).toBeGreaterThan(0);
+        expect(typeof msg.content).toBe('string');
+        expect(msg.content.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('omits initialMessages when creating a blank project (no template)', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      expect(res.body.initialMessages).toBeUndefined();
+    });
+
+    it('initialMessages in the create response matches the value returned by GET /projects/:id', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const getRes = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(getRes.body.initialMessages).toEqual(createRes.body.initialMessages);
     });
   });
 
@@ -361,6 +403,50 @@ describe('Projects API', () => {
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(404);
       expect(res.body).toHaveProperty('title');
+    });
+
+    it('returns initialMessages for a project created from a template that defines them', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(Array.isArray(res.body.initialMessages)).toBe(true);
+      expect(res.body.initialMessages.length).toBeGreaterThan(0);
+      for (const msg of res.body.initialMessages) {
+        expect(typeof msg.role).toBe('string');
+        expect(msg.role.length).toBeGreaterThan(0);
+        expect(typeof msg.content).toBe('string');
+        expect(msg.content.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('omits initialMessages for a blank project', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body.initialMessages).toBeUndefined();
+    });
+
+    it('preserves initialMessages across PATCH rename', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+      const seeded = createRes.body.initialMessages;
+      expect(Array.isArray(seeded) && seeded.length > 0).toBe(true);
+
+      await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'renamed-with-seed' })
+        .expect(200);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body.initialMessages).toEqual(seeded);
     });
   });
 
