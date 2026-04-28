@@ -3,5 +3,15 @@
   "name": "Local React Test",
   "description": "Real-time deployment activity dashboard for Salesforce orgs",
   "categories": ["Development", "Testing"],
-  "visible": false
+  "visible": false,
+  "initialMessages": [
+    {
+      "role": "user",
+      "content": "I want to build a real-time deployment activity dashboard for my Salesforce org. It should show recent deployments with status (Queued/In Progress/Succeeded/Failed), component counts, start time, and duration. I need filtering by status and date range, auto-refresh while deployments are running, and a detail view that lists every component in a deployment with its individual result."
+    },
+    {
+      "role": "assistant",
+      "content": "I'll build that for you. The project has a React frontend ready to go. I'll start with the deployment list view and status polling, then add filtering and the component detail drilldown. Here goes!"
+    }
+  ]
 }

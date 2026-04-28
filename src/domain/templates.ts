@@ -33,6 +33,7 @@ interface TemplateMeta {
   description: string;
   categories?: string[];
   visible?: boolean;
+  initialMessages?: { role: string; content: string }[];
 }
 
 /**
