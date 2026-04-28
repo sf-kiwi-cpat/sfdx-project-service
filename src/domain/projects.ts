@@ -98,6 +98,12 @@ export interface Message {
   content: string;
 }
 
+function isMessage(value: unknown): value is Message {
+  if (typeof value !== 'object' || value === null) return false;
+  const m = value as Record<string, unknown>;
+  return typeof m.role === 'string' && typeof m.content === 'string';
+}
+
 interface ProjectMeta {
   name: string;
   lastAccessedAt?: string;
@@ -265,9 +271,12 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
       path.join(getTemplatesDir(), templateId, 'template.json'),
       'utf-8'
     );
-    const templateMeta = JSON.parse(raw) as { initialMessages?: Message[] };
-    if (Array.isArray(templateMeta.initialMessages) && templateMeta.initialMessages.length > 0) {
-      initialMessages = templateMeta.initialMessages;
+    const templateMeta = JSON.parse(raw) as { initialMessages?: unknown };
+    if (Array.isArray(templateMeta.initialMessages)) {
+      const valid = templateMeta.initialMessages.filter(isMessage);
+      if (valid.length > 0) {
+        initialMessages = valid;
+      }
     }
   } catch {
     // template.json is optional for initialMessages; absence is not an error

@@ -19,6 +19,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
+import type { Message } from './projects.js';
 
 export interface Template {
   id: string;
@@ -33,7 +34,7 @@ interface TemplateMeta {
   description: string;
   categories?: string[];
   visible?: boolean;
-  initialMessages?: { role: string; content: string }[];
+  initialMessages?: Message[];
 }
 
 /**

@@ -223,6 +223,41 @@ describe('createProject', () => {
       expect(result.id).toBeDefined();
       expect(result.initialMessages).toBeUndefined();
     });
+
+    it('filters out malformed elements from template.json initialMessages', async () => {
+      // Mix of valid and malformed entries: missing content, missing role,
+      // wrong types, a non-object primitive, and one valid message.
+      await createTemplateWithZip('mixed-messages', {
+        id: 'mixed-messages',
+        name: 'Mixed Messages',
+        description: 'test',
+        initialMessages: [
+          { role: 'user' }, // missing content
+          { content: 'no role' }, // missing role
+          { role: 42, content: 'bad role type' },
+          42,
+          null,
+          { role: 'user', content: 'the one good one' },
+        ],
+      });
+
+      const result = await createProject('mixed-messages');
+
+      expect(result.initialMessages).toEqual([{ role: 'user', content: 'the one good one' }]);
+    });
+
+    it('omits initialMessages when every element is malformed', async () => {
+      await createTemplateWithZip('all-bad-messages', {
+        id: 'all-bad-messages',
+        name: 'All Bad Messages',
+        description: 'test',
+        initialMessages: [{ role: 'user' }, 42, null],
+      });
+
+      const result = await createProject('all-bad-messages');
+
+      expect(result.initialMessages).toBeUndefined();
+    });
   });
 
   describe('getProjectDir', () => {
