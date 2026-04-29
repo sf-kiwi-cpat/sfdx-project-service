@@ -78,18 +78,6 @@ server-side using this priority chain:
   }
   ```
 
-- `progress` — Component deployed (delivered by SDR `onUpdate` callback).
-  ```json
-  {
-    "deploymentId": "deploy_<unique>",
-    "timestamp": "2026-04-29T10:00:00.000Z",
-    "status": "InProgress",
-    "numberComponentsDeployed": 2,
-    "numberComponentsTotal": 5,
-    "components": [{ "fullName": "Hello_World__c", "type": "CustomObject", "state": "Created" }]
-  }
-  ```
-
 - `warning` — An optional stage failed; deployment continues. Emitted only
   for staged deploys.
   ```json
@@ -272,7 +260,11 @@ sent.
 - `POST /v1/projects/:id/deployments` — 1 describe block, 10 tests covering
   auth resolution (7) and basic flow (2) plus an "ignore headers" test (1).
 - `GET /v1/projects/:id/deployments/:deploymentId/events (SSE)`:
-  - Single-pass: 1 describe block, 6 tests.
+  - Single-pass: 1 describe block, 7 tests (including a `start` event assertion).
   - Staged: 1 describe block, 5 tests.
-- `Template deployStages schema` — 1 describe block, 2 sentinel tests; the
-  build-time validation is enforced in `scripts/zip-templates.js`.
+
+**Progress events are out of scope for this PR.** The SDR `onUpdate` callback
+is mocked to return `undefined`, so the contract does not currently test that
+per-component progress updates are wired to an SSE `progress` event. A future
+PR may add that coverage alongside an implementation that exercises the
+callback.
