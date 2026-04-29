@@ -32,7 +32,32 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
  * Create and configure the Fastify app. Exported for testing.
  */
 export function createApp() {
-  const app = Fastify({ loggerInstance: logger });
+  const app = Fastify({
+    loggerInstance: logger,
+    // Override @fastify/ajv-compiler defaults: `removeAdditional: true` would
+    // silently strip unknown properties before `additionalProperties: false`
+    // could reject them. Setting it to false lets schema validation surface
+    // typos and unsupported fields instead of hiding them.
+    ajv: { customOptions: { removeAdditional: false } },
+    // Default formatter produces "body must NOT have additional properties"
+    // without naming the offending key. Callers need the property name to
+    // identify the typo — append it when the keyword is additionalProperties.
+    schemaErrorFormatter: (errors, dataVar) => {
+      const parts: string[] = [];
+      for (const e of errors) {
+        let message = `${dataVar}${e.instancePath || ''} ${e.message}`;
+        if (
+          e.keyword === 'additionalProperties' &&
+          typeof (e.params as { additionalProperty?: unknown })?.additionalProperty === 'string'
+        ) {
+          const key = (e.params as { additionalProperty: string }).additionalProperty;
+          message += `: '${key}'`;
+        }
+        parts.push(message);
+      }
+      return new Error(parts.join(', '));
+    },
+  });
 
   app.register(fastifyCors, {
     origin: true,
