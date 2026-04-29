@@ -339,6 +339,16 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       expect(res.headers['content-type']).toContain('text/event-stream');
     });
 
+    it('emits a start event carrying the deploymentId', async () => {
+      const res = await request(app.server)
+        .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .expect(200);
+
+      const startEvents = parseEventsOfType(res.text, 'start');
+      expect(startEvents).toHaveLength(1);
+      expect(startEvents[0].deploymentId).toBe(deploymentId);
+    });
+
     it('returns Cache-Control: no-cache header for SSE stream', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
