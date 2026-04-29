@@ -191,9 +191,9 @@ async function runOneDeploy(
  * abort the remaining stages; optional-stage failures emit a warning
  * SSE event and continue.
  *
- * Staged deploys skip the React/Vite build step because stage manifests
- * target explicit metadata components rather than webapp source output.
- * A future PR can add per-stage build hooks if templates need them.
+ * The React/Vite build runs once up front (if the project has React
+ * sources) so any UIBundle-bearing stage ships the latest built assets.
+ * Vite is a no-op when there are no .tsx/.jsx files.
  *
  * Aggregated result shape:
  *   status = 'Failed'                 — any required stage failed
@@ -210,6 +210,10 @@ async function runStagedDeploy(
   auth: ResolvedAuth | OrgCredentials,
   connection: Connection
 ): Promise<void> {
+  if (await hasReactFiles(projectDir)) {
+    await runViteBuild(projectDir);
+  }
+
   const stageSummaries: DeploymentStageSummary[] = [];
   const warnings: DeploymentWarning[] = [];
   const allFileResponses: Array<{ fullName: string; type: string; state: string }> = [];
