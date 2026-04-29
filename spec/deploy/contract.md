@@ -263,7 +263,11 @@ sent.
   auth resolution (7) and basic flow (2) plus an "ignore headers" test (1).
 - `GET /v1/projects/:id/deployments/:deploymentId/events (SSE)`:
   - Single-pass: 1 describe block, 7 tests (including a `start` event assertion).
-  - Staged: 1 describe block, 5 tests.
+  - Staged (shared fixture): 1 describe block, 4 tests.
+  - Staged (optional-middle-stage fixture): 1 describe block, 1 test. This
+    scenario needs a template where the optional stage is in the middle of
+    the list, so it lives in its own describe block with its own `beforeAll`
+    / `afterAll` lifecycle to keep fixtures cleanly scoped.
 
 **Progress events are out of scope for this PR.** The SDR `onUpdate` callback
 is mocked to return `undefined`, so the contract does not currently test that

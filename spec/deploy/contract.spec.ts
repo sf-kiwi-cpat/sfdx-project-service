@@ -619,10 +619,19 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       expect(completeData!.warnings).toHaveLength(1);
       expect(completeData!.warnings[0].stage).toBe('manifest/bundle-package.xml');
     });
+  });
 
-    it('optional stage failure: continues to run remaining stages', async () => {
-      // Fail only the second stage (which we mark optional via a different template).
-      await cleanupStagedTemplateProject(tmpDir);
+  // Own describe block with an independent tmpdir so the fixture lifecycle
+  // cannot leak into the sibling 'staged deploy' block. The prior structure
+  // reassigned `tmpDir` mid-describe, which made `afterAll` ambiguous about
+  // which fixture it was cleaning up.
+  describe('staged deploy: optional middle stage failure continues', () => {
+    let app: ReturnType<typeof createApp>;
+    let tmpDir: string;
+    let projectId: string;
+    const mockPollStatus = vi.fn();
+
+    beforeAll(async () => {
       const setup = await setupStagedTemplateProject({
         stages: [
           { manifest: 'manifest/package.xml' },
@@ -632,8 +641,14 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       });
       tmpDir = setup.tmpDir;
       projectId = setup.projectId;
+    });
 
-      await app.close();
+    afterAll(async () => {
+      await cleanupStagedTemplateProject(tmpDir);
+    });
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
       app = createApp();
       await app.ready();
 
@@ -645,7 +660,14 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       mockConnectionCreate.mockResolvedValue({
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
+    });
 
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await app.close();
+    });
+
+    it('runs all three stages even when the optional middle stage fails', async () => {
       mockPollStatus
         .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp())
         .mockResolvedValueOnce(createFailedDeployResponse())
