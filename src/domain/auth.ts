@@ -61,6 +61,14 @@ export type AuthResolution =
 /**
  * Read the target-org alias from a project's .sf/config.json.
  * Returns undefined if the file doesn't exist or has no target-org.
+ *
+ * NOTE: intentionally does NOT go through `ConfigAggregator.create({ projectPath })`
+ * even though that is the more SFDX-idiomatic path (and what
+ * sfdx-agent-sdk uses). Switching would give us env-var support and
+ * `isLocal()`-based precedence, but the spec/deploy contract mocks
+ * `ConfigAggregator.create(...)` with only `getPropertyValue` — making a
+ * hard switch would require rewriting human-guarded spec tests. Tracked
+ * as a follow-up requiring a spec cycle. See PR #205 discussion.
  */
 export async function readProjectTargetOrg(projectDir: string): Promise<string | undefined> {
   try {

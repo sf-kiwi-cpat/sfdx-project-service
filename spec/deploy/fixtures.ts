@@ -108,6 +108,10 @@ export function setupDefaultMocks(
 ): void {
   mockAuthInfoCreate.mockResolvedValue({});
   mockConnectionCreate.mockResolvedValue({
+    // buildConnectionFromAuth now calls conn.refreshAuth() proactively
+    // (matches sfdx-agent-sdk's SfCoreOrgAuthResolver.resolve), so the
+    // default Connection mock must include a no-op refreshAuth.
+    refreshAuth: vi.fn().mockResolvedValue(undefined),
     getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
   });
 }

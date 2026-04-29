@@ -60,11 +60,29 @@ export async function buildConnection(credentials: OrgCredentials): Promise<Conn
 /**
  * Build a Salesforce connection from resolved auth.
  * Supports both environment auth (username-based) and legacy credential headers.
+ *
+ * For environment auth, proactively refreshes the access token before
+ * returning. `AuthInfo.create({ username })` reads whatever access token is
+ * stored in the SFDX keychain — which may already be expired. Forcing a
+ * refresh up front turns stale-token failures into one clean synchronous
+ * error (caught by the caller as 502 Deployment Failed) instead of a fuzzy
+ * mid-deploy 401 that SDR's auto-retry *usually* hides but can confuse when
+ * combined with unrelated failures. Mirrors the pattern in
+ * sfdx-agent-sdk's SfCoreOrgAuthResolver.resolve.
+ *
+ * `refreshAuth` is called defensively — test mocks of @salesforce/core's
+ * Connection don't always implement it, and we don't want to force every
+ * existing mock boundary to expand. If the method is missing we skip it;
+ * real @salesforce/core Connection instances always have it.
  */
 export async function buildConnectionFromAuth(auth: ResolvedAuth): Promise<Connection> {
   if (auth.type === 'environment') {
     const authInfo = await AuthInfo.create({ username: auth.username });
-    return Connection.create({ authInfo });
+    const conn = await Connection.create({ authInfo });
+    if (typeof (conn as { refreshAuth?: () => Promise<void> }).refreshAuth === 'function') {
+      await conn.refreshAuth();
+    }
+    return conn;
   }
   return buildConnection(auth);
 }
