@@ -288,7 +288,12 @@ if [ -n "$ISSUE_NUMBER" ]; then
   if [ -n "$PR_NUMBER" ]; then
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" add "impl:agent-approved"
     .claude/skills/cdd-common/scripts/label "$PR_NUMBER" remove "impl:agent-reviewing"
-    gh pr ready "$PR_NUMBER"
+    # Only mark ready if still a draft — avoids duplicate GitHub→Slack
+    # notifications when re-reviewing a PR that's already marked ready.
+    IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft -q .isDraft 2>/dev/null || echo false)
+    if [ "$IS_DRAFT" = "true" ]; then
+      gh pr ready "$PR_NUMBER"
+    fi
   fi
 fi
 ```
@@ -336,6 +341,13 @@ If the verdict is NEEDS WORK, labels transition to `impl:agent-comments`. The
 review loop ignores PRs with this label — fixes must be applied and the
 label moved back to `impl:agent-reviewing` before re-review occurs. The review gate
 is real, not advisory.
+
+### Draft Check Before Marking Ready
+When PASS verdict lands on a re-review (e.g., after fixes), the PR may already
+be marked ready from a prior review. Calling `gh pr ready` unconditionally triggers
+GitHub's "PR marked ready" webhook, which duplicates Slack notifications even though
+the PR state hasn't changed. The label transition checks the PR's `isDraft` status
+before marking ready — we only call `gh pr ready` if it's actually draft.
 
 ---
 
