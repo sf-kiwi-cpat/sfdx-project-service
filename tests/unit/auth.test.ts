@@ -32,48 +32,9 @@ vi.mock('@salesforce/core', () => ({
   OrgConfigProperties: { TARGET_ORG: 'target-org' },
 }));
 
-import {
-  readProjectTargetOrg,
-  writeProjectTargetOrg,
-  resolveAlias,
-  getGlobalDefaultOrg,
-} from '../../src/domain/auth.js';
+import { writeProjectTargetOrg, resolveAlias } from '../../src/domain/auth.js';
 import { resolveDeployAuth } from '../../src/domain/deploy-auth.js';
 import { extractOptionalCredentials } from '../../src/utils/auth.js';
-
-describe('readProjectTargetOrg', () => {
-  let tmpDir: string;
-
-  beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-auth-test-'));
-  });
-
-  afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
-  it('returns the target-org when .sf/config.json exists', async () => {
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'my-org' })
-    );
-    expect(await readProjectTargetOrg(tmpDir)).toBe('my-org');
-  });
-
-  it('returns undefined when .sf/config.json does not exist', async () => {
-    expect(await readProjectTargetOrg(tmpDir)).toBeUndefined();
-  });
-
-  it('returns undefined when target-org is empty string', async () => {
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': '' })
-    );
-    expect(await readProjectTargetOrg(tmpDir)).toBeUndefined();
-  });
-});
 
 describe('writeProjectTargetOrg', () => {
   let tmpDir: string;
@@ -129,38 +90,6 @@ describe('resolveAlias', () => {
   it('returns undefined when StateAggregator.getInstance throws', async () => {
     mockStateAggregatorGetInstance.mockRejectedValue(new Error('not available'));
     expect(await resolveAlias('any')).toBeUndefined();
-  });
-});
-
-describe('getGlobalDefaultOrg', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('returns the global default org alias', async () => {
-    mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue('global-org'),
-    });
-    expect(await getGlobalDefaultOrg()).toBe('global-org');
-  });
-
-  it('returns undefined when no global default', async () => {
-    mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue(undefined),
-    });
-    expect(await getGlobalDefaultOrg()).toBeUndefined();
-  });
-
-  it('returns undefined when global default is empty string', async () => {
-    mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue(''),
-    });
-    expect(await getGlobalDefaultOrg()).toBeUndefined();
-  });
-
-  it('returns undefined when ConfigAggregator.create throws', async () => {
-    mockConfigAggregatorCreate.mockRejectedValue(new Error('not available'));
-    expect(await getGlobalDefaultOrg()).toBeUndefined();
   });
 });
 

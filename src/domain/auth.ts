@@ -36,7 +36,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { StateAggregator, ConfigAggregator, OrgConfigProperties } from '@salesforce/core';
+import { StateAggregator } from '@salesforce/core';
 
 /**
  * Resolve an org alias to a username via the Salesforce StateAggregator.
@@ -58,51 +58,13 @@ export async function resolveAlias(alias: string): Promise<string | undefined> {
 }
 
 /**
- * Read the target-org alias from a project's .sf/config.json.
- * Returns undefined if the file doesn't exist or has no target-org.
- *
- * Retained as a standalone helper (separate from the deploy chain's
- * `ConfigAggregator.create({ projectPath })`) because other callers —
- * notably `domain/projects.ts` — need to inspect the on-disk project
- * config without paying the full `ConfigAggregator` load cost or being
- * influenced by env vars / global defaults.
- */
-export async function readProjectTargetOrg(projectDir: string): Promise<string | undefined> {
-  try {
-    const raw = await fs.readFile(path.join(projectDir, '.sf', 'config.json'), 'utf-8');
-    const config = JSON.parse(raw) as Record<string, string>;
-    return config['target-org'] || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * Write the target-org alias to a project's .sf/config.json.
+ * Called by `projects.ts` when a user pins an `orgAlias` at project
+ * creation time; the deploy chain later reads this via
+ * `ConfigAggregator.create({ projectPath })` in `deploy-auth.ts`.
  */
 export async function writeProjectTargetOrg(projectDir: string, alias: string): Promise<void> {
   const sfDir = path.join(projectDir, '.sf');
   await fs.mkdir(sfDir, { recursive: true });
   await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
-}
-
-/**
- * Get the global default target-org alias from ConfigAggregator.
- * Returns undefined if no global default is configured or
- * ConfigAggregator is unavailable.
- *
- * Kept as a separate export (rather than only reading it through
- * `resolveDeployAuth`) so unit tests and tooling can inspect the global
- * default in isolation. The zero-auth deploy chain now resolves
- * env/local/global together via `ConfigAggregator.create({ projectPath })`
- * inside `deploy-auth.ts` and does not call this helper directly.
- */
-export async function getGlobalDefaultOrg(): Promise<string | undefined> {
-  try {
-    const configAggregator = await ConfigAggregator.create();
-    const value = configAggregator.getPropertyValue(OrgConfigProperties.TARGET_ORG);
-    return (value as string) || undefined;
-  } catch {
-    return undefined;
-  }
 }
