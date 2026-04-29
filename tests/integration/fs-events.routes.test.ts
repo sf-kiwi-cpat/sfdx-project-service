@@ -90,6 +90,35 @@ describe('fs-events routes integration — SSE response headers', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  // Regression tests for issue #206: when a browser EventSource
+  // (Accept: text/event-stream) hits an unknown project, the `@fastify/sse`
+  // plugin used to commit 200 text/event-stream headers before the handler
+  // could throw ProjectNotFoundError, leaving the client stuck on a
+  // silent-forever stream. These tests assert 404 problem+json with the
+  // SSE Accept header. The spec/ tests cover the same 404 paths but use
+  // supertest's default `Accept: */*`, which bypasses the plugin wrapper
+  // and masked the regression.
+  describe('404 with Accept: text/event-stream (issue #206)', () => {
+    it('returns 404 problem+json for an unknown project ID (browser EventSource Accept)', async () => {
+      const res = await request(app.server)
+        .get('/v1/projects/00000000-0000-0000-0000-000000000000/fs/events')
+        .set('Accept', 'text/event-stream')
+        .expect(404);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+      expect(res.body.title).toBe('Project Not Found');
+    });
+
+    it('returns 404 problem+json for a malformed project ID (browser EventSource Accept)', async () => {
+      const res = await request(app.server)
+        .get('/v1/projects/not-a-uuid/fs/events')
+        .set('Accept', 'text/event-stream')
+        .expect(404);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+    });
+  });
+
   it('echoes the request Origin in Access-Control-Allow-Origin so browsers permit cross-origin EventSource subscriptions', async () => {
     // @fastify/cors runs in the Fastify response pipeline with `origin: true`
     // (see src/app.ts). Since @fastify/sse does not hijack the reply, the

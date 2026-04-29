@@ -43,14 +43,24 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
         params: ProjectParams,
       },
       sse: true,
+      // Resource-existence check runs in `preHandler` so it happens *before*
+      // `@fastify/sse`'s route wrapper takes over. When the wrapper sees
+      // `Accept: text/event-stream` it commits 200 text/event-stream headers
+      // around the handler body, which means a throw from `getProjectDir`
+      // inside the handler can no longer be rewritten to 404 problem+json by
+      // the error handler — the browser just sees an empty 200 stream. See
+      // issue #206. Also satisfies the contract-pinned ordering:
+      // missing-project → 404 takes precedence over missing-Accept → 400.
+      preHandler: async (request) => {
+        const { id } = request.params as { id: string };
+        await getProjectDir(id);
+      },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      // Validate project exists — throws ProjectNotFoundError → 404
-      // (caught by the global error handler, formatted as problem+json).
-      // Run this *before* the Accept check so missing-project → 404 takes
-      // precedence over missing-Accept → 400 (contract-pinned ordering).
+      // preHandler already validated — this resolves the same dir for the
+      // watcher subscription.
       const projectDir = await getProjectDir(id);
 
       // Strict SSE content negotiation: without `Accept: text/event-stream`,
