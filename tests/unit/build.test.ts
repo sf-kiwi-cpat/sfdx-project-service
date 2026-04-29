@@ -85,11 +85,16 @@ describe('runViteBuild', () => {
 
     await runViteBuild(tmpDir);
 
+    // doBuild resolves the project dir via fs.realpath before passing to
+    // vite — on macOS that turns `/tmp/...` into `/private/tmp/...` to
+    // keep rolldown happy with absolute paths. Match the resolved form.
+    const resolvedTmp = await fs.realpath(tmpDir);
     expect(mockViteBuild).toHaveBeenCalledWith(
       expect.objectContaining({
-        root: tmpDir,
+        root: resolvedTmp,
+        configFile: false,
         build: expect.objectContaining({
-          outDir: path.join(tmpDir, 'force-app/main/default/uiBundles/App/dist'),
+          outDir: path.join(resolvedTmp, 'force-app/main/default/uiBundles/App/dist'),
           emptyOutDir: true,
         }),
         logLevel: 'silent',

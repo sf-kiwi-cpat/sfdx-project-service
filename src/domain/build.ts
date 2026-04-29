@@ -78,12 +78,19 @@ export async function runViteBuild(projectDir: string): Promise<void> {
 async function doBuild(projectDir: string): Promise<void> {
   logger.info({ projectDir }, 'Running Vite build');
 
-  const outDir = path.join(projectDir, 'force-app/main/default/uiBundles/App/dist');
+  // Resolve the real path so Vite/rolldown don't see symlink-prefixed
+  // absolute paths (e.g. `/tmp/...` -> `/private/tmp/...` on macOS).
+  // Without this, the vite:build-html plugin can reject `index.html`'s
+  // absolute path during asset emission.
+  const resolvedProjectDir = await fs.realpath(projectDir);
+  const outDir = path.join(resolvedProjectDir, 'force-app/main/default/uiBundles/App/dist');
   let timer: NodeJS.Timeout | undefined;
   try {
     const buildPromise = build({
-      root: projectDir,
+      root: resolvedProjectDir,
       base: './',
+      configFile: false, // ignore any vite.config.* shipped with the template;
+      // our programmatic options are authoritative for the deploy pipeline
       build: {
         outDir,
         emptyOutDir: true,
