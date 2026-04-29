@@ -21,7 +21,7 @@ import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { logger } from '../logger.js';
 import { type OrgCredentials } from '../utils/auth.js';
-import { type ResolvedAuth } from './auth.js';
+import { type ResolvedAuth } from './deploy-auth.js';
 import {
   setDeploymentResult,
   setDeploymentError,

@@ -21,7 +21,7 @@ import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
 import { DeploymentError, DeploymentNotFoundError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
-import { resolveDeployAuth } from '../domain/auth.js';
+import { resolveDeployAuth } from '../domain/deploy-auth.js';
 import {
   createDeployment,
   deploymentExists,

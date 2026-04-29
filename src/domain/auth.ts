@@ -16,59 +16,56 @@
  */
 
 /**
- * Auth resolution for deployments (zero-auth contract).
+ * Auth leaf module (zero-auth contract).
+ *
+ * This module is the alias→username lookup leaf AND the project/global
+ * target-org I/O helper layer. It is deliberately kept free of the
+ * `resolveDeployAuth` orchestrator: `resolveDeployAuth` lives in
+ * `deploy-auth.ts` and imports `resolveAlias` FROM this module with a
+ * static named import. That arrangement lets the deploy spec's
+ * `vi.mock('../../src/domain/auth.js', ...)` replace `resolveAlias` at
+ * the module boundary and have the replacement take effect INSIDE
+ * `resolveDeployAuth`. If `resolveDeployAuth` lived in this same file,
+ * the call would be a same-module binding and unmockable. Equivalent to
+ * agent-service's `SfCoreOrgAuthResolver.resolve` subclass-override
+ * pattern, adapted for a function-based codebase.
  *
  * The HTTP surface does NOT accept caller-supplied credentials.
- * Auth is resolved server-side from the CLI environment in this priority order:
- *   1. Request-body `orgAlias` (per-request override)
- *   2. Project target-org (written to `.sf/config.json` at project creation)
- *   3. Global default org (ConfigAggregator `target-org` property)
- *   4. Returns `{ type: 'missing' }` — caller should 400
- *
- * If a body-supplied alias does not resolve to a username, we return
- * `{ type: 'unresolved-alias', alias }` so the caller can include the
- * offending alias in the problem+json `detail` (generic "alias not
- * resolved" without the value is unhelpful to the caller).
+ * `Authorization` and `X-Salesforce-Instance-Url` headers are not part
+ * of the contract; if sent, they are ignored.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { StateAggregator, ConfigAggregator, OrgConfigProperties } from '@salesforce/core';
-import { logger } from '../logger.js';
 
 /**
- * Resolved auth information. Either username-based (environment) or
- * credential-based (legacy, retained for backward compatibility with
- * sibling specs that predate the zero-auth contract).
- */
-export type ResolvedAuth =
-  | { type: 'environment'; username: string }
-  | { type: 'credentials'; accessToken: string; instanceUrl: string };
-
-/**
- * Outcome of auth resolution for a deployment request.
+ * Resolve an org alias to a username via the Salesforce StateAggregator.
+ * Returns undefined if the alias is not found or StateAggregator is
+ * unavailable. Never throws — failures collapse to `undefined` so the
+ * caller can branch on the zero-auth priority chain cleanly.
  *
- * - `ResolvedAuth` on success
- * - `{ type: 'missing' }` when no auth source is available
- * - `{ type: 'unresolved-alias', alias }` when the body-supplied alias
- *   did not resolve to a username (so the caller can mention it in the
- *   400 error)
+ * Contract-critical: this function is mocked at the module boundary by
+ * `spec/deploy/contract.spec.ts`. Do not inline or move its definition
+ * without updating the spec test's mock target.
  */
-export type AuthResolution =
-  | ResolvedAuth
-  | { type: 'missing' }
-  | { type: 'unresolved-alias'; alias: string };
+export async function resolveAlias(alias: string): Promise<string | undefined> {
+  try {
+    const stateAggregator = await StateAggregator.getInstance();
+    return stateAggregator.aliases.getUsername(alias) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Read the target-org alias from a project's .sf/config.json.
  * Returns undefined if the file doesn't exist or has no target-org.
  *
- * NOTE: intentionally does NOT go through `ConfigAggregator.create({ projectPath })`
- * even though that is the more SFDX-idiomatic path (and what
- * sfdx-agent-sdk uses). Switching would give us env-var support and
- * `isLocal()`-based precedence, but the spec/deploy contract mocks
- * `ConfigAggregator.create(...)` with only `getPropertyValue` — making a
- * hard switch would require rewriting human-guarded spec tests. Tracked
- * as a follow-up requiring a spec cycle. See PR #205 discussion.
+ * Retained as a standalone helper (separate from the deploy chain's
+ * `ConfigAggregator.create({ projectPath })`) because other callers —
+ * notably `domain/projects.ts` — need to inspect the on-disk project
+ * config without paying the full `ConfigAggregator` load cost or being
+ * influenced by env vars / global defaults.
  */
 export async function readProjectTargetOrg(projectDir: string): Promise<string | undefined> {
   try {
@@ -90,21 +87,15 @@ export async function writeProjectTargetOrg(projectDir: string, alias: string): 
 }
 
 /**
- * Resolve an org alias to a username via the Salesforce StateAggregator.
- * Returns undefined if the alias is not found or StateAggregator is unavailable.
- */
-export async function resolveAlias(alias: string): Promise<string | undefined> {
-  try {
-    const stateAggregator = await StateAggregator.getInstance();
-    return stateAggregator.aliases.getUsername(alias) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * Get the global default target-org alias from ConfigAggregator.
- * Returns undefined if no global default is configured or ConfigAggregator is unavailable.
+ * Returns undefined if no global default is configured or
+ * ConfigAggregator is unavailable.
+ *
+ * Kept as a separate export (rather than only reading it through
+ * `resolveDeployAuth`) so unit tests and tooling can inspect the global
+ * default in isolation. The zero-auth deploy chain now resolves
+ * env/local/global together via `ConfigAggregator.create({ projectPath })`
+ * inside `deploy-auth.ts` and does not call this helper directly.
  */
 export async function getGlobalDefaultOrg(): Promise<string | undefined> {
   try {
@@ -114,56 +105,4 @@ export async function getGlobalDefaultOrg(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Resolve auth for a deployment using the zero-auth priority chain:
- *   1. Body `orgAlias` (per-request override)
- *   2. Project target-org (`.sf/config.json`)
- *   3. Global default org (`ConfigAggregator`)
- *   4. `{ type: 'missing' }` when none available
- *
- * When `bodyAlias` is provided but does not resolve to a username we
- * short-circuit with `{ type: 'unresolved-alias', alias }` rather than
- * falling through to project/global — the caller explicitly asked for
- * that alias, so masking the failure behind a fallback would be
- * surprising. This also lets the HTTP layer include the offending
- * alias in the problem+json `detail`.
- */
-export async function resolveDeployAuth(
-  projectDir: string,
-  bodyAlias?: string
-): Promise<AuthResolution> {
-  // 1. Body orgAlias (highest priority — caller-supplied per-request override)
-  if (bodyAlias) {
-    const username = await resolveAlias(bodyAlias);
-    if (username) {
-      logger.info({ bodyAlias, username }, 'Using body orgAlias for auth');
-      return { type: 'environment', username };
-    }
-    return { type: 'unresolved-alias', alias: bodyAlias };
-  }
-
-  // 2. Project-level target-org
-  const projectTargetOrg = await readProjectTargetOrg(projectDir);
-  if (projectTargetOrg) {
-    const username = await resolveAlias(projectTargetOrg);
-    if (username) {
-      logger.info({ projectTargetOrg, username }, 'Using project target-org for auth');
-      return { type: 'environment', username };
-    }
-  }
-
-  // 3. Global default org
-  const globalDefault = await getGlobalDefaultOrg();
-  if (globalDefault) {
-    const username = await resolveAlias(globalDefault);
-    if (username) {
-      logger.info({ globalDefault, username }, 'Using global default org for auth');
-      return { type: 'environment', username };
-    }
-  }
-
-  // 4. No auth available
-  return { type: 'missing' };
 }

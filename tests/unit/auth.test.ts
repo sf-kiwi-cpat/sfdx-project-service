@@ -37,8 +37,8 @@ import {
   writeProjectTargetOrg,
   resolveAlias,
   getGlobalDefaultOrg,
-  resolveDeployAuth,
 } from '../../src/domain/auth.js';
+import { resolveDeployAuth } from '../../src/domain/deploy-auth.js';
 import { extractOptionalCredentials } from '../../src/utils/auth.js';
 
 describe('readProjectTargetOrg', () => {
@@ -165,6 +165,14 @@ describe('getGlobalDefaultOrg', () => {
 });
 
 describe('resolveDeployAuth (zero-auth)', () => {
+  // `resolveDeployAuth` now delegates Environment > Local > Global
+  // precedence to `ConfigAggregator.create({ projectPath })`. These unit
+  // tests stub `ConfigAggregator.create` to return a single target-org
+  // value, which models whatever tier (env / local / global) the real
+  // aggregator would have chosen. The deploy spec tests
+  // (`spec/deploy/contract.spec.ts`) exercise the full tier-precedence
+  // chain against a real `ConfigAggregator` with a hermetic `$HOME` and
+  // on-disk `.sf/config.json` fixtures.
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -200,14 +208,12 @@ describe('resolveDeployAuth (zero-auth)', () => {
     expect(auth).toEqual({ type: 'unresolved-alias', alias: 'unknown-alias' });
   });
 
-  it('does NOT fall back to project target-org when body alias is unresolved', async () => {
+  it('does NOT fall back to ConfigAggregator when body alias is unresolved', async () => {
     // Explicitly failing body alias short-circuits — silently falling
-    // back to project/global would hide the caller's intent.
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'project-alias' })
-    );
+    // back to env/project/global would hide the caller's intent.
+    mockConfigAggregatorCreate.mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue('project-alias'),
+    });
     mockStateAggregatorGetInstance.mockResolvedValue({
       aliases: {
         getUsername: vi
@@ -222,12 +228,10 @@ describe('resolveDeployAuth (zero-auth)', () => {
     expect(auth).toEqual({ type: 'unresolved-alias', alias: 'unknown-alias' });
   });
 
-  it('returns environment auth from project target-org when no body alias', async () => {
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'my-org' })
-    );
+  it('returns environment auth from ConfigAggregator target-org when no body alias', async () => {
+    mockConfigAggregatorCreate.mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue('my-org'),
+    });
     mockStateAggregatorGetInstance.mockResolvedValue({
       aliases: { getUsername: vi.fn().mockReturnValue('user@example.com') },
     });
@@ -236,19 +240,7 @@ describe('resolveDeployAuth (zero-auth)', () => {
     expect(auth).toEqual({ type: 'environment', username: 'user@example.com' });
   });
 
-  it('returns environment auth from global default when no body/project config', async () => {
-    mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue('global-org'),
-    });
-    mockStateAggregatorGetInstance.mockResolvedValue({
-      aliases: { getUsername: vi.fn().mockReturnValue('global-user@example.com') },
-    });
-
-    const auth = await resolveDeployAuth(tmpDir);
-    expect(auth).toEqual({ type: 'environment', username: 'global-user@example.com' });
-  });
-
-  it('returns { type: "missing" } when no auth source is available', async () => {
+  it('returns { type: "missing" } when ConfigAggregator resolves nothing', async () => {
     mockConfigAggregatorCreate.mockResolvedValue({
       getPropertyValue: vi.fn().mockReturnValue(undefined),
     });
@@ -257,12 +249,33 @@ describe('resolveDeployAuth (zero-auth)', () => {
     expect(auth).toEqual({ type: 'missing' });
   });
 
-  it('prefers body orgAlias over project target-org', async () => {
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'project-alias' })
-    );
+  it('returns { type: "missing" } when ConfigAggregator throws', async () => {
+    mockConfigAggregatorCreate.mockRejectedValue(new Error('aggregator unavailable'));
+
+    const auth = await resolveDeployAuth(tmpDir);
+    expect(auth).toEqual({ type: 'missing' });
+  });
+
+  it('returns { type: "missing" } when ConfigAggregator resolves an alias that does not map to a username', async () => {
+    // Aggregator returned an alias but StateAggregator does not know it —
+    // the zero-auth chain falls through to `missing` rather than
+    // surfacing an `unresolved-alias` (that shape is reserved for an
+    // explicit body-supplied alias that the caller asked us to use).
+    mockConfigAggregatorCreate.mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue('orphaned-alias'),
+    });
+    mockStateAggregatorGetInstance.mockResolvedValue({
+      aliases: { getUsername: vi.fn().mockReturnValue(undefined) },
+    });
+
+    const auth = await resolveDeployAuth(tmpDir);
+    expect(auth).toEqual({ type: 'missing' });
+  });
+
+  it('prefers body orgAlias over ConfigAggregator-resolved alias', async () => {
+    mockConfigAggregatorCreate.mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue('project-alias'),
+    });
     mockStateAggregatorGetInstance.mockResolvedValue({
       aliases: {
         getUsername: vi.fn().mockImplementation((alias: string) => {
@@ -277,27 +290,21 @@ describe('resolveDeployAuth (zero-auth)', () => {
     expect(auth).toEqual({ type: 'environment', username: 'body@example.com' });
   });
 
-  it('prefers project target-org over global default', async () => {
-    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'project-alias' })
-    );
+  it('passes projectPath to ConfigAggregator.create so env > local > global precedence is applied natively', async () => {
+    // This is the contract with `@salesforce/core`: by passing
+    // `projectPath`, ConfigAggregator applies the built-in
+    // Environment > Local > Global ordering (matching `sf project
+    // deploy start`). We assert the call shape here; the full-chain
+    // behavior is exercised by `spec/deploy/contract.spec.ts`.
     mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue('global-alias'),
+      getPropertyValue: vi.fn().mockReturnValue('resolved-alias'),
     });
     mockStateAggregatorGetInstance.mockResolvedValue({
-      aliases: {
-        getUsername: vi.fn().mockImplementation((alias: string) => {
-          if (alias === 'project-alias') return 'project@example.com';
-          if (alias === 'global-alias') return 'global@example.com';
-          return undefined;
-        }),
-      },
+      aliases: { getUsername: vi.fn().mockReturnValue('resolved@example.com') },
     });
 
-    const auth = await resolveDeployAuth(tmpDir);
-    expect(auth).toEqual({ type: 'environment', username: 'project@example.com' });
+    await resolveDeployAuth(tmpDir);
+    expect(mockConfigAggregatorCreate).toHaveBeenCalledWith({ projectPath: tmpDir });
   });
 });
 
