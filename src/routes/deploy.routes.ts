@@ -18,10 +18,9 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-import { extractOptionalCredentials } from '../utils/auth.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
 import { DeploymentError } from '../errors.js';
-import { getProjectDir } from '../domain/projects.js';
+import { getProjectDir, ProjectNotFoundError } from '../domain/projects.js';
 import { resolveDeployAuth } from '../domain/auth.js';
 import {
   createDeployment,
@@ -29,10 +28,15 @@ import {
   getDeploymentResult,
   setDeploymentPollPromise,
   getProgressEvents,
+  getDeploymentStageEvents,
+  getDeploymentWarningEvents,
 } from '../deployments.js';
 
 const ProjectParams = Type.Object({ id: Type.String() });
 const DeploymentParams = Type.Object({ id: Type.String(), deploymentId: Type.String() });
+const DeploymentBody = Type.Object({
+  orgAlias: Type.Optional(Type.String()),
+});
 
 export async function deployRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -40,22 +44,23 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         params: ProjectParams,
+        body: DeploymentBody,
       },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { orgAlias?: string };
 
       // Get project directory
       const projectDir = await getProjectDir(id);
 
-      // Extract optional credential headers (for legacy fallback)
-      const headerCredentials = extractOptionalCredentials(request);
+      // Zero-auth contract: auth is resolved server-side in the priority
+      // order body.orgAlias → project target-org → global default.
+      // Caller-supplied Authorization / X-Salesforce-Instance-Url headers
+      // are intentionally ignored — they are not part of the contract.
+      const auth = await resolveDeployAuth(projectDir, body.orgAlias);
 
-      // Resolve auth using priority chain:
-      // 1. Project target-org  2. Global default org  3. Credential headers  4. 400
-      const auth = await resolveDeployAuth(projectDir, headerCredentials ?? undefined);
-
-      if (!auth) {
+      if (auth.type === 'missing') {
         return reply
           .status(400)
           .type(PROBLEM_JSON)
@@ -63,7 +68,20 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
             problemDetail(
               400,
               'Bad Request',
-              'No authentication available. Provide orgAlias at project creation, configure a global default org, or pass Authorization and X-Salesforce-Instance-Url headers.'
+              'No authentication available. Supply an `orgAlias` in the request body, set the project target-org at project creation, or configure a global default org (`sf config set target-org <alias>`).'
+            )
+          );
+      }
+
+      if (auth.type === 'unresolved-alias') {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(
+            problemDetail(
+              400,
+              'Bad Request',
+              `orgAlias '${auth.alias}' does not resolve to a Salesforce username. Run \`sf org login web --alias ${auth.alias}\` or use a different alias.`
             )
           );
       }
@@ -107,9 +125,23 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       // Resource-existence checks run *before* the Accept check so
       // missing-project / missing-deployment → 404 takes precedence over
       // missing-Accept → 400 (contract-pinned ordering).
-
-      // Verify project exists (can throw ProjectNotFoundError → caught by error handler)
-      await getProjectDir(id);
+      //
+      // We catch ProjectNotFoundError inline rather than letting it
+      // propagate: once `@fastify/sse` has wrapped our handler it also
+      // attached a close callback that calls `reply.raw.end()` on throw,
+      // which flushes a 200 response before Fastify's errorHandler can
+      // map the error to 404. Catching here keeps the correct status.
+      try {
+        await getProjectDir(id);
+      } catch (err) {
+        if (err instanceof ProjectNotFoundError) {
+          return reply
+            .status(404)
+            .type(PROBLEM_JSON)
+            .send(problemDetail(404, 'Project Not Found', err.message));
+        }
+        throw err;
+      }
 
       // Check if deployment exists
       if (!deploymentExists(deploymentId)) {
@@ -135,7 +167,36 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       reply.sse.keepAlive();
       await reply.sse.send({ event: 'start', data: { deploymentId } });
 
-      let lastEventCount = 0;
+      // Replay any history recorded before this GET opened (reconnect-safe
+      // by design — tests poll by re-opening the stream). `lastXCount`
+      // prevents the subsequent poll loop from re-sending the same ones.
+      const replayedStages = getDeploymentStageEvents(deploymentId);
+      for (const stage of replayedStages) {
+        await reply.sse.send({ event: 'stage', data: stage });
+      }
+      let lastStageCount = replayedStages.length;
+
+      const replayedProgress = getProgressEvents(deploymentId);
+      for (const p of replayedProgress) {
+        await reply.sse.send({ event: 'progress', data: p });
+      }
+      let lastProgressCount = replayedProgress.length;
+
+      const replayedWarnings = getDeploymentWarningEvents(deploymentId);
+      for (const w of replayedWarnings) {
+        await reply.sse.send({ event: 'warning', data: w });
+      }
+      let lastWarningCount = replayedWarnings.length;
+
+      // If the deploy finished before this GET arrived, send `complete`
+      // immediately and close. This is the common path for tests that
+      // poll-until-complete.
+      const earlyResult = getDeploymentResult(deploymentId);
+      if (earlyResult) {
+        await reply.sse.send({ event: 'complete', data: earlyResult });
+        reply.sse.close();
+        return;
+      }
 
       // Belt-and-suspenders: the `onClose` callback below should stop the
       // poll when the client disconnects, but if it races against an
@@ -146,14 +207,28 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
           return;
         }
 
+        const stages = getDeploymentStageEvents(deploymentId);
+        for (let i = lastStageCount; i < stages.length; i++) {
+          /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new stage events */
+          reply.sse.send({ event: 'stage', data: stages[i] }).catch(() => {});
+        }
+        lastStageCount = stages.length;
+
         const events = getProgressEvents(deploymentId);
-        for (let i = lastEventCount; i < events.length; i++) {
+        for (let i = lastProgressCount; i < events.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new events */
           reply.sse.send({ event: 'progress', data: events[i] }).catch(() => {
             /* client went away; `isConnected` will be false next tick */
           });
         }
-        lastEventCount = events.length;
+        lastProgressCount = events.length;
+
+        const warns = getDeploymentWarningEvents(deploymentId);
+        for (let i = lastWarningCount; i < warns.length; i++) {
+          /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new warnings */
+          reply.sse.send({ event: 'warning', data: warns[i] }).catch(() => {});
+        }
+        lastWarningCount = warns.length;
 
         const result = getDeploymentResult(deploymentId);
         if (result) {

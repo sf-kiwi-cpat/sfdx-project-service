@@ -23,16 +23,34 @@ import os from 'node:os';
 import { createApp } from '../../src/app.js';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 
-const { mockConnectionCreate, mockAuthInfoCreate } = vi.hoisted(() => ({
-  mockConnectionCreate: vi.fn(),
-  mockAuthInfoCreate: vi.fn(),
-}));
+// Zero-auth contract: the HTTP handler resolves auth from the CLI
+// environment (body orgAlias / project target-org / global default),
+// so the integration tests pass `orgAlias: 'test-alias'` in the body
+// and mock StateAggregator to resolve that alias to a username.
+const { mockConnectionCreate, mockAuthInfoCreate, mockGetUsername, mockGetPropertyValue } =
+  vi.hoisted(() => ({
+    mockConnectionCreate: vi.fn(),
+    mockAuthInfoCreate: vi.fn(),
+    mockGetUsername: vi.fn(),
+    mockGetPropertyValue: vi.fn(),
+  }));
 
 vi.mock('@salesforce/core', () => ({
   Connection: { create: mockConnectionCreate },
   AuthInfo: { create: mockAuthInfoCreate },
   Global: { SFDX_STATE_FOLDER: '.sfdx' },
-  StateAggregator: { clearInstance: vi.fn() },
+  StateAggregator: {
+    clearInstance: vi.fn(),
+    getInstance: vi.fn().mockResolvedValue({
+      aliases: { getUsername: mockGetUsername },
+    }),
+  },
+  ConfigAggregator: {
+    create: vi.fn().mockResolvedValue({
+      getPropertyValue: mockGetPropertyValue,
+    }),
+  },
+  OrgConfigProperties: { TARGET_ORG: 'target-org' },
 }));
 
 describe('deploy routes integration', () => {
@@ -55,7 +73,15 @@ describe('deploy routes integration', () => {
     projectId = createRes.body.id;
 
     mockAuthInfoCreate.mockResolvedValue({});
-    mockConnectionCreate.mockResolvedValue({});
+    mockConnectionCreate.mockResolvedValue({
+      getAuthInfoFields: () => ({ instanceUrl: 'https://test.salesforce.com' }),
+    });
+
+    // Only 'test-alias' resolves to a username — other aliases return undefined.
+    mockGetUsername.mockImplementation((alias: string) =>
+      alias === 'test-alias' ? 'user@test.example.com' : undefined
+    );
+    mockGetPropertyValue.mockReturnValue(undefined);
 
     vi.spyOn(ComponentSet.prototype, 'deploy').mockResolvedValue({
       pollStatus: mockPollStatus,
@@ -85,16 +111,10 @@ describe('deploy routes integration', () => {
 
   describe('SSE event stream', () => {
     it('properly closes SSE stream on client disconnect', async () => {
-      const credentials = {
-        accessToken: 'test-token',
-        instanceUrl: 'https://test.salesforce.com',
-      };
-
       // First, initiate a deployment
       const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
-        .set('Authorization', `Bearer ${credentials.accessToken}`)
-        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
+        .send({ orgAlias: 'test-alias' })
         .expect(202);
 
       const deploymentId = deployRes.body.deploymentId;
@@ -114,11 +134,6 @@ describe('deploy routes integration', () => {
     });
 
     it('handles SSE for in-progress deployments', async () => {
-      const credentials = {
-        accessToken: 'test-token',
-        instanceUrl: 'https://test.salesforce.com',
-      };
-
       // Mock a long-running deployment
       let pollCalled = 0;
       mockPollStatus.mockImplementation(async () => {
@@ -146,8 +161,7 @@ describe('deploy routes integration', () => {
 
       const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
-        .set('Authorization', `Bearer ${credentials.accessToken}`)
-        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
+        .send({ orgAlias: 'test-alias' })
         .expect(202);
 
       const deploymentId = deployRes.body.deploymentId;
@@ -170,16 +184,10 @@ describe('deploy routes integration', () => {
     it('returns 502 when ComponentSet.deploy throws', async () => {
       vi.spyOn(ComponentSet.prototype, 'deploy').mockRejectedValueOnce(new Error('Deploy failed'));
 
-      const credentials = {
-        accessToken: 'test-token',
-        instanceUrl: 'https://test.salesforce.com',
-      };
-
       // This should still return 202 because the error happens async
       const res = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
-        .set('Authorization', `Bearer ${credentials.accessToken}`)
-        .set('X-Salesforce-Instance-Url', credentials.instanceUrl)
+        .send({ orgAlias: 'test-alias' })
         .expect(202);
 
       expect(res.body.deploymentId).toBeDefined();

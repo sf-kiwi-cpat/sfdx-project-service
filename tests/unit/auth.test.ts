@@ -164,7 +164,7 @@ describe('getGlobalDefaultOrg', () => {
   });
 });
 
-describe('resolveDeployAuth', () => {
+describe('resolveDeployAuth (zero-auth)', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -176,7 +176,53 @@ describe('resolveDeployAuth', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns environment auth from project target-org', async () => {
+  it('returns environment auth from body orgAlias (highest priority)', async () => {
+    mockStateAggregatorGetInstance.mockResolvedValue({
+      aliases: {
+        getUsername: vi
+          .fn()
+          .mockImplementation((alias: string) =>
+            alias === 'body-alias' ? 'body@example.com' : undefined
+          ),
+      },
+    });
+
+    const auth = await resolveDeployAuth(tmpDir, 'body-alias');
+    expect(auth).toEqual({ type: 'environment', username: 'body@example.com' });
+  });
+
+  it('returns unresolved-alias when body orgAlias does not resolve', async () => {
+    mockStateAggregatorGetInstance.mockResolvedValue({
+      aliases: { getUsername: vi.fn().mockReturnValue(undefined) },
+    });
+
+    const auth = await resolveDeployAuth(tmpDir, 'unknown-alias');
+    expect(auth).toEqual({ type: 'unresolved-alias', alias: 'unknown-alias' });
+  });
+
+  it('does NOT fall back to project target-org when body alias is unresolved', async () => {
+    // Explicitly failing body alias short-circuits — silently falling
+    // back to project/global would hide the caller's intent.
+    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.sf', 'config.json'),
+      JSON.stringify({ 'target-org': 'project-alias' })
+    );
+    mockStateAggregatorGetInstance.mockResolvedValue({
+      aliases: {
+        getUsername: vi
+          .fn()
+          .mockImplementation((alias: string) =>
+            alias === 'project-alias' ? 'project@example.com' : undefined
+          ),
+      },
+    });
+
+    const auth = await resolveDeployAuth(tmpDir, 'unknown-alias');
+    expect(auth).toEqual({ type: 'unresolved-alias', alias: 'unknown-alias' });
+  });
+
+  it('returns environment auth from project target-org when no body alias', async () => {
     await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, '.sf', 'config.json'),
@@ -190,7 +236,7 @@ describe('resolveDeployAuth', () => {
     expect(auth).toEqual({ type: 'environment', username: 'user@example.com' });
   });
 
-  it('returns environment auth from global default when no project config', async () => {
+  it('returns environment auth from global default when no body/project config', async () => {
     mockConfigAggregatorCreate.mockResolvedValue({
       getPropertyValue: vi.fn().mockReturnValue('global-org'),
     });
@@ -202,46 +248,56 @@ describe('resolveDeployAuth', () => {
     expect(auth).toEqual({ type: 'environment', username: 'global-user@example.com' });
   });
 
-  it('falls back to credential headers when no environment auth', async () => {
-    mockConfigAggregatorCreate.mockResolvedValue({
-      getPropertyValue: vi.fn().mockReturnValue(undefined),
-    });
-
-    const auth = await resolveDeployAuth(tmpDir, {
-      accessToken: 'tok',
-      instanceUrl: 'https://test.salesforce.com',
-    });
-    expect(auth).toEqual({
-      type: 'credentials',
-      accessToken: 'tok',
-      instanceUrl: 'https://test.salesforce.com',
-    });
-  });
-
-  it('returns null when no auth is available', async () => {
+  it('returns { type: "missing" } when no auth source is available', async () => {
     mockConfigAggregatorCreate.mockResolvedValue({
       getPropertyValue: vi.fn().mockReturnValue(undefined),
     });
 
     const auth = await resolveDeployAuth(tmpDir);
-    expect(auth).toBeNull();
+    expect(auth).toEqual({ type: 'missing' });
   });
 
-  it('prefers project target-org over credential headers', async () => {
+  it('prefers body orgAlias over project target-org', async () => {
     await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, '.sf', 'config.json'),
-      JSON.stringify({ 'target-org': 'my-org' })
+      JSON.stringify({ 'target-org': 'project-alias' })
     );
     mockStateAggregatorGetInstance.mockResolvedValue({
-      aliases: { getUsername: vi.fn().mockReturnValue('user@example.com') },
+      aliases: {
+        getUsername: vi.fn().mockImplementation((alias: string) => {
+          if (alias === 'body-alias') return 'body@example.com';
+          if (alias === 'project-alias') return 'project@example.com';
+          return undefined;
+        }),
+      },
     });
 
-    const auth = await resolveDeployAuth(tmpDir, {
-      accessToken: 'tok',
-      instanceUrl: 'https://test.salesforce.com',
+    const auth = await resolveDeployAuth(tmpDir, 'body-alias');
+    expect(auth).toEqual({ type: 'environment', username: 'body@example.com' });
+  });
+
+  it('prefers project target-org over global default', async () => {
+    await fs.mkdir(path.join(tmpDir, '.sf'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.sf', 'config.json'),
+      JSON.stringify({ 'target-org': 'project-alias' })
+    );
+    mockConfigAggregatorCreate.mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue('global-alias'),
     });
-    expect(auth).toEqual({ type: 'environment', username: 'user@example.com' });
+    mockStateAggregatorGetInstance.mockResolvedValue({
+      aliases: {
+        getUsername: vi.fn().mockImplementation((alias: string) => {
+          if (alias === 'project-alias') return 'project@example.com';
+          if (alias === 'global-alias') return 'global@example.com';
+          return undefined;
+        }),
+      },
+    });
+
+    const auth = await resolveDeployAuth(tmpDir);
+    expect(auth).toEqual({ type: 'environment', username: 'project@example.com' });
   });
 });
 

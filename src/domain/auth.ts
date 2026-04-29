@@ -16,13 +16,19 @@
  */
 
 /**
- * Auth resolution for deployments.
+ * Auth resolution for deployments (zero-auth contract).
  *
- * Priority:
- * 1. Project-level target-org (from .sf/config.json)
- * 2. Global default org (from SFDX global config via ConfigAggregator)
- * 3. Legacy credential headers (Authorization + X-Salesforce-Instance-Url)
- * 4. null if none available
+ * The HTTP surface does NOT accept caller-supplied credentials.
+ * Auth is resolved server-side from the CLI environment in this priority order:
+ *   1. Request-body `orgAlias` (per-request override)
+ *   2. Project target-org (written to `.sf/config.json` at project creation)
+ *   3. Global default org (ConfigAggregator `target-org` property)
+ *   4. Returns `{ type: 'missing' }` — caller should 400
+ *
+ * If a body-supplied alias does not resolve to a username, we return
+ * `{ type: 'unresolved-alias', alias }` so the caller can include the
+ * offending alias in the problem+json `detail` (generic "alias not
+ * resolved" without the value is unhelpful to the caller).
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -31,11 +37,26 @@ import { logger } from '../logger.js';
 
 /**
  * Resolved auth information. Either username-based (environment) or
- * credential-based (legacy headers).
+ * credential-based (legacy, retained for backward compatibility with
+ * sibling specs that predate the zero-auth contract).
  */
 export type ResolvedAuth =
   | { type: 'environment'; username: string }
   | { type: 'credentials'; accessToken: string; instanceUrl: string };
+
+/**
+ * Outcome of auth resolution for a deployment request.
+ *
+ * - `ResolvedAuth` on success
+ * - `{ type: 'missing' }` when no auth source is available
+ * - `{ type: 'unresolved-alias', alias }` when the body-supplied alias
+ *   did not resolve to a username (so the caller can mention it in the
+ *   400 error)
+ */
+export type AuthResolution =
+  | ResolvedAuth
+  | { type: 'missing' }
+  | { type: 'unresolved-alias'; alias: string };
 
 /**
  * Read the target-org alias from a project's .sf/config.json.
@@ -88,17 +109,34 @@ export async function getGlobalDefaultOrg(): Promise<string | undefined> {
 }
 
 /**
- * Resolve auth for a deployment using the priority chain:
- * 1. Project-level target-org
- * 2. Global default org
- * 3. Legacy credential headers
- * 4. null if none available
+ * Resolve auth for a deployment using the zero-auth priority chain:
+ *   1. Body `orgAlias` (per-request override)
+ *   2. Project target-org (`.sf/config.json`)
+ *   3. Global default org (`ConfigAggregator`)
+ *   4. `{ type: 'missing' }` when none available
+ *
+ * When `bodyAlias` is provided but does not resolve to a username we
+ * short-circuit with `{ type: 'unresolved-alias', alias }` rather than
+ * falling through to project/global — the caller explicitly asked for
+ * that alias, so masking the failure behind a fallback would be
+ * surprising. This also lets the HTTP layer include the offending
+ * alias in the problem+json `detail`.
  */
 export async function resolveDeployAuth(
   projectDir: string,
-  headerCredentials?: { accessToken: string; instanceUrl: string }
-): Promise<ResolvedAuth | null> {
-  // 1. Check project-level target-org
+  bodyAlias?: string
+): Promise<AuthResolution> {
+  // 1. Body orgAlias (highest priority — caller-supplied per-request override)
+  if (bodyAlias) {
+    const username = await resolveAlias(bodyAlias);
+    if (username) {
+      logger.info({ bodyAlias, username }, 'Using body orgAlias for auth');
+      return { type: 'environment', username };
+    }
+    return { type: 'unresolved-alias', alias: bodyAlias };
+  }
+
+  // 2. Project-level target-org
   const projectTargetOrg = await readProjectTargetOrg(projectDir);
   if (projectTargetOrg) {
     const username = await resolveAlias(projectTargetOrg);
@@ -108,7 +146,7 @@ export async function resolveDeployAuth(
     }
   }
 
-  // 2. Check global default org
+  // 3. Global default org
   const globalDefault = await getGlobalDefaultOrg();
   if (globalDefault) {
     const username = await resolveAlias(globalDefault);
@@ -118,16 +156,6 @@ export async function resolveDeployAuth(
     }
   }
 
-  // 3. Fall back to credential headers
-  if (headerCredentials) {
-    logger.info('Using legacy credential headers for auth');
-    return {
-      type: 'credentials',
-      accessToken: headerCredentials.accessToken,
-      instanceUrl: headerCredentials.instanceUrl,
-    };
-  }
-
   // 4. No auth available
-  return null;
+  return { type: 'missing' };
 }
