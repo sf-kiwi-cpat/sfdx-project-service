@@ -35,6 +35,7 @@ import {
   type DeploymentWarning,
 } from '../deployments.js';
 import { hasReactFiles, runViteBuild } from './build.js';
+import { BuildError } from '../errors.js';
 
 /**
  * A single stage in a multi-manifest deploy. Declared in a template's
@@ -108,21 +109,73 @@ export async function buildComponentSet(projectDir: string): Promise<ComponentSe
  *
  * Templates MAY declare `deployStages` in their `template.json` to run
  * multiple manifest-based deploys in order (e.g. schema → flows →
- * bundles). If `template.json` doesn't exist or doesn't declare
- * `deployStages`, returns `undefined` — the caller should fall back to
- * the legacy single-pass `ComponentSet.fromSource(force-app)` deploy.
+ * bundles). If `template.json` doesn't exist, returns `undefined` and
+ * the caller falls back to the legacy single-pass
+ * `ComponentSet.fromSource(force-app)` deploy.
+ *
+ * If `template.json` exists but is malformed (bad JSON, wrong shape,
+ * bad stage fields), we throw `BuildError` rather than silently
+ * falling through — a typo'd `deployStages` key would otherwise deploy
+ * the wrong thing against a live org with no warning.
+ *
+ * Each stage's `manifest` path must be non-empty, a string, and must
+ * not escape `projectDir` (path-traversal guard — the extracted
+ * template zip is untrusted content).
  */
 export async function readDeployStages(projectDir: string): Promise<DeployStage[] | undefined> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(path.join(projectDir, 'template.json'), 'utf-8');
-    const parsed = JSON.parse(raw) as { deployStages?: DeployStage[] };
-    if (Array.isArray(parsed.deployStages) && parsed.deployStages.length > 0) {
-      return parsed.deployStages;
-    }
-    return undefined;
+    raw = await fs.readFile(path.join(projectDir, 'template.json'), 'utf-8');
   } catch {
     return undefined;
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new BuildError(
+      `Invalid template.json: ${err instanceof Error ? err.message : 'parse error'}`
+    );
+  }
+
+  if (!isRecord(parsed) || !('deployStages' in parsed)) {
+    return undefined;
+  }
+
+  const stages = parsed.deployStages;
+  if (!Array.isArray(stages)) {
+    throw new BuildError('template.json: deployStages must be an array');
+  }
+  if (stages.length === 0) {
+    return undefined;
+  }
+
+  const projectRoot = path.resolve(projectDir);
+  const validated: DeployStage[] = [];
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    if (!isRecord(stage)) {
+      throw new BuildError(`template.json: deployStages[${i}] must be an object`);
+    }
+    if (typeof stage.manifest !== 'string' || stage.manifest.length === 0) {
+      throw new BuildError(`template.json: deployStages[${i}].manifest must be a non-empty string`);
+    }
+    const resolved = path.resolve(projectRoot, stage.manifest);
+    if (resolved !== projectRoot && !resolved.startsWith(projectRoot + path.sep)) {
+      throw new BuildError(
+        `template.json: deployStages[${i}].manifest escapes project root: ${stage.manifest}`
+      );
+    }
+    const normalized: DeployStage = { manifest: stage.manifest };
+    if (typeof stage.optional === 'boolean') normalized.optional = stage.optional;
+    validated.push(normalized);
+  }
+  return validated;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
