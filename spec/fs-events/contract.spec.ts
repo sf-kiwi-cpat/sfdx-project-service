@@ -237,6 +237,20 @@ describe('GET /v1/projects/:id/fs/events', () => {
       }
     });
 
+    it('returns 400 Bad Request when Accept header is not text/event-stream', async () => {
+      // SSE endpoints require the SSE content negotiation header. Clients
+      // asking for anything else (e.g., `application/json`) are rejected
+      // before any stream setup. Real `EventSource` always sends the SSE
+      // header, so this only bites programmatic/misconfigured clients.
+      const res = await request(app.server)
+        .get(`/v1/projects/${projectId}/fs/events`)
+        .set('Accept', 'application/json')
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
     it('emits a `connected` event with the projectId on subscription', async () => {
       const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
       try {
@@ -454,6 +468,38 @@ describe('GET /v1/projects/:id/fs/events', () => {
         }
       }
     );
+
+    it('decodes inline content as UTF-8 — non-UTF-8 bytes surface as U+FFFD', async () => {
+      // Text files are assumed UTF-8. Bytes that do not form valid UTF-8
+      // sequences (Windows-1252, Latin-1, Shift-JIS, UTF-16 without BOM
+      // handling, etc.) decode with the Unicode replacement character
+      // (U+FFFD) wherever the decoder cannot make sense of them.
+      //
+      // This is documented behaviour, not a bug: the watcher prioritises a
+      // fast, JSON-safe payload on the hot path over encoding detection.
+      // Consumers that require byte-exact content for non-UTF-8 encodings
+      // are out of scope for this endpoint.
+      const client = await openSSE(app, `/v1/projects/${projectId}/fs/events`);
+      try {
+        await client.waitForEvent((e) => e.event === 'connected');
+        // "price: £10" encoded in Windows-1252 / Latin-1.
+        // 0xA3 is the pound sign there but is an invalid UTF-8 start byte,
+        // so it decodes as U+FFFD under utf-8.
+        const latin1 = Buffer.from([0x70, 0x72, 0x69, 0x63, 0x65, 0x3a, 0x20, 0xa3, 0x31, 0x30]);
+        await fs.writeFile(path.join(projectDir, 'latin1.txt'), latin1);
+
+        const evt = await client.waitForEvent(
+          (e) => e.event === 'file-added' && (e.data as { path: string }).path === 'latin1.txt'
+        );
+        expect(evt.data).toMatchObject({
+          path: 'latin1.txt',
+          type: 'add',
+          content: 'price: �10',
+        });
+      } finally {
+        client.close();
+      }
+    });
 
     it('emits no events when an empty directory is created', async () => {
       // chokidar fires `addDir` — the service must not forward this as a

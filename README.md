@@ -15,6 +15,7 @@ npm run dev              # starts Fastify on port 3000 with watch mode
 | :--- | :--- | :--- |
 | `/templates` | GET | List available project templates |
 | `/projects` | POST | Create a project from a template (`{ "template": "hello-world-1" }`) |
+| `/projects/:id` | GET | Retrieve a project by ID (name, lastAccessedAt, initialMessages) |
 | `/projects/:id/tree` | GET | Get the file tree for a project |
 | `/projects/:id/deploy` | POST | Deploy project metadata to a Salesforce org (`{ "accessToken", "instanceUrl" }`) |
 

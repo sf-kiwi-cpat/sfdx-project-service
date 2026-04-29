@@ -417,6 +417,7 @@ Exports `createTemplatesRouter()` which returns an Express router with:
 Exports `createProjectsRouter()` which returns an Express router with:
 
 - `POST /projects` — Create project
+- `GET /projects/:id` — Retrieve a project by ID (includes `initialMessages` when the template defines them)
 - `GET /projects/:id/tree` — Get file tree
 
 ### deploy.routes.ts

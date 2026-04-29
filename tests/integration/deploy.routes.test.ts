@@ -105,6 +105,7 @@ describe('deploy routes integration', () => {
       // Then stream the events
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/event-stream');
@@ -157,6 +158,7 @@ describe('deploy routes integration', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       expect(res.text).toContain('start');

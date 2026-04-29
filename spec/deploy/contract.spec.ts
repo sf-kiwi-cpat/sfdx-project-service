@@ -334,6 +334,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     it('returns 200 with Content-Type: text/event-stream', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/event-stream');
@@ -342,6 +343,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     it('emits a start event carrying the deploymentId', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const startEvents = parseEventsOfType(res.text, 'start');
@@ -352,6 +354,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     it('returns Cache-Control: no-cache header for SSE stream', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       expect(res.headers['cache-control']).toBe('no-cache');
@@ -360,6 +363,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     it('returns 404 when project ID does not exist', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/00000000-0000-0000-0000-000000000000/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(404);
 
       expect(res.body.status).toBe(404);
@@ -368,14 +372,26 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     it('returns 404 when deployment ID does not exist', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/deploy_nonexistent/events`)
+        .set('Accept', 'text/event-stream')
         .expect(404);
 
       expect(res.body.status).toBe(404);
     });
 
+    it('returns 400 Bad Request when Accept header is not text/event-stream', async () => {
+      const res = await request(app.server)
+        .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'application/json')
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
     it('complete event includes appUrl when deployment contains a WebApplication component', async () => {
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);
@@ -410,6 +426,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${noAppDeploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);
@@ -443,6 +460,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);
@@ -506,6 +524,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const stageEvents = parseEventsOfType(res.text, 'stage');
@@ -531,6 +550,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);
@@ -563,6 +583,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);
@@ -587,6 +608,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const warnings = parseEventsOfType(res.text, 'warning');
@@ -610,6 +632,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       const res = await request(app.server)
         .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
+        .set('Accept', 'text/event-stream')
         .expect(200);
 
       const completeData = parseCompleteEvent(res.text);

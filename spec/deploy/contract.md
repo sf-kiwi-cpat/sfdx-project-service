@@ -55,6 +55,13 @@ server-side using this priority chain:
 
 ### GET `/v1/projects/:id/deployments/:deploymentId/events` — Stream events (SSE)
 
+**Required headers**
+- `Accept: text/event-stream` — SSE content-negotiation header. Requests
+  without this header are rejected with **400 Bad Request**
+  (`application/problem+json`) before any stream setup. Real browser
+  `EventSource` always sends this header automatically; this only affects
+  programmatic or misconfigured clients.
+
 **Response**
 - `200 OK`, `Content-Type: text/event-stream`, `Cache-Control: no-cache`
 - Streams Server-Sent Events as the deployment progresses
@@ -97,6 +104,7 @@ server-side using this priority chain:
 
 | Status | Condition |
 |--------|-----------|
+| 400 Bad Request | `Accept` header is missing or not `text/event-stream` (`application/problem+json`) |
 | 404 Not Found | Project or deployment does not exist |
 
 ---
@@ -247,8 +255,9 @@ sent.
 
 | Error | HTTP | Title | Detail |
 |-------|------|-------|--------|
-| No auth source configured | 400 | Bad Request | Pass `orgAlias`, set a project target-org, or configure a global default |
-| `orgAlias` does not resolve | 400 | Bad Request | Mentions the offending alias |
+| No auth source configured (POST) | 400 | Bad Request | Pass `orgAlias`, set a project target-org, or configure a global default |
+| `orgAlias` does not resolve (POST) | 400 | Bad Request | Mentions the offending alias |
+| `Accept` not `text/event-stream` (SSE GET) | 400 | Bad Request | SSE requires Accept: text/event-stream |
 | Project does not exist | 404 | Not Found | Project not found |
 | Connection fails | 502 | Deployment Failed | Error from Salesforce |
 | Build fails | — | — | Surfaces in SSE complete event as deployment error |

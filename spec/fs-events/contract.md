@@ -22,6 +22,13 @@ taxonomy.
 
 Stream filesystem change events for a project via SSE.
 
+**Required headers:**
+- `Accept: text/event-stream` — SSE content-negotiation header. Requests
+  without this header are rejected with **400 Bad Request**
+  (`application/problem+json`) before any stream setup. Real browser
+  `EventSource` always sends this header automatically; this only
+  affects programmatic or misconfigured clients.
+
 **Response:**
 - **200 OK** with `Content-Type: text/event-stream`, `Cache-Control: no-cache`,
   and `Connection: keep-alive`
@@ -120,6 +127,18 @@ to be gracefully omitted).
 
 `content` is **never** included on `file-removed`.
 
+### Content encoding
+
+Inline `content` is decoded as **UTF-8**. Files written in other encodings
+(Windows-1252, Latin-1, Shift-JIS, UTF-16 without BOM handling, etc.) decode
+with the Unicode replacement character (U+FFFD) wherever bytes cannot be
+interpreted as UTF-8.
+
+This is documented behaviour, not a bug: the watcher prioritises a fast,
+JSON-safe payload on the hot path over encoding detection. Consumers that
+require byte-exact content for non-UTF-8 encodings are out of scope for this
+endpoint.
+
 ### Directories
 
 - **Directory creation and deletion do not produce `file-*` events.**
@@ -178,10 +197,11 @@ This aligns with the ignore semantics used by `shouldIgnoreEntry()` in
 
 All error responses use `application/problem+json`.
 
-| HTTP | Title     | When                                                         |
-|------|-----------|--------------------------------------------------------------|
-| 404  | Not Found | Project ID does not exist                                    |
-| 404  | Not Found | Project ID is not a well-formed UUID                         |
+| HTTP | Title       | When                                                       |
+|------|-------------|------------------------------------------------------------|
+| 400  | Bad Request | `Accept` header is missing or not `text/event-stream`      |
+| 404  | Not Found   | Project ID does not exist                                  |
+| 404  | Not Found   | Project ID is not a well-formed UUID                       |
 
 Errors are returned as normal HTTP responses — the SSE stream is never
 opened for a failing request.
@@ -192,12 +212,17 @@ opened for a failing request.
 
 ### Connection
 
-1. Client issues `GET /v1/projects/:id/fs/events`.
+1. Client issues `GET /v1/projects/:id/fs/events` with
+   `Accept: text/event-stream`. Requests missing this header are rejected
+   with 400 Bad Request before any stream setup.
 2. Service validates the project (`getProjectDir`) — 404 if missing/invalid.
-3. Service opens the SSE stream and writes a `connected` event.
-4. Service subscribes the client to the project's watcher. The first
+3. Service subscribes the client to the project's watcher and waits for
+   chokidar's initial scan + pre-ready buffer flush to complete. The first
    subscriber starts the underlying filesystem watcher; subsequent
    subscribers attach to the existing one.
+4. Service writes the `connected` event. (Subscribe precedes `connected`
+   so any write a client performs immediately after receiving `connected`
+   can never be misclassified as `add` when it's actually `change`.)
 
 ### Sharing a watcher
 
@@ -214,9 +239,9 @@ opened for a failing request.
 
 ### Heartbeat
 
-- A periodic SSE comment (`:heartbeat\n\n`) is emitted so proxies and load
-  balancers don't close the idle connection. Not observable as a named
-  event.
+- A periodic SSE comment (line starting with `:`) is emitted so proxies and
+  load balancers don't close the idle connection. Not observable as a named
+  event. The exact comment text is an implementation detail.
 
 ---
 
@@ -254,6 +279,15 @@ deny-list. This keeps unknown / ad-hoc text files (`Makefile`, `.sh`,
 novel codebase-specific extensions) useful to downstream consumers without
 requiring an allow-list to stay in sync with every new text format.
 
+### UTF-8 only on the hot path
+Text content is decoded as UTF-8 without encoding detection. Encoding
+sniffing (chardet, jschardet) is probabilistic, adds CPU to a latency-
+sensitive path, and is unnecessary for the modern codebases this service
+targets (LWC, TypeScript, JSON, Markdown — all UTF-8 by convention).
+Legacy-encoded files degrade to replacement characters but remain
+JSON-safe; byte-exact handling, if needed, is out of scope for this
+endpoint.
+
 ### Per-path, last-write-wins debouncing
 Editors that save via rename (many editors write to a tempfile then rename)
 and tools that perform quick successive writes collapse into a single
@@ -280,8 +314,10 @@ behavior above.
 - **Manager:** `WatcherManager` singleton with
   `subscribe(projectId, projectDir, listener)` → unsubscribe, and
   `closeAll()` for graceful shutdown from `app.onClose`.
-- **Route pattern:** mirrors `src/routes/deploy.routes.ts` lines 96–165
-  (`reply.hijack()` + raw response writes).
+- **Route pattern:** uses the `@fastify/sse` plugin (route config
+  `{ sse: true }`, `reply.sse.send(...)` for events, `reply.sse.onClose(...)`
+  for cleanup). Matches the pattern in
+  `agentic-dx/packages/sfdx-agent-service/src/routes/v1/agents/a_id/chats/c_id/events.ts`.
 
 ---
 
