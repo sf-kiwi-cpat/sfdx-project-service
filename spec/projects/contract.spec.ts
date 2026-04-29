@@ -28,7 +28,9 @@
  * Every response that references a project includes lastAccessedAt. Create and
  * rename operations bump it; accessing a project by :id (GET, PATCH, tree, file)
  * also updates it. A freshly created project's lastAccessedAt equals its
- * creation time.
+ * creation time. That "every access bumps" invariant applies only to projects
+ * with a valid meta file on disk — see the "meta file integrity" block below
+ * for the narrow carve-out when the meta file is missing or unparseable.
  *
  * Templates may declare an initialMessages array in their template.json. When
  * a project is created from such a template, those messages are persisted to
@@ -568,6 +570,68 @@ describe('Projects API', () => {
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(404);
+    });
+  });
+
+  describe('meta file integrity', () => {
+    // Context: issue #200 / W-22261249. An access route that bumps
+    // lastAccessedAt must never fabricate or overwrite .project-meta.json
+    // when the file is missing or unparseable at access time. Writing a
+    // synthesized { name: <uuid> } back to disk is how the original bug
+    // silently corrupted projects.
+    //
+    // Narrowed contract: "every access bumps lastAccessedAt" applies only
+    // to projects with a valid meta file. Missing or unparseable meta
+    // skips the bump to preserve recoverability — a later explicit write
+    // (e.g. PATCH rename) can restore the project's name.
+
+    it('does not overwrite .project-meta.json when it is missing at access time', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      await fs.unlink(metaPath);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      // Either the file stays absent, or (if something legitimately
+      // recreated it) its `name` must NOT be the UUID — fabricating
+      // UUID-as-name is the bug this contract rules out.
+      let exists = true;
+      try {
+        await fs.access(metaPath);
+      } catch {
+        exists = false;
+      }
+      if (exists) {
+        const parsed = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as { name?: string };
+        expect(parsed.name).not.toBe(createRes.body.id);
+      }
+    });
+
+    it('does not overwrite .project-meta.json when it is unparseable', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{invalid-json-sentinel';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+
+    it('tree access also leaves a corrupted .project-meta.json unchanged', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{corrupt-through-tree-route';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}/tree`).expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
     });
   });
 });
