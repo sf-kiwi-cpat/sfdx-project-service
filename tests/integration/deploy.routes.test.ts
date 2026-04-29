@@ -22,6 +22,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { createApp } from '../../src/app.js';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
+import { build as viteBuild } from 'vite';
+
+vi.mock('vite', () => ({
+  build: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockViteBuild = vi.mocked(viteBuild);
 
 // Zero-auth contract: the HTTP handler resolves auth from the CLI
 // environment (body orgAlias / project target-org / global default),
@@ -217,6 +224,77 @@ describe('deploy routes integration', () => {
         .expect(202);
 
       expect(res.body.deploymentId).toBeDefined();
+    });
+  });
+
+  // Regression coverage for the Vite-build-up-front change in runStagedDeploy:
+  // staged deploys with React sources must build before any stage runs so the
+  // first UIBundle-bearing stage ships the latest built assets. Without the
+  // build, SDR would upload the stale (or empty) dist/ directory.
+  describe('Vite build up front in staged deploys', () => {
+    it('runs Vite build before any stage when project has React files', async () => {
+      // Extend the project with a template.json declaring a single stage
+      // and a React source file.
+      const projectDir = path.join(tmpDir, projectId);
+      await fs.mkdir(path.join(projectDir, 'src'), { recursive: true });
+      await fs.writeFile(path.join(projectDir, 'src/App.tsx'), 'export default () => <div/>;');
+      await fs.mkdir(path.join(projectDir, 'manifest'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'manifest/package.xml'),
+        '<?xml version="1.0" encoding="UTF-8"?>\n' +
+          '<Package xmlns="http://soap.sforce.com/2006/04/metadata">\n' +
+          '  <version>67.0</version>\n' +
+          '</Package>\n'
+      );
+      await fs.writeFile(
+        path.join(projectDir, 'template.json'),
+        JSON.stringify({ deployStages: [{ manifest: 'manifest/package.xml' }] })
+      );
+
+      // Start deployment and wait for async work to progress.
+      await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' })
+        .expect(202);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Vite was called exactly once, and the config matches what build.ts
+      // declares (configFile: false, programmatic outDir).
+      expect(mockViteBuild).toHaveBeenCalledTimes(1);
+      const callArg = mockViteBuild.mock.calls[0][0] as {
+        configFile?: boolean;
+        build?: { outDir?: string };
+      };
+      expect(callArg.configFile).toBe(false);
+      expect(callArg.build?.outDir).toContain(
+        path.join('force-app/main/default/uiBundles/App/dist')
+      );
+    });
+
+    it('skips Vite build when no React files are present', async () => {
+      // Same projectDir but without any .tsx/.jsx — staged deploy path still
+      // runs but Vite should not.
+      const projectDir = path.join(tmpDir, projectId);
+      await fs.mkdir(path.join(projectDir, 'manifest'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'manifest/package.xml'),
+        '<?xml version="1.0" encoding="UTF-8"?>\n' +
+          '<Package xmlns="http://soap.sforce.com/2006/04/metadata">\n' +
+          '  <version>67.0</version>\n' +
+          '</Package>\n'
+      );
+      await fs.writeFile(
+        path.join(projectDir, 'template.json'),
+        JSON.stringify({ deployStages: [{ manifest: 'manifest/package.xml' }] })
+      );
+
+      await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' })
+        .expect(202);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(mockViteBuild).not.toHaveBeenCalled();
     });
   });
 });
