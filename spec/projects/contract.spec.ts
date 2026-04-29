@@ -19,7 +19,7 @@
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for the Projects API:
- *   - POST /projects        — create a project (returns id + name + lastAccessedAt, + initialMessages when template defines them)
+ *   - POST /projects        — create a project (returns id + name + lastAccessedAt, + initialMessages when template defines them, + targetOrg when orgAlias is provided)
  *   - GET /projects          — list all projects (id + name + lastAccessedAt)
  *   - GET /projects/:id      — retrieve a project by ID (id + name + lastAccessedAt, + initialMessages when present)
  *   - PATCH /projects/:id    — rename a project (returns id + name + lastAccessedAt)
@@ -37,16 +37,58 @@
  * is NOT included in GET /projects (list). Blank projects and templates
  * without initialMessages omit the field entirely (not an empty array).
  *
+ * POST /projects accepts an optional `orgAlias` that names a Salesforce org
+ * already authenticated via the SFDX CLI. When provided:
+ *   - The alias is validated against the local auth store (StateAggregator).
+ *     A non-empty alias that does not resolve to a username → 400.
+ *     An empty string → 400.
+ *   - On success, the alias is persisted to `.sf/config.json` as `target-org`
+ *     in the project directory. `POST /v1/projects/:id/deployments` reads
+ *     this value to resolve auth server-side (see spec/deploy/contract.spec.ts
+ *     for the deploy-time resolution chain).
+ *   - The create response includes `targetOrg: "<alias>"`. When omitted,
+ *     `targetOrg` is absent from the response.
+ *
  * They are the source of truth for these endpoints' external behavior. The
  * AI implementation agent must NOT modify this file.
+ *
+ * Mock boundary: @salesforce/core — specifically `StateAggregator.getInstance`
+ * — is mocked so tests can control alias → username resolution without a real
+ * keychain. Real: filesystem, Fastify, template unzipping.
  */
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+
+const { mockGetUsername } = vi.hoisted(() => ({
+  mockGetUsername: vi.fn(),
+}));
+
+// By default aliases resolve to nothing. Individual tests override this mock
+// to register specific alias → username mappings.
+vi.mock('@salesforce/core', () => ({
+  StateAggregator: {
+    clearInstance: vi.fn(),
+    getInstance: vi.fn().mockResolvedValue({
+      aliases: { getUsername: mockGetUsername },
+    }),
+  },
+  ConfigAggregator: {
+    create: vi.fn().mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue(undefined),
+    }),
+  },
+  OrgConfigProperties: { TARGET_ORG: 'target-org' },
+  Global: { SFDX_STATE_FOLDER: '.sfdx' },
+}));
+
 import { createApp } from '../../src/app.js';
+
+const TEST_ORG_ALIAS = 'my-scratch-org';
+const TEST_USERNAME = 'test-user@example.com';
 
 describe('Projects API', () => {
   let app: ReturnType<typeof createApp>;
@@ -192,6 +234,71 @@ describe('Projects API', () => {
       const getRes = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
 
       expect(getRes.body.initialMessages).toEqual(createRes.body.initialMessages);
+    });
+
+    describe('orgAlias', () => {
+      beforeEach(() => {
+        // Default for this describe: the canonical test alias resolves to a
+        // known username; any other alias is unknown.
+        mockGetUsername.mockImplementation((alias: string) =>
+          alias === TEST_ORG_ALIAS ? TEST_USERNAME : undefined
+        );
+      });
+
+      afterEach(() => {
+        mockGetUsername.mockReset();
+      });
+
+      it('returns 201 with targetOrg when orgAlias is provided', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(201);
+
+        expect(res.body).toHaveProperty('id');
+        expect(res.body).toHaveProperty('name');
+        expect(res.body).toHaveProperty('targetOrg', TEST_ORG_ALIAS);
+      });
+
+      it('persists target-org in .sf/config.json', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(201);
+
+        const configPath = path.join(tmpDir, res.body.id, '.sf', 'config.json');
+        const raw = await fs.readFile(configPath, 'utf-8');
+        const config = JSON.parse(raw) as Record<string, string>;
+        expect(config['target-org']).toBe(TEST_ORG_ALIAS);
+      });
+
+      it('omits targetOrg from the response when orgAlias is not provided', async () => {
+        const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+        expect(res.body.targetOrg).toBeUndefined();
+      });
+
+      it('returns 400 Problem Detail when orgAlias is an empty string', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: '' })
+          .expect(400);
+
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.status).toBe(400);
+      });
+
+      it('returns 400 Problem Detail when orgAlias does not resolve in the auth store', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: 'unknown-alias' })
+          .expect(400);
+
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.status).toBe(400);
+        // Error detail must name the offending alias so callers can act.
+        expect(res.body.detail).toContain('unknown-alias');
+      });
     });
   });
 
