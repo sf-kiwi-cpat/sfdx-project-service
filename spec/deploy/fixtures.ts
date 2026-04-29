@@ -33,6 +33,17 @@ import { createApp } from '../../src/app.js';
  */
 export const TEST_INSTANCE_URL = 'https://test.salesforce.com';
 
+/**
+ * Legacy credentials re-exported so sibling specs written against the
+ * previous header-based deploy contract (e.g. spec/react-deploy) continue
+ * to compile while they migrate to the zero-auth contract. New deploy
+ * spec tests MUST NOT use these — auth is resolved server-side.
+ */
+export const TEST_CREDENTIALS = {
+  accessToken: 'test-access-token',
+  instanceUrl: TEST_INSTANCE_URL,
+};
+
 export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
