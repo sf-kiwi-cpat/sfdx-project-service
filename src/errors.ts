@@ -30,6 +30,14 @@ export class DeploymentError extends Error {
   }
 }
 
+/** Thrown when a deployment with the given ID is not registered. */
+export class DeploymentNotFoundError extends Error {
+  constructor(deploymentId: string) {
+    super(`Deployment ${deploymentId} not found`);
+    this.name = 'DeploymentNotFoundError';
+  }
+}
+
 /** Thrown when a Vite build step fails or times out. */
 export class BuildError extends Error {
   constructor(message: string) {
@@ -135,6 +143,9 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof DeploymentError) {
     return problemDetail(502, 'Deployment Failed', err.message);
+  }
+  if (err instanceof DeploymentNotFoundError) {
+    return problemDetail(404, 'Deployment Not Found', err.message);
   }
 
   // Fastify validation errors (e.g. missing required querystring params)
