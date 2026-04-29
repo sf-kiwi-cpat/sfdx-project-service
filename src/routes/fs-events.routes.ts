@@ -53,15 +53,15 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
       // missing-project → 404 takes precedence over missing-Accept → 400.
       preHandler: async (request) => {
         const { id } = request.params as { id: string };
-        await getProjectDir(id);
+        // Stash the resolved dir on the request so the handler can reuse it
+        // without a second stat. Cast through `unknown` because Fastify's
+        // request type is locked by the project's type provider.
+        (request as unknown as { projectDir: string }).projectDir = await getProjectDir(id);
       },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-
-      // preHandler already validated — this resolves the same dir for the
-      // watcher subscription.
-      const projectDir = await getProjectDir(id);
+      const projectDir = (request as unknown as { projectDir: string }).projectDir;
 
       // Strict SSE content negotiation: without `Accept: text/event-stream`,
       // the `@fastify/sse` plugin falls back to our handler without

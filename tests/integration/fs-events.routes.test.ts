@@ -116,6 +116,7 @@ describe('fs-events routes integration — SSE response headers', () => {
         .expect(404);
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(404);
+      expect(res.body.title).toBe('Project Not Found');
     });
   });
 
