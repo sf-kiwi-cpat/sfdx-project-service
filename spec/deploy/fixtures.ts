@@ -37,7 +37,7 @@ export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
   { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-  { fullName: 'App', type: 'WebApplication', state: 'Created' },
+  { fullName: 'App', type: 'UIBundle', state: 'Created' },
 ];
 
 export const COMPONENT_RESPONSES_NO_APP = [
@@ -117,7 +117,7 @@ export function setupDefaultMocks(
 }
 
 /**
- * Successful deployment mock response (includes WebApplication)
+ * Successful deployment mock response (includes UIBundle)
  */
 export function createSuccessDeployResponse(): {
   response: {
@@ -138,7 +138,7 @@ export function createSuccessDeployResponse(): {
 }
 
 /**
- * Successful deployment mock response without a WebApplication component
+ * Successful deployment mock response without a UIBundle component
  */
 export function createSuccessDeployResponseWithoutApp(): {
   response: {

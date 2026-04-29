@@ -67,7 +67,7 @@ governance posture summary.
 
 ## Architecture
 
-- **React UI** served as a Salesforce `WebApplication`. Auto-detects host:
+- **React UI** served as a Salesforce `UIBundle`. Auto-detects host:
   uses `/services/apexrest/data-curator/v1` when running inside Salesforce,
   falls back to a local Express bridge (`server/index.mjs`) in dev.
 - **Apex REST resources** (`DataCuratorGovernanceRestApi`,
@@ -87,7 +87,7 @@ governance posture summary.
 ## Deployment order
 
 1. `manifest/package.xml` — objects, Apex, tabs, app, permission set, and
-   the `WebApplication`.
+   the `UIBundle`.
 2. `manifest/flows-package.xml` — Flows (deploy after Apex so invocable
    action references resolve).
 3. `agentforce-bundle/main/default` — Agentforce authoring bundle (depends

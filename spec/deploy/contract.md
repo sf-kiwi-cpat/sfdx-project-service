@@ -137,7 +137,7 @@ Fields common to all deployments:
 | `numberComponentsDeployed` | number | Summed across all stages for staged deploys. |
 | `numberComponentsTotal` | number | Summed across all stages for staged deploys. |
 | `components` | `ComponentResult[]` | Summed across all stages for staged deploys. |
-| `appUrl` | string \| undefined | Present **only** when status ∈ `{Succeeded, SucceededWithWarnings}` AND a `WebApplication` component was deployed. Format: `{instanceUrl}/lwr/application/ai/c-{appFullName}`. |
+| `appUrl` | string \| undefined | Present **only** when status ∈ `{Succeeded, SucceededWithWarnings}` AND a `UIBundle` component was deployed. Format: `{instanceUrl}/lwr/application/ai/c-{appFullName}`. |
 | `errorMessage` | string \| undefined | Present when status = `Failed`. |
 | `failedStage` | string \| undefined | Present when a required stage failed. Value is the failing stage's `manifest` path. |
 
@@ -292,7 +292,7 @@ sent.
     assertion and a `400 when Accept is wrong` assertion).
   - Staged (shared fixture): 1 describe block, 6 tests (stage ordering,
     stages[] summary, aggregated component counts, appUrl from staged
-    WebApplication, required-failure abort, optional-failure warning +
+    UIBundle, required-failure abort, optional-failure warning +
     `SucceededWithWarnings`).
   - Staged (optional-middle-stage fixture): 1 describe block, 1 test. This
     scenario needs a template where the optional stage is in the middle of

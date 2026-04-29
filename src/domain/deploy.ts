@@ -201,7 +201,7 @@ async function runOneDeploy(
  *                                       at least one optional failed
  *   status = 'Succeeded'              — every stage succeeded
  *   numberComponents* are summed across all attempted stages.
- *   appUrl is set from the LAST stage that surfaced a WebApplication.
+ *   appUrl is set from the LAST stage that surfaced a UIBundle.
  */
 async function runStagedDeploy(
   deploymentId: string,
@@ -300,15 +300,15 @@ async function runStagedDeploy(
     deploymentResult.failedStage = failedRequiredStage;
   }
 
-  // appUrl comes from the LAST stage that surfaced a WebApplication —
-  // a later stage's webapp supersedes an earlier one. Skip on failure
+  // appUrl comes from the LAST stage that surfaced a UIBundle —
+  // a later stage's bundle supersedes an earlier one. Skip on failure
   // so partially-deployed apps don't get a misleading URL.
   if (aggregateStatus !== 'Failed') {
-    const webApp = [...allFileResponses].reverse().find((f) => f.type === 'WebApplication');
-    if (webApp) {
+    const uiBundle = [...allFileResponses].reverse().find((f) => f.type === 'UIBundle');
+    if (uiBundle) {
       const instanceUrl = instanceUrlFor(auth, connection);
       if (instanceUrl) {
-        deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${webApp.fullName}`;
+        deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
       }
     }
   }
@@ -383,11 +383,11 @@ export async function deployMetadataAsync(
     // appUrl is surfaced only on success — a Failed single-pass deploy
     // must not yield a misleading webapp URL.
     if (runResult.status === 'Succeeded') {
-      const webApp = runResult.fileResponses.find((f) => f.type === 'WebApplication');
-      if (webApp) {
+      const uiBundle = runResult.fileResponses.find((f) => f.type === 'UIBundle');
+      if (uiBundle) {
         const instanceUrl = instanceUrlFor(auth, connection);
         if (instanceUrl) {
-          deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${webApp.fullName}`;
+          deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
         }
       }
     }

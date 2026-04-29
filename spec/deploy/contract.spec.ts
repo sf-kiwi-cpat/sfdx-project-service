@@ -534,7 +534,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       expect(res.body.status).toBe(400);
     });
 
-    it('complete event includes appUrl when deployment contains a WebApplication component', async () => {
+    it('complete event includes appUrl when deployment contains a UIBundle component', async () => {
       const { complete } = await streamUntilComplete(
         app,
         `/v1/projects/${projectId}/deployments/${deploymentId}/events`
@@ -543,7 +543,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       expect(complete.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
     });
 
-    it('complete event omits appUrl when no WebApplication component is deployed', async () => {
+    it('complete event omits appUrl when no UIBundle component is deployed', async () => {
       await app.close();
       vi.clearAllMocks();
       app = createApp();
@@ -721,8 +721,8 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       expect((complete.components as unknown[]).length).toBe(9);
     });
 
-    it('complete event includes appUrl when a staged deploy yields a WebApplication', async () => {
-      // Last stage's response includes a WebApplication component ("App").
+    it('complete event includes appUrl when a staged deploy yields a UIBundle', async () => {
+      // Last stage's response includes a UIBundle component ("App").
       mockPollStatus
         .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp())
         .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp())

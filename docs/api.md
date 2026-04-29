@@ -301,9 +301,9 @@ SSE stream of deployment progress.
 | `complete` | Terminal: `{ deploymentId, status, numberComponentsDeployed, numberComponentsTotal, components[], appUrl? }`. The stream closes after this event. |
 
 **`complete.appUrl`** is present only when the deployment succeeded
-**and** included a `WebApplication` component. Format:
+**and** included a `UIBundle` component. Format:
 `{instanceUrl}/lwr/application/ai/c-{appName}`, where `appName` is the
-`WebApplication`'s `fullName`.
+`UIBundle`'s `fullName`.
 
 **Example stream:**
 

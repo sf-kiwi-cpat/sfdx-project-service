@@ -83,7 +83,7 @@
     </types>
     <types>
         <members>App</members>
-        <name>WebApplication</name>
+        <name>UIBundle</name>
     </types>
     <version>64.0</version>
 </Package>
