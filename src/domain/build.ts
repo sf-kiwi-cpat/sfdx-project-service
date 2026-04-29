@@ -54,8 +54,8 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
  * The service owns the build config — the user's project has no build tooling.
  * Build output goes to force-app/main/default/uiBundles/App/dist/ so SDR
  * picks it up as part of the UIBundle metadata deployment. (SDR renamed
- * WebApplication → UIBundle in 12.33.0; the platform renamed the metadata
- * type to match.)
+ * WebApplication → UIBundle in 12.33.0; the lowercased `uibundle`
+ * suffix landed in 12.35.0 and is the canonical on-disk form.)
  *
  * Coalesces concurrent builds for the same project directory.
  */
@@ -90,7 +90,11 @@ async function doBuild(projectDir: string): Promise<void> {
       root: resolvedProjectDir,
       base: './',
       configFile: false, // ignore any vite.config.* shipped with the template;
-      // our programmatic options are authoritative for the deploy pipeline
+      // our programmatic options are authoritative for the deploy
+      // pipeline. JSX is compiled by Vite's built-in esbuild —
+      // templates that need babel plugins or decorators must land
+      // per-template build hooks rather than reintroducing a config
+      // file.
       build: {
         outDir,
         emptyOutDir: true,
