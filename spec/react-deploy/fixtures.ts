@@ -28,7 +28,7 @@ import { randomUUID } from 'node:crypto';
  *   src/main.tsx             (React entry point)
  *   src/App.tsx              (React component)
  *   force-app/main/default/uiBundles/App/   (build output target)
- *   force-app/main/default/uiBundles/App/App.uiBundle-meta.xml
+ *   force-app/main/default/uiBundles/App/App.uibundle-meta.xml
  *   force-app/main/default/uiBundles/App/uibundle.json
  */
 export async function createReactProject(
@@ -44,7 +44,7 @@ export async function createReactProject(
   });
 
   await fs.writeFile(
-    path.join(projectDir, 'force-app/main/default/uiBundles/App/App.uiBundle-meta.xml'),
+    path.join(projectDir, 'force-app/main/default/uiBundles/App/App.uibundle-meta.xml'),
     [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<UIBundle xmlns="http://soap.sforce.com/2006/04/metadata">',

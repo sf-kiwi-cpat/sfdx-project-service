@@ -12,5 +12,5 @@
         <members>Curator_Run_Stale_Metadata_Review</members>
         <name>Flow</name>
     </types>
-    <version>64.0</version>
+    <version>67.0</version>
 </Package>

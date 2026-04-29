@@ -7,5 +7,5 @@
         <members>Curator_Stale_Metadata_Brief</members>
         <name>GenAiPromptTemplate</name>
     </types>
-    <version>64.0</version>
+    <version>67.0</version>
 </Package>
