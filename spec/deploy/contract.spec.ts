@@ -30,11 +30,21 @@
  * The HTTP surface does NOT accept caller-supplied credentials.
  * `Authorization` and `X-Salesforce-Instance-Url` headers are not part of
  * the contract; if sent, they are ignored. Auth is resolved server-side
- * from the CLI environment in this priority order:
- *   1. Request-body `orgAlias` (per-request override)
- *   2. Project target-org (written to `.sf/config.json` at project creation)
- *   3. Global default org (ConfigAggregator `target-org` property)
- *   4. 400 Bad Request
+ * from the CLI environment in this priority order (matching SFDX's own
+ * `ConfigAggregator` precedence, which is what `sfdx-agent-sdk`'s
+ * `SfCoreOrgAuthResolver.resolveDefault` uses):
+ *
+ *   1. Request-body `orgAlias` (per-request override, always wins)
+ *   2. `SF_TARGET_ORG` / `SFDX_TARGET_ORG` environment variable
+ *   3. Project target-org (`.sf/config.json` in the project directory)
+ *   4. Global default org (`$HOME/.sf/config.json`)
+ *   5. 400 Bad Request
+ *
+ * Priority chain 2–4 is the built-in order of `ConfigAggregator`'s
+ * Location resolution (Environment > Local > Global). Power users who
+ * set `SF_TARGET_ORG` in a shell get one-shot org override without
+ * mutating project state — same as `sf project deploy start` and
+ * `sfdx-agent-service`.
  *
  * ## Staged deploys
  * Templates MAY declare `deployStages` in `template.json` to run multiple
@@ -46,40 +56,70 @@
  * These tests are the source of truth for this endpoint's external behavior.
  * The AI implementation agent must NOT modify this file.
  *
- * SDR (source-deploy-retrieve) runs for REAL here — ComponentSet.fromSource()
- * and ComponentSet.fromManifest() actually parse and validate metadata files
- * on disk. Only the network boundary is mocked: @salesforce/core (auth) and
- * ComponentSet.prototype.deploy (Metadata API call).
+ * ## Test strategy: hermetic `HOME` + real `@salesforce/core`
+ *
+ * Mirrors the pattern in `agentic-dx/packages/sfdx-agent-sdk/test/org-auth-resolver.test.ts`:
+ *   - `HOME` redirected to a hermetic temp dir (`beforeAll`/`afterAll`)
+ *   - `SF_ENV=test` so `@salesforce/core` uses an in-memory logger
+ *   - `@salesforce/core` runs for REAL — `ConfigAggregator` reads real
+ *     `.sf/config.json` files on disk and real env vars from `process.env`.
+ *     The project target-org fixture `setProjectTargetOrg` writes
+ *     `<projectDir>/.sf/config.json`; the global fixture
+ *     `setGlobalTargetOrg` writes `$HOME/.sf/config.json`; env-var tests
+ *     set `process.env.SF_TARGET_ORG` directly.
+ *   - `resolveAlias` (our own function) is mocked at the module boundary
+ *     to stub the alias→username lookup without touching the real SFDX
+ *     keychain. This mirrors agent-service's `TestResolver` subclass
+ *     override pattern, adapted for our function-based codebase.
+ *   - `Connection.create`, `AuthInfo.create`, `ComponentSet.prototype.deploy`
+ *     remain mocked inline — these hit the network or run real SDR which
+ *     is too expensive / network-bound for contract tests.
+ *   - Each test clears env vars + `.sf/config.json` files it set, so
+ *     tests don't bleed state into each other.
  */
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
-// Only mock @salesforce/core (auth requires network). SDR runs for real.
-const { mockConnectionCreate, mockAuthInfoCreate, mockGetUsername, mockGetPropertyValue } =
-  vi.hoisted(() => ({
-    mockConnectionCreate: vi.fn(),
-    mockAuthInfoCreate: vi.fn(),
-    mockGetUsername: vi.fn(),
-    mockGetPropertyValue: vi.fn(),
-  }));
-
-vi.mock('@salesforce/core', () => ({
-  Connection: { create: mockConnectionCreate },
-  AuthInfo: { create: mockAuthInfoCreate },
-  Global: { SFDX_STATE_FOLDER: '.sfdx' },
-  StateAggregator: {
-    clearInstance: vi.fn(),
-    getInstance: vi.fn().mockResolvedValue({
-      aliases: { getUsername: mockGetUsername },
-    }),
-  },
-  ConfigAggregator: {
-    create: vi.fn().mockResolvedValue({
-      getPropertyValue: mockGetPropertyValue,
-    }),
-  },
-  OrgConfigProperties: { TARGET_ORG: 'target-org' },
+// Mock only what must be mocked — network boundary + our alias resolver.
+// @salesforce/core's ConfigAggregator runs REAL against hermetic $HOME.
+const { mockConnectionCreate, mockAuthInfoCreate, mockResolveAlias } = vi.hoisted(() => ({
+  mockConnectionCreate: vi.fn(),
+  mockAuthInfoCreate: vi.fn(),
+  mockResolveAlias: vi.fn(),
 }));
+
+// Spy on Connection.create / AuthInfo.create without displacing the rest
+// of @salesforce/core. We use vi.mock with importOriginal so ConfigAggregator,
+// StateAggregator.clearInstance, OrgConfigProperties all behave normally.
+vi.mock('@salesforce/core', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@salesforce/core')>();
+  return {
+    ...original,
+    Connection: { ...original.Connection, create: mockConnectionCreate },
+    AuthInfo: { ...original.AuthInfo, create: mockAuthInfoCreate },
+  };
+});
+
+// Mock our own resolveAlias function — stubs the alias→username leaf
+// without touching the SFDX keychain. Everything else in auth.ts runs real.
+//
+// IMPLEMENTATION NOTE (binding on /cdd-implement): for `vi.mock(...)` to
+// intercept calls INSIDE `auth.ts` (not just callers outside the module),
+// the alias-resolution leaf must live in its OWN module that `auth.ts`
+// imports. Equivalent to agent-service's `SfCoreOrgAuthResolver.resolve`
+// subclass-override pattern — they extract the credential leaf behind
+// an extension boundary; we extract it behind a module boundary.
+// Suggested layout: `src/domain/auth/resolve-alias.ts` (export
+// `resolveAlias`), `src/domain/auth/index.ts` (imports + re-exports).
+// The precise file layout is implementation freedom — only the
+// observable test behavior is contractually pinned.
+vi.mock('../../src/domain/auth.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/domain/auth.js')>();
+  return {
+    ...original,
+    resolveAlias: mockResolveAlias,
+  };
+});
 
 import { createApp } from '../../src/app.js';
 import {
@@ -89,22 +129,36 @@ import {
   setupDefaultMocks,
   setProjectTargetOrg,
   clearProjectTargetOrg,
+  setGlobalTargetOrg,
+  clearGlobalTargetOrg,
   createSuccessDeployResponse,
   createSuccessDeployResponseWithoutApp,
   createFailedDeployResponse,
   setupDeployMock,
   setupStagedTemplateProject,
   cleanupStagedTemplateProject,
+  setupHermeticHome,
+  cleanupHermeticHome,
   TEST_INSTANCE_URL,
 } from './fixtures.js';
+
+/**
+ * Hermetic-HOME setup shared across every describe block. Each block
+ * calls `setupHermeticHome()` in `beforeAll` and `cleanupHermeticHome()`
+ * in `afterAll`. Per-test env var / global config cleanup happens in
+ * `afterEach` via `clearGlobalTargetOrg` and delete of `SF_TARGET_ORG` /
+ * `SFDX_TARGET_ORG`.
+ */
 
 describe('POST /v1/projects/:id/deployments', () => {
   let app: ReturnType<typeof createApp>;
   let tmpDir: string;
   let projectId: string;
+  let hermeticHome: string;
   const mockPollStatus = vi.fn();
 
   beforeAll(async () => {
+    hermeticHome = await setupHermeticHome();
     const setup = await setupTempProject();
     tmpDir = setup.tmpDir;
     projectId = setup.projectId;
@@ -112,6 +166,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
   afterAll(async () => {
     await cleanupTempProject(tmpDir);
+    await cleanupHermeticHome(hermeticHome);
   });
 
   beforeEach(async () => {
@@ -122,20 +177,27 @@ describe('POST /v1/projects/:id/deployments', () => {
     setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
     setupDeployMock(mockPollStatus);
     mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
-    // Default: no auth sources configured
-    mockGetUsername.mockReturnValue(undefined);
-    mockGetPropertyValue.mockReturnValue(undefined);
+    // Default: no alias resolves. Individual tests override via
+    // mockResolveAlias.mockImplementation(...) to register alias→username.
+    mockResolveAlias.mockReturnValue(undefined);
     await clearProjectTargetOrg(tmpDir, projectId);
   });
 
   afterEach(async () => {
+    delete process.env.SF_TARGET_ORG;
+    delete process.env.SFDX_TARGET_ORG;
+    await clearGlobalTargetOrg(hermeticHome);
+    // ConfigAggregator caches; clear between tests so the next beforeEach
+    // starts from a truly fresh view of env + disk.
+    const { ConfigAggregator } = await import('@salesforce/core');
+    await ConfigAggregator.clearInstance();
     vi.restoreAllMocks();
     await app.close();
   });
 
   describe('auth resolution', () => {
     it('returns 202 Accepted when body orgAlias resolves to a username', async () => {
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'body-alias' ? 'user@body.example.com' : undefined
       );
 
@@ -151,7 +213,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
     it('returns 202 Accepted when project has target-org set (no body)', async () => {
       await setProjectTargetOrg(tmpDir, projectId, 'project-alias');
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'project-alias' ? 'user@project.example.com' : undefined
       );
 
@@ -164,8 +226,8 @@ describe('POST /v1/projects/:id/deployments', () => {
     });
 
     it('returns 202 Accepted when global default org is configured', async () => {
-      mockGetPropertyValue.mockReturnValue('global-alias');
-      mockGetUsername.mockImplementation((alias: string) =>
+      await setGlobalTargetOrg(hermeticHome, 'global-alias');
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'global-alias' ? 'user@global.example.com' : undefined
       );
 
@@ -177,9 +239,26 @@ describe('POST /v1/projects/:id/deployments', () => {
       expect(res.body.deploymentId).toMatch(/^deploy_/);
     });
 
+    it('returns 202 Accepted when SF_TARGET_ORG env var is set', async () => {
+      process.env.SF_TARGET_ORG = 'env-alias';
+      mockResolveAlias.mockImplementation((alias: string) =>
+        alias === 'env-alias' ? 'user@env.example.com' : undefined
+      );
+
+      const res = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({})
+        .expect(202);
+
+      expect(res.body.deploymentId).toMatch(/^deploy_/);
+      expect(mockAuthInfoCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user@env.example.com' })
+      );
+    });
+
     it('prefers body orgAlias over project target-org', async () => {
       await setProjectTargetOrg(tmpDir, projectId, 'project-alias');
-      mockGetUsername.mockImplementation((alias: string) => {
+      mockResolveAlias.mockImplementation((alias: string) => {
         if (alias === 'body-alias') return 'user@body.example.com';
         if (alias === 'project-alias') return 'user@project.example.com';
         return undefined;
@@ -196,10 +275,50 @@ describe('POST /v1/projects/:id/deployments', () => {
       );
     });
 
+    it('prefers body orgAlias over SF_TARGET_ORG', async () => {
+      // Explicit body override must always win — the caller is saying
+      // "for this request, deploy to this alias, regardless of env."
+      process.env.SF_TARGET_ORG = 'env-alias';
+      mockResolveAlias.mockImplementation((alias: string) => {
+        if (alias === 'body-alias') return 'user@body.example.com';
+        if (alias === 'env-alias') return 'user@env.example.com';
+        return undefined;
+      });
+
+      await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'body-alias' })
+        .expect(202);
+
+      expect(mockAuthInfoCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user@body.example.com' })
+      );
+    });
+
+    it('prefers SF_TARGET_ORG env var over project target-org', async () => {
+      // Matches `ConfigAggregator` built-in precedence: env > local > global.
+      // Mirrors `sf project deploy start` and agent-service behavior. Lets
+      // users override a committed project target-org for one session
+      // without mutating project state.
+      await setProjectTargetOrg(tmpDir, projectId, 'project-alias');
+      process.env.SF_TARGET_ORG = 'env-alias';
+      mockResolveAlias.mockImplementation((alias: string) => {
+        if (alias === 'env-alias') return 'user@env.example.com';
+        if (alias === 'project-alias') return 'user@project.example.com';
+        return undefined;
+      });
+
+      await request(app.server).post(`/v1/projects/${projectId}/deployments`).send({}).expect(202);
+
+      expect(mockAuthInfoCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user@env.example.com' })
+      );
+    });
+
     it('prefers project target-org over global default', async () => {
       await setProjectTargetOrg(tmpDir, projectId, 'project-alias');
-      mockGetPropertyValue.mockReturnValue('global-alias');
-      mockGetUsername.mockImplementation((alias: string) => {
+      await setGlobalTargetOrg(hermeticHome, 'global-alias');
+      mockResolveAlias.mockImplementation((alias: string) => {
         if (alias === 'project-alias') return 'user@project.example.com';
         if (alias === 'global-alias') return 'user@global.example.com';
         return undefined;
@@ -212,8 +331,24 @@ describe('POST /v1/projects/:id/deployments', () => {
       );
     });
 
+    it('prefers SF_TARGET_ORG env var over global default', async () => {
+      await setGlobalTargetOrg(hermeticHome, 'global-alias');
+      process.env.SF_TARGET_ORG = 'env-alias';
+      mockResolveAlias.mockImplementation((alias: string) => {
+        if (alias === 'env-alias') return 'user@env.example.com';
+        if (alias === 'global-alias') return 'user@global.example.com';
+        return undefined;
+      });
+
+      await request(app.server).post(`/v1/projects/${projectId}/deployments`).send({}).expect(202);
+
+      expect(mockAuthInfoCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user@env.example.com' })
+      );
+    });
+
     it('returns 400 when no auth source is available', async () => {
-      // Nothing configured: no body alias, no project target-org, no global default
+      // Nothing configured: no body alias, no env var, no project target-org, no global default
       const res = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .send({})
@@ -227,7 +362,7 @@ describe('POST /v1/projects/:id/deployments', () => {
     });
 
     it('returns 400 when body orgAlias does not resolve to a username', async () => {
-      mockGetUsername.mockReturnValue(undefined);
+      mockResolveAlias.mockReturnValue(undefined);
 
       const res = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
@@ -255,7 +390,7 @@ describe('POST /v1/projects/:id/deployments', () => {
 
   describe('basic flow', () => {
     beforeEach(() => {
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
     });
@@ -291,9 +426,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     let tmpDir: string;
     let projectId: string;
     let deploymentId: string;
+    let hermeticHome: string;
     const mockPollStatus = vi.fn();
 
     beforeAll(async () => {
+      hermeticHome = await setupHermeticHome();
       const setup = await setupTempProject();
       tmpDir = setup.tmpDir;
       projectId = setup.projectId;
@@ -301,6 +438,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
     afterAll(async () => {
       await cleanupTempProject(tmpDir);
+      await cleanupHermeticHome(hermeticHome);
     });
 
     beforeEach(async () => {
@@ -312,10 +450,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       setupDeployMock(mockPollStatus);
       mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
 
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
       mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
 
@@ -329,6 +468,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     });
 
     afterEach(async () => {
+      delete process.env.SF_TARGET_ORG;
+      delete process.env.SFDX_TARGET_ORG;
+      await clearGlobalTargetOrg(hermeticHome);
+      const { ConfigAggregator } = await import('@salesforce/core');
+      await ConfigAggregator.clearInstance();
       vi.restoreAllMocks();
       await app.close();
     });
@@ -409,10 +553,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       setupDeployMock(mockPollStatus);
       mockPollStatus.mockResolvedValue(createSuccessDeployResponseWithoutApp());
 
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
       mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
 
@@ -438,10 +583,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       setupDeployMock(mockPollStatus);
       mockPollStatus.mockResolvedValue(createFailedDeployResponse());
 
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
       mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
 
@@ -462,9 +608,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     let app: ReturnType<typeof createApp>;
     let tmpDir: string;
     let projectId: string;
+    let hermeticHome: string;
     const mockPollStatus = vi.fn();
 
     beforeAll(async () => {
+      hermeticHome = await setupHermeticHome();
       const setup = await setupStagedTemplateProject({
         stages: [
           { manifest: 'manifest/package.xml' },
@@ -478,6 +626,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
     afterAll(async () => {
       await cleanupStagedTemplateProject(tmpDir);
+      await cleanupHermeticHome(hermeticHome);
     });
 
     beforeEach(async () => {
@@ -488,15 +637,21 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
       setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
       setupDeployMock(mockPollStatus);
 
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
       mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
     });
 
     afterEach(async () => {
+      delete process.env.SF_TARGET_ORG;
+      delete process.env.SFDX_TARGET_ORG;
+      await clearGlobalTargetOrg(hermeticHome);
+      const { ConfigAggregator } = await import('@salesforce/core');
+      await ConfigAggregator.clearInstance();
       vi.restoreAllMocks();
       await app.close();
     });
@@ -662,9 +817,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     let app: ReturnType<typeof createApp>;
     let tmpDir: string;
     let projectId: string;
+    let hermeticHome: string;
     const mockPollStatus = vi.fn();
 
     beforeAll(async () => {
+      hermeticHome = await setupHermeticHome();
       const setup = await setupStagedTemplateProject({
         stages: [
           { manifest: 'manifest/package.xml' },
@@ -678,6 +835,7 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
     afterAll(async () => {
       await cleanupStagedTemplateProject(tmpDir);
+      await cleanupHermeticHome(hermeticHome);
     });
 
     beforeEach(async () => {
@@ -687,15 +845,21 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
 
       setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
       setupDeployMock(mockPollStatus);
-      mockGetUsername.mockImplementation((alias: string) =>
+      mockResolveAlias.mockImplementation((alias: string) =>
         alias === 'test-alias' ? 'user@test.example.com' : undefined
       );
       mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
         getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
       });
     });
 
     afterEach(async () => {
+      delete process.env.SF_TARGET_ORG;
+      delete process.env.SFDX_TARGET_ORG;
+      await clearGlobalTargetOrg(hermeticHome);
+      const { ConfigAggregator } = await import('@salesforce/core');
+      await ConfigAggregator.clearInstance();
       vi.restoreAllMocks();
       await app.close();
     });

@@ -296,3 +296,76 @@ export async function cleanupStagedTemplateProject(tmpDir: string): Promise<void
   delete process.env.PROJECTS_ROOT;
   await fs.rm(tmpDir, { recursive: true, force: true });
 }
+
+/**
+ * Set up a hermetic `$HOME` for tests that exercise real `@salesforce/core`
+ * (e.g. `ConfigAggregator.create(...)`). Redirects `process.env.HOME` to a
+ * fresh tmpdir and creates `$HOME/.sf/` so later writes have somewhere to go.
+ * Also sets `SF_ENV=test` so `@salesforce/core` uses an in-memory logger
+ * instead of writing to disk — avoids pino async-file-transport races
+ * with temp cleanup on CI. Matches agentic-dx's
+ * `sfdx-agent-sdk/test/org-auth-resolver.test.ts` pattern.
+ *
+ * Returns the hermetic home path so the caller can pass it to
+ * `setGlobalTargetOrg` / `cleanupHermeticHome`.
+ *
+ * Caller must also save the original `process.env.HOME` if they want to
+ * restore it on cleanup — `cleanupHermeticHome` handles that bookkeeping
+ * when called with the original-home value.
+ */
+const originalHomeByHermeticPath = new Map<string, string | undefined>();
+const originalSfEnvByHermeticPath = new Map<string, string | undefined>();
+
+export async function setupHermeticHome(): Promise<string> {
+  const hermeticHome = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-spec-home-'));
+  originalHomeByHermeticPath.set(hermeticHome, process.env.HOME);
+  originalSfEnvByHermeticPath.set(hermeticHome, process.env.SF_ENV);
+  process.env.HOME = hermeticHome;
+  process.env.SF_ENV = 'test';
+  await fs.mkdir(path.join(hermeticHome, '.sf'), { recursive: true });
+  return hermeticHome;
+}
+
+/**
+ * Restore the original `$HOME` and remove the hermetic tmpdir.
+ */
+export async function cleanupHermeticHome(hermeticHome: string): Promise<void> {
+  const originalHome = originalHomeByHermeticPath.get(hermeticHome);
+  const originalSfEnv = originalSfEnvByHermeticPath.get(hermeticHome);
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
+  if (originalSfEnv === undefined) {
+    delete process.env.SF_ENV;
+  } else {
+    process.env.SF_ENV = originalSfEnv;
+  }
+  originalHomeByHermeticPath.delete(hermeticHome);
+  originalSfEnvByHermeticPath.delete(hermeticHome);
+  await fs.rm(hermeticHome, { recursive: true, force: true });
+}
+
+/**
+ * Write global target-org to `$HOME/.sf/config.json` inside a hermetic
+ * home. Real `ConfigAggregator.create()` (no projectPath) will resolve it
+ * via the GLOBAL tier.
+ */
+export async function setGlobalTargetOrg(hermeticHome: string, alias: string): Promise<void> {
+  const sfDir = path.join(hermeticHome, '.sf');
+  await fs.mkdir(sfDir, { recursive: true });
+  await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
+}
+
+/**
+ * Remove global target-org from the hermetic home. Idempotent.
+ */
+export async function clearGlobalTargetOrg(hermeticHome: string): Promise<void> {
+  const configPath = path.join(hermeticHome, '.sf', 'config.json');
+  try {
+    await fs.rm(configPath);
+  } catch {
+    // File may not exist; ignore.
+  }
+}

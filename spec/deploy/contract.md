@@ -39,9 +39,26 @@ If present, they are ignored — the contract is zero-auth. Auth is resolved
 server-side using this priority chain:
 
 1. **Request body `orgAlias`** — resolved via `StateAggregator` alias map.
-2. **Project target-org** — read from `<projectDir>/.sf/config.json`.
-3. **Global default org** — read via `ConfigAggregator` property `target-org`.
-4. **400 Bad Request** — if none of the above yield a username.
+   Always wins when set.
+2. **`SF_TARGET_ORG` / `SFDX_TARGET_ORG` environment variable** — resolved
+   via `ConfigAggregator`'s built-in Environment tier. Lets power users
+   override a committed project target-org for one session without
+   mutating project state. Matches `sf project deploy start` and
+   `sfdx-agent-service`.
+3. **Project target-org** — read from `<projectDir>/.sf/config.json` via
+   `ConfigAggregator({ projectPath }).getPropertyValue('target-org')`
+   at the Local tier.
+4. **Global default org** — read from `$HOME/.sf/config.json` via
+   `ConfigAggregator` at the Global tier.
+5. **400 Bad Request** — if none of the above yield a username.
+
+Tiers 2–4 are the built-in precedence order of `@salesforce/core`'s
+`ConfigAggregator` (Environment > Local > Global). The service delegates
+to `ConfigAggregator.create({ projectPath }).getPropertyValue(TARGET_ORG)`
+rather than reading `.sf/config.json` by hand — this gives us env-var
+support and future-compatibility with SFDX config changes. Mirrors the
+implementation of `sfdx-agent-sdk`'s
+`SfCoreOrgAuthResolver.resolveDefault({ projectRoot })`.
 
 **Responses**
 
