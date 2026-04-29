@@ -93,9 +93,21 @@ const NOUNS = [
 
 const META_FILE = '.project-meta.json';
 
+export interface Message {
+  role: string;
+  content: string;
+}
+
+function isMessage(value: unknown): value is Message {
+  if (typeof value !== 'object' || value === null) return false;
+  const m = value as Record<string, unknown>;
+  return typeof m.role === 'string' && typeof m.content === 'string';
+}
+
 interface ProjectMeta {
   name: string;
   lastAccessedAt?: string;
+  initialMessages?: Message[];
 }
 
 function generateName(): string {
@@ -142,6 +154,7 @@ export interface ProjectResult {
   name: string;
   lastAccessedAt: string;
   targetOrg?: string;
+  initialMessages?: Message[];
 }
 
 /**
@@ -251,10 +264,36 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
 
   const name = generateName();
   const lastAccessedAt = new Date().toISOString();
-  await writeProjectMeta(projectDir, { name, lastAccessedAt });
+
+  let initialMessages: Message[] | undefined;
+  try {
+    const raw = await fs.readFile(
+      path.join(getTemplatesDir(), templateId, 'template.json'),
+      'utf-8'
+    );
+    const templateMeta = JSON.parse(raw) as { initialMessages?: unknown };
+    if (Array.isArray(templateMeta.initialMessages)) {
+      const valid = templateMeta.initialMessages.filter(isMessage);
+      if (valid.length > 0) {
+        initialMessages = valid;
+      }
+    }
+  } catch {
+    // template.json is optional for initialMessages; absence is not an error
+  }
+
+  const meta: ProjectMeta = { name, lastAccessedAt };
+  if (initialMessages) {
+    meta.initialMessages = initialMessages;
+  }
+  await writeProjectMeta(projectDir, meta);
 
   logger.info({ projectId, templateId, name }, 'Project created from template');
-  return { id: projectId, name, lastAccessedAt };
+  const result: ProjectResult = { id: projectId, name, lastAccessedAt };
+  if (initialMessages) {
+    result.initialMessages = initialMessages;
+  }
+  return result;
 }
 
 /**
@@ -282,6 +321,26 @@ export async function listProjects(): Promise<ProjectResult[]> {
     results.push({ id: entry, name: meta.name, lastAccessedAt });
   }
   return results;
+}
+
+/**
+ * Get a project by ID. Bumps lastAccessedAt and returns the post-bump
+ * record. Throws ProjectNotFoundError if the project does not exist or
+ * the ID fails UUID validation.
+ */
+export async function getProject(projectId: string): Promise<ProjectResult> {
+  const projectDir = await getProjectDir(projectId);
+  await updateLastAccessed(projectDir);
+  const meta = await readProjectMeta(projectDir);
+  const result: ProjectResult = {
+    id: projectId,
+    name: meta.name,
+    lastAccessedAt: meta.lastAccessedAt ?? new Date().toISOString(),
+  };
+  if (meta.initialMessages) {
+    result.initialMessages = meta.initialMessages;
+  }
+  return result;
 }
 
 /**

@@ -171,14 +171,22 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
               },
             },
           },
+          400: problemJsonResponse(
+            'The request did not include the `Accept: text/event-stream` header required for SSE.'
+          ),
           404: problemJsonResponse(
             'Either the project or the supplied deployment id does not exist.'
           ),
         },
       },
+      sse: true,
     },
     async (request, reply) => {
       const { id, deploymentId } = request.params as { id: string; deploymentId: string };
+
+      // Resource-existence checks run *before* the Accept check so
+      // missing-project / missing-deployment → 404 takes precedence over
+      // missing-Accept → 400 (contract-pinned ordering).
 
       // Verify project exists (can throw ProjectNotFoundError → caught by error handler)
       await getProjectDir(id);
@@ -191,53 +199,55 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
           .send(problemDetail(404, 'Deployment Not Found', `Deployment ${deploymentId} not found`));
       }
 
-      // Hijack the response for SSE streaming
-      reply.hijack();
+      // Strict SSE content negotiation: without `Accept: text/event-stream`,
+      // the `@fastify/sse` plugin falls back to our handler without
+      // installing `reply.sse`, which would crash into a 500 TypeError.
+      // Reject explicitly with 400 problem+json instead. Real browser
+      // EventSource always sends this header automatically.
+      const accept = request.headers.accept ?? '';
+      if (accept !== 'text/event-stream') {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(problemDetail(400, 'Bad Request', 'SSE requires Accept: text/event-stream'));
+      }
 
-      const raw = reply.raw;
-      raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-      });
-
-      // Send start event
-      raw.write('event: start\n');
-      raw.write(`data: {"deploymentId":"${deploymentId}"}\n\n`);
+      reply.sse.keepAlive();
+      await reply.sse.send({ event: 'start', data: { deploymentId } });
 
       let lastEventCount = 0;
 
-      // Poll for deployment result and stream events
+      // Belt-and-suspenders: the `onClose` callback below should stop the
+      // poll when the client disconnects, but if it races against an
+      // in-flight tick, this guard catches it too.
       const pollInterval = setInterval(() => {
-        // Stream any new progress events
+        if (!reply.sse.isConnected) {
+          clearInterval(pollInterval);
+          return;
+        }
+
         const events = getProgressEvents(deploymentId);
         for (let i = lastEventCount; i < events.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new events */
-          raw.write('event: progress\n');
-          raw.write(`data: ${JSON.stringify(events[i])}\n\n`);
+          reply.sse.send({ event: 'progress', data: events[i] }).catch(() => {
+            /* client went away; `isConnected` will be false next tick */
+          });
         }
         lastEventCount = events.length;
 
-        // Check if deployment is complete
         const result = getDeploymentResult(deploymentId);
         if (result) {
-          // Deployment is complete
           clearInterval(pollInterval);
-
-          // Send result event
-          raw.write('event: complete\n');
-          raw.write(`data: ${JSON.stringify(result)}\n\n`);
-
-          // Close the stream
-          raw.end();
+          // Close on both fulfillment and rejection: a send-error still
+          // needs the stream torn down, and `close()` is idempotent.
+          reply.sse.send({ event: 'complete', data: result }).then(
+            () => reply.sse.close(),
+            () => reply.sse.close()
+          );
         }
       }, 100);
 
-      // Handle client disconnect
-      request.raw.on('close', () => {
-        clearInterval(pollInterval);
-      });
+      reply.sse.onClose(() => clearInterval(pollInterval));
     }
   );
 }

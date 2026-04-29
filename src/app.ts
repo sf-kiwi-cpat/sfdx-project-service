@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
+import fastifySSE from '@fastify/sse';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { logger } from './logger.js';
@@ -31,12 +32,44 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
  * Create and configure the Fastify app. Exported for testing.
  */
 export function createApp() {
-  const app = Fastify({ loggerInstance: logger });
+  const app = Fastify({
+    loggerInstance: logger,
+    // Override @fastify/ajv-compiler defaults: `removeAdditional: true` would
+    // silently strip unknown properties before `additionalProperties: false`
+    // could reject them. Setting it to false lets schema validation surface
+    // typos and unsupported fields instead of hiding them.
+    ajv: { customOptions: { removeAdditional: false } },
+    // Default formatter produces "body must NOT have additional properties"
+    // without naming the offending key. Callers need the property name to
+    // identify the typo — append it when the keyword is additionalProperties.
+    schemaErrorFormatter: (errors, dataVar) => {
+      const parts: string[] = [];
+      for (const e of errors) {
+        let message = `${dataVar}${e.instancePath || ''} ${e.message}`;
+        if (
+          e.keyword === 'additionalProperties' &&
+          typeof (e.params as { additionalProperty?: unknown })?.additionalProperty === 'string'
+        ) {
+          const key = (e.params as { additionalProperty: string }).additionalProperty;
+          message += `: '${key}'`;
+        }
+        parts.push(message);
+      }
+      return new Error(parts.join(', '));
+    },
+  });
 
   app.register(fastifyCors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   });
+
+  // SSE routes opt in via `{ sse: true }`. 15s heartbeat matches the pre-plugin
+  // hand-rolled cadence so nginx/proxies tuned to the old interval keep
+  // working unchanged. `.default` is the CJS→ESM interop shape: the plugin
+  // ships CJS with an ESM-style .d.ts, so TypeScript needs `.default` to type
+  // the register call (runtime resolves to the same function either way).
+  app.register(fastifySSE.default, { heartbeatInterval: 15_000 });
 
   app.register(fastifySwagger, {
     openapi: {

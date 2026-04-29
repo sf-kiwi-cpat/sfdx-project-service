@@ -17,6 +17,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
+import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
 import { watcherManager, type FileEvent } from '../domain/watcher.js';
 import { problemJsonResponse } from '../errors.js';
@@ -36,9 +37,6 @@ function sseEventName(type: FileEvent['type']): string {
       return 'file-removed';
   }
 }
-
-/** Emit heartbeat SSE comments every 15s to keep proxies from closing idle connections. */
-const HEARTBEAT_INTERVAL_MS = 15_000;
 
 export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -69,60 +67,72 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
               },
             },
           },
+          400: problemJsonResponse(
+            'The request did not include the `Accept: text/event-stream` header required for SSE.'
+          ),
           404: problemJsonResponse('No project exists with the supplied id.'),
         },
       },
+      sse: true,
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
       // Validate project exists — throws ProjectNotFoundError → 404
       // (caught by the global error handler, formatted as problem+json).
+      // Run this *before* the Accept check so missing-project → 404 takes
+      // precedence over missing-Accept → 400 (contract-pinned ordering).
       const projectDir = await getProjectDir(id);
 
-      // Hand the raw response off to the SSE plumbing below.
-      reply.hijack();
-      const raw = reply.raw;
+      // Strict SSE content negotiation: without `Accept: text/event-stream`,
+      // the `@fastify/sse` plugin falls back to our handler without
+      // installing `reply.sse`, which would crash into a 500 TypeError.
+      // Reject explicitly with 400 problem+json instead. Real browser
+      // EventSource always sends this header automatically.
+      const accept = request.headers.accept ?? '';
+      if (accept !== 'text/event-stream') {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(problemDetail(400, 'Bad Request', 'SSE requires Accept: text/event-stream'));
+      }
 
-      raw.writeHead(200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        // @fastify/cors runs in the Fastify response pipeline, which we bypass
-        // via reply.hijack() for SSE. Set the header explicitly so browsers
-        // don't block cross-origin EventSource subscriptions (matches the
-        // pattern in deploy.routes.ts).
-        'Access-Control-Allow-Origin': '*',
+      // The plugin installs its close handler in the SSEContext constructor
+      // and drains `closeCallbacks` once on close. If the client disconnects
+      // during the `await subscribe(...)` window below — which awaits
+      // chokidar's initial scan + pre-ready buffer flush — a later
+      // `reply.sse.onClose(unsubscribe)` would push into an already-empty
+      // array and never fire, leaking the watcher subscription. Set a flag
+      // via an early `onClose` so we can bail out ourselves.
+      let closedDuringSubscribe = false;
+      reply.sse.onClose(() => {
+        closedDuringSubscribe = true;
       });
 
-      // Subscribe first — awaits chokidar's initial scan so writes made
-      // immediately after the `connected` event can't be misclassified.
+      // Subscribe first — awaits chokidar's initial scan (and pre-ready event
+      // replay) so any write the client performs after `connected` can't be
+      // misclassified as `add` when it was actually a `change`.
       const unsubscribe = await watcherManager.subscribe(id, projectDir, (evt) => {
-        if (raw.writableEnded || raw.destroyed) return;
-        raw.write(`event: ${sseEventName(evt.type)}\n`);
-        raw.write(`data: ${JSON.stringify(evt)}\n\n`);
+        if (!reply.sse.isConnected) return;
+        // `.catch` swallows the TOCTOU where the connection closes between
+        // the guard above and the write. `writeToStream` rejects
+        // synchronously on closed connections; the unhandled rejection
+        // would otherwise crash the process under Node's default
+        // `--unhandled-rejections=throw`.
+        reply.sse.send({ event: sseEventName(evt.type), data: evt }).catch(() => {
+          /* client went away mid-send; plugin's own cleanup handles it */
+        });
       });
+
+      if (closedDuringSubscribe) {
+        unsubscribe();
+        return;
+      }
+      reply.sse.onClose(unsubscribe);
+      reply.sse.keepAlive();
 
       // Initial `connected` event identifying the subscription target.
-      raw.write('event: connected\n');
-      raw.write(`data: ${JSON.stringify({ projectId: id })}\n\n`);
-
-      const heartbeat = setInterval(() => {
-        /* v8 ignore next 3 -- heartbeat timing not exercised in tests */
-        if (raw.writableEnded || raw.destroyed) return;
-        raw.write(':heartbeat\n\n');
-      }, HEARTBEAT_INTERVAL_MS);
-      // Don't keep the process alive for idle subscribers.
-      heartbeat.unref();
-
-      const cleanup = (): void => {
-        clearInterval(heartbeat);
-        unsubscribe();
-      };
-
-      request.raw.on('close', cleanup);
-      request.raw.on('error', cleanup);
+      await reply.sse.send({ event: 'connected', data: { projectId: id } });
     }
   );
 }

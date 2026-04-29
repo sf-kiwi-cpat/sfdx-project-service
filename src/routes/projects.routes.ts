@@ -21,6 +21,7 @@ import { buildTree, readFile } from '../domain/files.js';
 import {
   createBlankProject,
   createProject,
+  getProject,
   getProjectDir,
   listProjects,
   renameProject,
@@ -84,21 +85,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
           "created. When `orgAlias` is provided, the project's `target-org` is " +
           'set to that alias so subsequent deploys resolve auth automatically.',
         tags: ['Projects'],
-        body: Type.Object({
-          template: Type.Optional(
-            Type.String({
-              description:
-                'ID of a template returned by `GET /v1/templates`. Omit for a blank project.',
-            })
-          ),
-          orgAlias: Type.Optional(
-            Type.String({
-              description:
-                'Alias of an authenticated Salesforce org to set as the project `target-org`. ' +
-                'Must match an existing alias known to `sf org list` on the host.',
-            })
-          ),
-        }),
+        body: Type.Object(
+          {
+            template: Type.Optional(
+              Type.String({
+                description:
+                  'ID of a template returned by `GET /v1/templates`. Omit for a blank project.',
+              })
+            ),
+            orgAlias: Type.Optional(
+              Type.String({
+                description:
+                  'Alias of an authenticated Salesforce org to set as the project `target-org`. ' +
+                  'Must match an existing alias known to `sf org list` on the host.',
+              })
+            ),
+          },
+          { additionalProperties: false }
+        ),
         response: {
           201: {
             ...ProjectSummary,
@@ -141,6 +145,35 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  app.get(
+    '/projects/:id',
+    {
+      schema: {
+        summary: 'Retrieve a project by id',
+        description:
+          'Returns the project record for the given id and bumps its ' +
+          '`lastAccessedAt` timestamp. Use this to rehydrate project metadata ' +
+          'in an IDE picker without listing the entire workspace.',
+        tags: ['Projects'],
+        params: Type.Object({
+          id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+        }),
+        response: {
+          200: {
+            ...ProjectSummary,
+            description: 'The requested project.',
+          },
+          404: problemJsonResponse('No project exists with the supplied id.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const result = await getProject(id);
+      return reply.send(result);
+    }
+  );
+
   app.patch(
     '/projects/:id',
     {
@@ -153,13 +186,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
         params: Type.Object({
           id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
         }),
-        body: Type.Object({
-          name: Type.Optional(
-            Type.String({
-              description: 'New human-readable name for the project. Must be a non-empty string.',
-            })
-          ),
-        }),
+        // Explicit body schema lets Ajv reject unknown properties via
+        // `additionalProperties: false`. `name` is intentionally NOT
+        // listed as a `required` property: with `allErrors: false` Ajv
+        // would otherwise report the missing-`name` error first and
+        // hide the offending unknown key. Instead we validate `name`'s
+        // presence imperatively below, so the `additionalProperties`
+        // check always surfaces the typo first.
+        body: Type.Object(
+          {
+            name: Type.Optional(
+              Type.String({
+                minLength: 1,
+                description: 'New human-readable name for the project. Must be a non-empty string.',
+              })
+            ),
+          },
+          { additionalProperties: false }
+        ),
         response: {
           200: {
             ...ProjectSummary,

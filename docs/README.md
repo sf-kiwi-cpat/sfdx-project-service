@@ -53,6 +53,7 @@ All endpoints return `application/json` or `application/problem+json` (RFC 9457)
 |--------|----------|-------------|
 | GET | `/templates` | List available templates |
 | POST | `/projects` | Create new project from template |
+| GET | `/projects/:id` | Retrieve a project by ID |
 | GET | `/projects/:id/tree` | Get file tree for a project |
 | POST | `/projects/:id/deploy` | Deploy project to Salesforce org |
 

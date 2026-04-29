@@ -9,26 +9,29 @@ npm install
 npm run dev              # starts Fastify on port 3000 with watch mode
 ```
 
-## API Endpoints
+## API
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/templates` | GET | List available project templates |
-| `/projects` | POST | Create a project from a template (`{ "template": "hello-world-1" }`) |
-| `/projects/:id/tree` | GET | Get the file tree for a project |
-| `/projects/:id/deploy` | POST | Deploy project metadata to a Salesforce org (`{ "accessToken", "instanceUrl" }`) |
+Product endpoints are served under the `/v1` prefix and cover templates,
+projects, file reads, metadata deployments (async + SSE), and filesystem
+change events (SSE). See [docs/api.md](docs/api.md) for the full endpoint
+reference — request bodies, response shapes, error codes, and examples.
 
-Interactive API docs (Swagger UI) are available at `/docs` when the server is running.
+Operational endpoints exist outside `/v1` and are unversioned: `GET /health`
+(liveness probe), `GET /openapi.json` (OpenAPI 3.0 spec), and `GET /docs`
+(interactive Swagger UI).
 
 ## Template System
 
 Templates are zipped SFDX projects stored in the `templates/` directory. Each `.zip` contains `sfdx-project.json` and package directories with metadata.
 
-**Available templates:**
-- `hello-world-1` -- Custom Object with custom fields
-- `hello-world-2` -- React app as a StaticResource
+The authoritative list of available templates is returned by
+[`GET /v1/templates`](docs/api.md#templates). Each template's
+`template.json` declares its name, description, and visibility —
+templates declared `visible: false` are excluded from the listing.
 
-`POST /projects` unzips a template into a UUID-named directory under `PROJECTS_ROOT`. The returned project ID is used in subsequent `/projects/:id/*` calls.
+`POST /v1/projects` unzips the named template into a UUID-named
+directory under `PROJECTS_ROOT`. The returned project ID is used in
+subsequent `/v1/projects/:id/*` calls.
 
 ## Environment Variables
 
@@ -50,12 +53,7 @@ npm run lint             # eslint
 
 ## Error Responses
 
-All errors follow RFC 9457 (Problem Details) with `Content-Type: application/problem+json`:
-
-```json
-{
-  "status": 404,
-  "title": "Project Not Found",
-  "detail": "Project not found: 00000000-0000-0000-0000-000000000000"
-}
-```
+All errors follow [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html)
+with `Content-Type: application/problem+json`. See
+[Error Handling in docs/api.md](docs/api.md#error-handling) for the
+response shape and per-endpoint error codes.
