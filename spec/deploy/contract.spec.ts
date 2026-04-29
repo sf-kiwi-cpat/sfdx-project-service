@@ -693,24 +693,13 @@ function parseEventsOfType(text: string, type: string): any[] {
   return out;
 }
 
-describe('Template deployStages schema', () => {
-  describe('template.json validation (enforced by build script)', () => {
-    it('MUST fail the build when deployStages references a missing manifest file', async () => {
-      // This scenario is enforced at build time (scripts/zip-templates.js):
-      // if template.json declares deployStages and any referenced manifest path
-      // does not exist inside content/, the build fails with a non-zero exit code
-      // and a clear error mentioning the missing path.
-      //
-      // This is a contract on the build script, not a runtime HTTP endpoint.
-      // The spec-level expectation: invalid templates never ship to dist/.
-      expect(true).toBe(true); // Sentinel — implementation covers this in the build script test.
-    });
-
-    it('MUST accept a template without deployStages (legacy single-pass behavior)', async () => {
-      // Sentinel for backwards compatibility: templates that omit deployStages
-      // continue to deploy via the single-pass ComponentSet.fromSource(force-app) path.
-      // Covered by the 'single-pass deploy (no deployStages)' describe block above.
-      expect(true).toBe(true);
-    });
-  });
-});
+// Template deployStages build-time validation is a contract on
+// scripts/zip-templates.js, not on the HTTP endpoint. That script is not
+// covered by this PR, so no sentinel tests are included here — they gave a
+// false sense of coverage. A follow-up PR that touches the build script
+// should add a real test that invokes it with a broken fixture and asserts
+// a non-zero exit code.
+//
+// Backwards compatibility for templates without deployStages is already
+// covered by the 'single-pass deploy (no deployStages)' describe block
+// above.

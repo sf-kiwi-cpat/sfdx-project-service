@@ -158,10 +158,12 @@ Each stage:
   deploy for this stage aborts remaining stages and the complete event
   reports `Failed`.
 
-**Build-time validation:** `scripts/zip-templates.js` (`npm run build:templates`)
-MUST fail with a non-zero exit code if any referenced `manifest` path does
-not exist inside the template's `content/`. Invalid templates never ship to
-`templates/dist/`.
+**Build-time validation (out of scope for this PR):** the intent is that
+`scripts/zip-templates.js` should fail with a non-zero exit code if any
+referenced `manifest` path does not exist inside the template's `content/`.
+This is a contract on the build script rather than the HTTP endpoint, and
+the script is not modified by this PR. A follow-up PR that touches
+`scripts/zip-templates.js` should add a real test covering this.
 
 **Backwards compatibility:** templates without `deployStages` (including
 `metadata-ownership-tracking`, `work-tracking`, `local-react-test`) use the
