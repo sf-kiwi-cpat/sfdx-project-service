@@ -85,5 +85,6 @@
         <members>App</members>
         <name>UIBundle</name>
     </types>
+    <!-- UIBundle metadata requires API 66.0+; 67.0 pins a stable floor. -->
     <version>67.0</version>
 </Package>
