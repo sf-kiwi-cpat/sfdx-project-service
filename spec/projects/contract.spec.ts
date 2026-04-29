@@ -633,5 +633,45 @@ describe('Projects API', () => {
       const after = await fs.readFile(metaPath, 'utf-8');
       expect(after).toBe(corrupted);
     });
+
+    it('file read also leaves a corrupted .project-meta.json unchanged', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{corrupt-through-file-route';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}/file`)
+        .query({ path: 'sfdx-project.json' })
+        .expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+
+    it('PATCH rename recovers a project whose .project-meta.json is corrupted', async () => {
+      // This test enforces the recovery promise made in contract.md:
+      // a human can always heal a corrupted project via PATCH rename. Without
+      // this assertion, an implementation could throw on any unreadable meta
+      // (including inside renameProject) and silently break the recovery story
+      // that justifies the narrowed lastAccessedAt invariant above.
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      await fs.writeFile(metaPath, '{not-valid-json');
+
+      const patchRes = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'recovered-name' })
+        .expect(200);
+
+      expect(patchRes.body.name).toBe('recovered-name');
+
+      // Post-rename meta must be valid JSON with the new name — not the UUID.
+      const parsed = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as { name?: string };
+      expect(parsed.name).toBe('recovered-name');
+      expect(parsed.name).not.toBe(createRes.body.id);
+    });
   });
 });

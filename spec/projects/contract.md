@@ -67,6 +67,7 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 **Responses:**
 
 - **200 OK** — Array of projects
+
   ```json
   [
     {
@@ -193,10 +194,11 @@ Both scenarios produce a valid SFDX project with `sfdx-project.json` containing 
 An access route that bumps `lastAccessedAt` must never fabricate or overwrite `.project-meta.json` when the on-disk file is missing or unparseable at access time.
 
 - **Missing meta at access time:** `GET /v1/projects/:id` returns 200 without persisting a new meta file. If a later path legitimately recreates the file, its `name` must not be the project's UUID — fabricating a UUID-shaped `name` is explicitly disallowed.
-- **Unparseable meta at access time:** `GET /v1/projects/:id` and `GET /v1/projects/:id/tree` return 200 without modifying the on-disk bytes. The corrupted content is preserved byte-for-byte so a human or a later explicit write (e.g., PATCH rename) can recover the project.
+- **Unparseable meta at access time:** `GET /v1/projects/:id`, `GET /v1/projects/:id/tree`, and `GET /v1/projects/:id/file` return 200 without modifying the on-disk bytes. The corrupted content is preserved byte-for-byte so an explicit repair path can restore the project.
 - **Narrowed `lastAccessedAt` invariant:** the "every access bumps `lastAccessedAt`" rule applies only to projects with a valid meta file. When the meta file is missing or unparseable, the bump is skipped rather than performed against a fabricated read. This is the trade-off that preserves recoverability.
+- **PATCH rename is a guaranteed recovery path:** `PATCH /v1/projects/:id` succeeds even when the project's meta file is corrupted or missing at the time of the request. The post-rename meta on disk is valid JSON whose `name` is the new name (never the project UUID). This is the recovery mechanism that the read-side carve-out depends on — preserving corrupted bytes is only useful if the project can actually be healed by an explicit write.
 
-Context: historically, a read fallback returned `{ name: path.basename(projectDir) }` when the meta file could not be read. A subsequent access bump would persist that fabricated value to disk, permanently overwriting the real name. This contract rules out that class of silent corruption.
+Context: historically, a read fallback returned `{ name: path.basename(projectDir) }` when the meta file could not be read. A subsequent access bump would persist that fabricated value to disk, permanently overwriting the real name. This contract rules out that class of silent corruption while guaranteeing that PATCH rename remains a viable way out.
 
 ---
 
@@ -282,5 +284,5 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 - **GET /projects/:id**: 10 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH)
 - **PATCH /projects/:id**: 6 tests (rename with lastAccessedAt bump, persistence, rename/list consistency, 404, missing name, empty name)
 - **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Meta file integrity**: 3 tests (missing meta not fabricated, unparseable meta preserved on /:id, unparseable meta preserved on /:id/tree)
-- **Total**: 36 contract tests, 6 describe blocks
+- **Meta file integrity**: 5 tests (missing meta not fabricated on /:id; unparseable meta preserved on /:id, /:id/tree, /:id/file; PATCH rename recovers a corrupted project)
+- **Total**: 38 contract tests, 6 describe blocks
