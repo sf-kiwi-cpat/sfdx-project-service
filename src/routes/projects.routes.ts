@@ -28,16 +28,18 @@ import {
   updateLastAccessed,
 } from '../domain/projects.js';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
-
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/projects',
     {
       schema: {
-        body: Type.Object({
-          template: Type.Optional(Type.String()),
-          orgAlias: Type.Optional(Type.String()),
-        }),
+        body: Type.Object(
+          {
+            template: Type.Optional(Type.String()),
+            orgAlias: Type.Optional(Type.String()),
+          },
+          { additionalProperties: false }
+        ),
       },
     },
     async (request, reply) => {
@@ -71,6 +73,19 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         params: Type.Object({ id: Type.String() }),
+        // Explicit body schema lets Ajv reject unknown properties via
+        // `additionalProperties: false`. `name` is intentionally NOT
+        // listed as a `required` property: with `allErrors: false` Ajv
+        // would otherwise report the missing-`name` error first and
+        // hide the offending unknown key. Instead we validate `name`'s
+        // presence imperatively below, so the `additionalProperties`
+        // check always surfaces the typo first.
+        body: Type.Object(
+          {
+            name: Type.Optional(Type.String({ minLength: 1 })),
+          },
+          { additionalProperties: false }
+        ),
       },
     },
     async (request, reply) => {

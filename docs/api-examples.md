@@ -16,7 +16,7 @@ npm run dev
 ### 1. List Templates
 
 ```bash
-curl http://localhost:3000/templates
+curl http://localhost:3000/v1/templates
 ```
 
 **Response:**
@@ -40,7 +40,7 @@ curl http://localhost:3000/templates
 ### 2. Create a Project
 
 ```bash
-curl -X POST http://localhost:3000/projects \
+curl -X POST http://localhost:3000/v1/projects \
   -H "Content-Type: application/json" \
   -d '{"template":"minimal"}'
 ```
@@ -60,7 +60,7 @@ PROJECT_ID="550e8400-e29b-41d4-a716-446655440000"
 ### 3. Inspect Project Tree
 
 ```bash
-curl http://localhost:3000/projects/$PROJECT_ID/tree | jq .
+curl http://localhost:3000/v1/projects/$PROJECT_ID/tree | jq .
 ```
 
 **Response:**
@@ -127,7 +127,7 @@ sfdx org:display -u myorg --json | jq '.result'
 Deploy:
 
 ```bash
-curl -X POST http://localhost:3000/projects/$PROJECT_ID/deploy \
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
   -H "Content-Type: application/json" \
   -d '{
     "accessToken": "00D50000000IZ3dEAG!AQcAQG21FjPFfbvpABqyQfGlZT_y-KzHJSzZ...",
@@ -167,7 +167,7 @@ curl -X POST http://localhost:3000/projects/$PROJECT_ID/deploy \
 ### Missing Template Field
 
 ```bash
-curl -X POST http://localhost:3000/projects \
+curl -X POST http://localhost:3000/v1/projects \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -184,7 +184,7 @@ curl -X POST http://localhost:3000/projects \
 ### Invalid Template
 
 ```bash
-curl -X POST http://localhost:3000/projects \
+curl -X POST http://localhost:3000/v1/projects \
   -H "Content-Type: application/json" \
   -d '{"template":"does-not-exist"}'
 ```
@@ -201,7 +201,7 @@ curl -X POST http://localhost:3000/projects \
 ### Invalid Project ID
 
 ```bash
-curl http://localhost:3000/projects/invalid-id/tree
+curl http://localhost:3000/v1/projects/invalid-id/tree
 ```
 
 **Response:** 404 Not Found
@@ -216,7 +216,7 @@ curl http://localhost:3000/projects/invalid-id/tree
 ### Missing Deployment Credentials
 
 ```bash
-curl -X POST http://localhost:3000/projects/$PROJECT_ID/deploy \
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
   -H "Content-Type: application/json" \
   -d '{"instanceUrl":"https://org.salesforce.com"}'
 ```
@@ -233,7 +233,7 @@ curl -X POST http://localhost:3000/projects/$PROJECT_ID/deploy \
 ### Deployment Failure
 
 ```bash
-curl -X POST http://localhost:3000/projects/$PROJECT_ID/deploy \
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
   -H "Content-Type: application/json" \
   -d '{
     "accessToken": "invalid_token",
@@ -263,7 +263,7 @@ INSTANCE_URL="https://your-instance.salesforce.com"
 
 for template in "${TEMPLATES[@]}"; do
   echo "Creating project from $template..."
-  response=$(curl -s -X POST http://localhost:3000/projects \
+  response=$(curl -s -X POST http://localhost:3000/v1/projects \
     -H "Content-Type: application/json" \
     -d "{\"template\":\"$template\"}")
 
@@ -271,7 +271,7 @@ for template in "${TEMPLATES[@]}"; do
   echo "Created project: $project_id"
 
   echo "Deploying $project_id..."
-  curl -s -X POST http://localhost:3000/projects/$project_id/deploy \
+  curl -s -X POST http://localhost:3000/v1/projects/$project_id/deploy \
     -H "Content-Type: application/json" \
     -d "{
       \"accessToken\":\"$ACCESS_TOKEN\",
@@ -292,7 +292,7 @@ MAX_RETRIES=10
 RETRY_DELAY=1
 
 for i in $(seq 1 $MAX_RETRIES); do
-  response=$(curl -s -w "\n%{http_code}" http://localhost:3000/projects/$PROJECT_ID/tree)
+  response=$(curl -s -w "\n%{http_code}" http://localhost:3000/v1/projects/$PROJECT_ID/tree)
   http_code=$(echo "$response" | tail -1)
 
   if [ "$http_code" = "200" ]; then
@@ -315,16 +315,16 @@ Filter and format responses:
 
 ```bash
 # Get first template ID
-curl -s http://localhost:3000/templates | jq -r '.[0].id'
+curl -s http://localhost:3000/v1/templates | jq -r '.[0].id'
 
 # Extract deployment status
-curl -s -X POST http://localhost:3000/projects/$PROJECT_ID/deploy ... | jq '.status'
+curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq '.status'
 
 # Count deployed components
-curl -s -X POST http://localhost:3000/projects/$PROJECT_ID/deploy ... | jq '.numberComponentsDeployed'
+curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq '.numberComponentsDeployed'
 
 # List component names
-curl -s -X POST http://localhost:3000/projects/$PROJECT_ID/deploy ... | jq -r '.components[].fullName'
+curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq -r '.components[].fullName'
 ```
 
 ## Using with JavaScript/Node.js
@@ -335,12 +335,12 @@ const fetch = require('node-fetch');
 const BASE_URL = 'http://localhost:3000';
 
 async function listTemplates() {
-  const response = await fetch(`${BASE_URL}/templates`);
+  const response = await fetch(`${BASE_URL}/v1/templates`);
   return response.json();
 }
 
 async function createProject(templateId) {
-  const response = await fetch(`${BASE_URL}/projects`, {
+  const response = await fetch(`${BASE_URL}/v1/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ template: templateId })
@@ -349,7 +349,7 @@ async function createProject(templateId) {
 }
 
 async function deployProject(projectId, accessToken, instanceUrl) {
-  const response = await fetch(`${BASE_URL}/projects/${projectId}/deploy`, {
+  const response = await fetch(`${BASE_URL}/v1/projects/${projectId}/deploy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ accessToken, instanceUrl })
@@ -383,19 +383,19 @@ import json
 BASE_URL = 'http://localhost:3000'
 
 def list_templates():
-    response = requests.get(f'{BASE_URL}/templates')
+    response = requests.get(f'{BASE_URL}/v1/templates')
     return response.json()
 
 def create_project(template_id):
     response = requests.post(
-        f'{BASE_URL}/projects',
+        f'{BASE_URL}/v1/projects',
         json={'template': template_id}
     )
     return response.json()
 
 def deploy_project(project_id, access_token, instance_url):
     response = requests.post(
-        f'{BASE_URL}/projects/{project_id}/deploy',
+        f'{BASE_URL}/v1/projects/{project_id}/deploy',
         json={'accessToken': access_token, 'instanceUrl': instance_url}
     )
     return response.json()
@@ -429,7 +429,7 @@ Consider implementing client-side timeouts:
 
 ```bash
 curl --max-time 300 \  # 5 minute timeout
-  -X POST http://localhost:3000/projects/$PROJECT_ID/deploy ...
+  -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ...
 ```
 
 ### Project Creation

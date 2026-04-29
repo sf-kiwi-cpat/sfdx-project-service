@@ -19,8 +19,8 @@ import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
-import { DeploymentError } from '../errors.js';
-import { getProjectDir, ProjectNotFoundError } from '../domain/projects.js';
+import { DeploymentError, DeploymentNotFoundError } from '../errors.js';
+import { getProjectDir } from '../domain/projects.js';
 import { resolveDeployAuth } from '../domain/auth.js';
 import {
   createDeployment,
@@ -118,38 +118,24 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         params: DeploymentParams,
       },
       sse: true,
+      // Resource-existence checks run in `preHandler` so they happen *before*
+      // `@fastify/sse`'s route wrapper takes over. When the wrapper sees
+      // `Accept: text/event-stream` it commits 200 text/event-stream headers
+      // around the handler body, which means a throw / reply.status(404) from
+      // inside the handler can no longer be rewritten to 404 problem+json —
+      // the browser just sees an empty 200 stream. See issue #206. Also
+      // satisfies the contract-pinned ordering: missing-project /
+      // missing-deployment → 404 takes precedence over missing-Accept → 400.
+      preHandler: async (request) => {
+        const { id, deploymentId } = request.params as { id: string; deploymentId: string };
+        await getProjectDir(id);
+        if (!deploymentExists(deploymentId)) {
+          throw new DeploymentNotFoundError(deploymentId);
+        }
+      },
     },
     async (request, reply) => {
-      const { id, deploymentId } = request.params as { id: string; deploymentId: string };
-
-      // Resource-existence checks run *before* the Accept check so
-      // missing-project / missing-deployment → 404 takes precedence over
-      // missing-Accept → 400 (contract-pinned ordering).
-      //
-      // We catch ProjectNotFoundError inline rather than letting it
-      // propagate: once `@fastify/sse` has wrapped our handler it also
-      // attached a close callback that calls `reply.raw.end()` on throw,
-      // which flushes a 200 response before Fastify's errorHandler can
-      // map the error to 404. Catching here keeps the correct status.
-      try {
-        await getProjectDir(id);
-      } catch (err) {
-        if (err instanceof ProjectNotFoundError) {
-          return reply
-            .status(404)
-            .type(PROBLEM_JSON)
-            .send(problemDetail(404, 'Project Not Found', err.message));
-        }
-        throw err;
-      }
-
-      // Check if deployment exists
-      if (!deploymentExists(deploymentId)) {
-        return reply
-          .status(404)
-          .type(PROBLEM_JSON)
-          .send(problemDetail(404, 'Deployment Not Found', `Deployment ${deploymentId} not found`));
-      }
+      const { deploymentId } = request.params as { id: string; deploymentId: string };
 
       // Strict SSE content negotiation: without `Accept: text/event-stream`,
       // the `@fastify/sse` plugin falls back to our handler without

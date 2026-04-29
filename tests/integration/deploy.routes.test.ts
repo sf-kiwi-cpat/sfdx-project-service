@@ -180,6 +180,32 @@ describe('deploy routes integration', () => {
     });
   });
 
+  // Regression tests for issue #206: see fs-events.routes.test.ts for the
+  // full story. The spec/ tests use supertest's default `Accept: */*`, which
+  // bypasses the `@fastify/sse` plugin wrapper. These cover the browser
+  // EventSource path (`Accept: text/event-stream`).
+  describe('SSE 404 with Accept: text/event-stream (issue #206)', () => {
+    it('returns 404 problem+json for an unknown project ID', async () => {
+      const res = await request(app.server)
+        .get('/v1/projects/00000000-0000-0000-0000-000000000000/deployments/deploy_any/events')
+        .set('Accept', 'text/event-stream')
+        .expect(404);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+      expect(res.body.title).toBe('Project Not Found');
+    });
+
+    it('returns 404 problem+json for an unknown deployment ID', async () => {
+      const res = await request(app.server)
+        .get(`/v1/projects/${projectId}/deployments/deploy_does-not-exist/events`)
+        .set('Accept', 'text/event-stream')
+        .expect(404);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(404);
+      expect(res.body.title).toBe('Deployment Not Found');
+    });
+  });
+
   describe('error handling in POST deployments', () => {
     it('returns 502 when ComponentSet.deploy throws', async () => {
       vi.spyOn(ComponentSet.prototype, 'deploy').mockRejectedValueOnce(new Error('Deploy failed'));
