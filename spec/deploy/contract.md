@@ -271,12 +271,27 @@ sent.
 - `POST /v1/projects/:id/deployments` — 1 describe block, 10 tests covering
   auth resolution (7) and basic flow (2) plus an "ignore headers" test (1).
 - `GET /v1/projects/:id/deployments/:deploymentId/events (SSE)`:
-  - Single-pass: 1 describe block, 7 tests (including a `start` event assertion).
-  - Staged (shared fixture): 1 describe block, 4 tests.
+  - Single-pass: 1 describe block, 8 tests (including a `start` event
+    assertion and a `400 when Accept is wrong` assertion).
+  - Staged (shared fixture): 1 describe block, 6 tests (stage ordering,
+    stages[] summary, aggregated component counts, appUrl from staged
+    WebApplication, required-failure abort, optional-failure warning +
+    `SucceededWithWarnings`).
   - Staged (optional-middle-stage fixture): 1 describe block, 1 test. This
     scenario needs a template where the optional stage is in the middle of
     the list, so it lives in its own describe block with its own `beforeAll`
     / `afterAll` lifecycle to keep fixtures cleanly scoped.
+
+Async deploy waits use a `streamUntilComplete(app, url)` helper that polls
+the SSE endpoint until a `complete` event appears (or a 5s ceiling elapses).
+This replaces `setTimeout(… , N)` waits that encoded a fixed latency budget
+into the contract — a recipe for CI flake on loaded machines.
+
+The `template.json` for a template with `deployStages` lives at the project
+root (next to `sfdx-project.json` and `package.json`). Staged-deploy tests
+write their fixture via `setupStagedTemplateProject()`, which creates the
+file at `<projectDir>/template.json`. An implementation that reads it from
+a different path will fail these tests.
 
 **Progress events are out of scope for this PR.** The SDR `onUpdate` callback
 is mocked to return `undefined`, so the contract does not currently test that

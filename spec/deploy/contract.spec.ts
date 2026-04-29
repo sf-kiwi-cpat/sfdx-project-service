@@ -235,7 +235,9 @@ describe('POST /v1/projects/:id/deployments', () => {
         .expect(400);
 
       expect(res.body.status).toBe(400);
-      expect(res.body.detail).toMatch(/unknown-alias|not found|not resolved/i);
+      // Must name the offending alias — generic "alias not resolved" without
+      // the value is unhelpful to the caller.
+      expect(res.body.detail).toContain('unknown-alias');
     });
 
     it('ignores caller-supplied Authorization headers (zero-auth contract)', async () => {
@@ -321,9 +323,9 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .post(`/v1/projects/${projectId}/deployments`)
         .send({ orgAlias: 'test-alias' });
       deploymentId = deployRes.body.deploymentId;
-
-      // Wait for deployment to complete (async operation)
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Deployment runs async; tests that need the complete event use
+      // streamUntilComplete() to poll. Tests that only assert stream
+      // headers do not need to wait.
     });
 
     afterEach(async () => {
@@ -389,15 +391,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     });
 
     it('complete event includes appUrl when deployment contains a WebApplication component', async () => {
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${deploymentId}/events`
+      );
       const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
-      expect(completeData!.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
+      expect(complete.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
     });
 
     it('complete event omits appUrl when no WebApplication component is deployed', async () => {
@@ -422,16 +421,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const noAppDeploymentId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${noAppDeploymentId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
-      expect(completeData!.appUrl).toBeUndefined();
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${noAppDeploymentId}/events`
+      );
+      expect(complete.appUrl).toBeUndefined();
     });
 
     it('complete event omits appUrl when deployment fails', async () => {
@@ -456,16 +450,11 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const failedDeploymentId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${failedDeploymentId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
-      expect(completeData!.appUrl).toBeUndefined();
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${failedDeploymentId}/events`
+      );
+      expect(complete.appUrl).toBeUndefined();
     });
   });
 
@@ -520,14 +509,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      const { text } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
 
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const stageEvents = parseEventsOfType(res.text, 'stage');
+      const stageEvents = parseEventsOfType(text, 'stage');
       expect(stageEvents.length).toBe(3);
       expect(stageEvents[0].name).toBe('manifest/package.xml');
       expect(stageEvents[0].index).toBe(0);
@@ -546,23 +533,57 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
-      expect(completeData!.status).toBe('Succeeded');
-      expect(Array.isArray(completeData!.stages)).toBe(true);
-      expect(completeData!.stages).toHaveLength(3);
-      for (const stage of completeData!.stages) {
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      expect(complete.status).toBe('Succeeded');
+      expect(Array.isArray(complete.stages)).toBe(true);
+      expect((complete.stages as unknown[]).length).toBe(3);
+      for (const stage of complete.stages as Array<Record<string, unknown>>) {
         expect(stage).toHaveProperty('name');
         expect(stage).toHaveProperty('status');
         expect(stage.status).toBe('Succeeded');
       }
+    });
+
+    it('complete event sums component counts across stages', async () => {
+      // Each successful stage reports 3 components; 3 stages → 9 total.
+      mockPollStatus.mockResolvedValue(createSuccessDeployResponseWithoutApp());
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' });
+      const depId = deployRes.body.deploymentId;
+
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      expect(complete.numberComponentsDeployed).toBe(9);
+      expect(complete.numberComponentsTotal).toBe(9);
+      expect(Array.isArray(complete.components)).toBe(true);
+      expect((complete.components as unknown[]).length).toBe(9);
+    });
+
+    it('complete event includes appUrl when a staged deploy yields a WebApplication', async () => {
+      // Last stage's response includes a WebApplication component ("App").
+      mockPollStatus
+        .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp())
+        .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp())
+        .mockResolvedValueOnce(createSuccessDeployResponse());
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' });
+      const depId = deployRes.body.deploymentId;
+
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
+      expect(complete.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
     });
 
     it('required stage failure aborts remaining stages', async () => {
@@ -576,20 +597,15 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
 
       // Only the first stage ran (pollStatus called once).
       expect(mockPollStatus).toHaveBeenCalledTimes(1);
-
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
-      expect(completeData!.status).toBe('Failed');
-      expect(completeData!.failedStage).toBe('manifest/package.xml');
+      expect(complete.status).toBe('Failed');
+      expect(complete.failedStage).toBe('manifest/package.xml');
     });
 
     it('optional stage failure emits a warning event', async () => {
@@ -604,14 +620,12 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const { text } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
 
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const warnings = parseEventsOfType(res.text, 'warning');
+      const warnings = parseEventsOfType(text, 'warning');
       expect(warnings).toHaveLength(1);
       expect(warnings[0].stage).toBe('manifest/bundle-package.xml');
       expect(warnings[0]).toHaveProperty('errorMessage');
@@ -628,19 +642,15 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .send({ orgAlias: 'test-alias' });
       const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const res = await request(app.server)
-        .get(`/v1/projects/${projectId}/deployments/${depId}/events`)
-        .set('Accept', 'text/event-stream')
-        .expect(200);
-
-      const completeData = parseCompleteEvent(res.text);
-      expect(completeData).toBeDefined();
-      expect(completeData!.status).toBe('SucceededWithWarnings');
-      expect(Array.isArray(completeData!.warnings)).toBe(true);
-      expect(completeData!.warnings).toHaveLength(1);
-      expect(completeData!.warnings[0].stage).toBe('manifest/bundle-package.xml');
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      expect(complete.status).toBe('SucceededWithWarnings');
+      expect(Array.isArray(complete.warnings)).toBe(true);
+      const warnings = complete.warnings as Array<Record<string, unknown>>;
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0].stage).toBe('manifest/bundle-package.xml');
     });
   });
 
@@ -696,11 +706,14 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         .mockResolvedValueOnce(createFailedDeployResponse())
         .mockResolvedValueOnce(createSuccessDeployResponseWithoutApp());
 
-      await request(app.server)
+      const deployRes = await request(app.server)
         .post(`/v1/projects/${projectId}/deployments`)
         .send({ orgAlias: 'test-alias' });
+      const depId = deployRes.body.deploymentId;
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Wait for the deploy to finish (complete event appears) — polling
+      // instead of a fixed sleep keeps this robust to CI latency.
+      await streamUntilComplete(app, `/v1/projects/${projectId}/deployments/${depId}/events`);
 
       // All three stages attempted even though the second failed.
       expect(mockPollStatus).toHaveBeenCalledTimes(3);
@@ -736,6 +749,38 @@ function parseEventsOfType(text: string, type: string): any[] {
     }
   }
   return out;
+}
+
+/**
+ * Fetch the SSE stream and return the parsed complete-event payload.
+ * Polls up to `timeoutMs` waiting for the complete event to appear, then
+ * returns the full SSE body for the caller's own parsing needs plus the
+ * parsed complete event.
+ *
+ * Replaces hardcoded `setTimeout(... , N)` waits in tests: the assertion
+ * is "the deploy eventually completes", not "within Nms", so it is robust
+ * to loaded CI without over-budgeting fast machines.
+ */
+async function streamUntilComplete(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app: any,
+  url: string,
+  timeoutMs = 5000
+): Promise<{ text: string; complete: Record<string, unknown> }> {
+  const start = Date.now();
+  let lastText = '';
+  while (Date.now() - start < timeoutMs) {
+    const res = await request(app.server).get(url).set('Accept', 'text/event-stream').expect(200);
+    lastText = res.text;
+    const complete = parseCompleteEvent(res.text);
+    if (complete) {
+      return { text: res.text, complete };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `streamUntilComplete: no complete event within ${timeoutMs}ms. Last body:\n${lastText}`
+  );
 }
 
 // Template deployStages build-time validation is a contract on
