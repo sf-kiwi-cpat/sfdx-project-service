@@ -93,3 +93,16 @@ governance posture summary.
 3. `agentforce-bundle/main/default` — Agentforce authoring bundle (depends
    on Flows).
 4. Optional: `manifest/prompts-package.xml` — Prompt Builder scaffolds.
+
+## Org prerequisites
+
+The `UIBundle` component in stage 1 requires the target org to have
+**Agentforce Vibe for Multi-Framework (Beta)** enabled. Enable it at
+**Setup → Apps → React Development with Agentforce Vibes and
+Salesforce Multi-Framework (Beta)** before deploying. Without it,
+stage 1 fails with `UIBundle Metadata API is not enabled …`.
+
+Stages 3 and 4 (Agentforce authoring bundle + prompt templates) depend
+on org features that are not universally available. They are declared
+`optional: true` in `template.json`, so their failure yields
+`SucceededWithWarnings` rather than aborting the deploy.
