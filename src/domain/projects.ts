@@ -117,20 +117,43 @@ function generateName(): string {
 }
 
 async function writeProjectMeta(projectDir: string, meta: ProjectMeta): Promise<void> {
-  await fs.writeFile(path.join(projectDir, META_FILE), JSON.stringify(meta, null, 2) + '\n');
+  // Write to a same-directory tmp file and rename into place. fs.rename is
+  // atomic on POSIX and on Windows for same-volume renames, so a concurrent
+  // reader either observes the old file or the new file — never a truncated
+  // mid-write state. Prevents the race that corrupted meta files under load.
+  const finalPath = path.join(projectDir, META_FILE);
+  const tmpPath = path.join(projectDir, `${META_FILE}.${randomUUID()}.tmp`);
+  await fs.writeFile(tmpPath, JSON.stringify(meta, null, 2) + '\n');
+  try {
+    await fs.rename(tmpPath, finalPath);
+  } catch (err) {
+    await fs.rm(tmpPath, { force: true });
+    throw err;
+  }
 }
 
-async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
+async function readProjectMetaFile(projectDir: string): Promise<ProjectMeta | null> {
   try {
     const raw = await fs.readFile(path.join(projectDir, META_FILE), 'utf-8');
     return JSON.parse(raw) as ProjectMeta;
   } catch {
-    return { name: path.basename(projectDir) };
+    return null;
   }
 }
 
+async function readProjectMeta(projectDir: string): Promise<ProjectMeta> {
+  return (await readProjectMetaFile(projectDir)) ?? { name: path.basename(projectDir) };
+}
+
 export async function updateLastAccessed(projectDir: string): Promise<void> {
-  const meta = await readProjectMeta(projectDir);
+  const meta = await readProjectMetaFile(projectDir);
+  if (!meta) {
+    // Writing the display-side fallback here would persist { name: <uuid> }
+    // and permanently corrupt the project. An explicit write (e.g.
+    // renameProject) is the only legitimate recovery path.
+    logger.warn({ projectDir }, 'skipping lastAccessedAt bump — meta file missing or unparseable');
+    return;
+  }
   meta.lastAccessedAt = new Date().toISOString();
   await writeProjectMeta(projectDir, meta);
 }
