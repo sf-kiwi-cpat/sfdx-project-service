@@ -34,7 +34,6 @@ vi.mock('@salesforce/core', () => ({
 
 import { writeProjectTargetOrg, resolveAlias } from '../../src/domain/auth.js';
 import { resolveDeployAuth } from '../../src/domain/deploy-auth.js';
-import { extractOptionalCredentials } from '../../src/utils/auth.js';
 
 describe('writeProjectTargetOrg', () => {
   let tmpDir: string;
@@ -234,67 +233,5 @@ describe('resolveDeployAuth (zero-auth)', () => {
 
     await resolveDeployAuth(tmpDir);
     expect(mockConfigAggregatorCreate).toHaveBeenCalledWith({ projectPath: tmpDir });
-  });
-});
-
-describe('extractOptionalCredentials', () => {
-  function mockRequest(headers: Record<string, string | undefined>) {
-    return { headers } as never;
-  }
-
-  it('returns credentials when both headers are present and valid', () => {
-    const result = extractOptionalCredentials(
-      mockRequest({
-        authorization: 'Bearer my-token',
-        'x-salesforce-instance-url': 'https://test.salesforce.com',
-      })
-    );
-    expect(result).toEqual({
-      accessToken: 'my-token',
-      instanceUrl: 'https://test.salesforce.com',
-    });
-  });
-
-  it('returns null when Authorization header is missing', () => {
-    const result = extractOptionalCredentials(
-      mockRequest({
-        'x-salesforce-instance-url': 'https://test.salesforce.com',
-      })
-    );
-    expect(result).toBeNull();
-  });
-
-  it('returns null when instance URL header is missing', () => {
-    const result = extractOptionalCredentials(
-      mockRequest({
-        authorization: 'Bearer my-token',
-      })
-    );
-    expect(result).toBeNull();
-  });
-
-  it('returns null when both headers are missing', () => {
-    const result = extractOptionalCredentials(mockRequest({}));
-    expect(result).toBeNull();
-  });
-
-  it('returns null when instance URL is not a valid URL', () => {
-    const result = extractOptionalCredentials(
-      mockRequest({
-        authorization: 'Bearer my-token',
-        'x-salesforce-instance-url': 'not-a-url',
-      })
-    );
-    expect(result).toBeNull();
-  });
-
-  it('returns null when Authorization does not start with Bearer', () => {
-    const result = extractOptionalCredentials(
-      mockRequest({
-        authorization: 'Basic my-token',
-        'x-salesforce-instance-url': 'https://test.salesforce.com',
-      })
-    );
-    expect(result).toBeNull();
   });
 });

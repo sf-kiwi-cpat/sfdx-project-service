@@ -20,7 +20,6 @@ import path from 'node:path';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { logger } from '../logger.js';
-import { type OrgCredentials } from '../utils/auth.js';
 import { type ResolvedAuth } from './deploy-auth.js';
 import {
   setDeploymentResult,
@@ -48,44 +47,30 @@ export interface DeployStage {
   optional?: boolean;
 }
 
-export async function buildConnection(credentials: OrgCredentials): Promise<Connection> {
-  const authInfo = await AuthInfo.create({
-    accessTokenOptions: {
-      accessToken: credentials.accessToken,
-      instanceUrl: credentials.instanceUrl,
-    },
-  });
-  return Connection.create({ authInfo });
-}
-
 /**
  * Build a Salesforce connection from resolved auth.
- * Supports both environment auth (username-based) and legacy credential headers.
  *
- * For environment auth, proactively refreshes the access token before
- * returning. `AuthInfo.create({ username })` reads whatever access token is
- * stored in the SFDX keychain — which may already be expired. Forcing a
+ * Proactively refreshes the access token before returning.
+ * `AuthInfo.create({ username })` reads whatever access token is stored
+ * in the SFDX keychain — which may already be expired. Forcing a
  * refresh up front turns stale-token failures into one clean synchronous
- * error (caught by the caller as 502 Deployment Failed) instead of a fuzzy
- * mid-deploy 401 that SDR's auto-retry *usually* hides but can confuse when
- * combined with unrelated failures. Mirrors the pattern in
- * sfdx-agent-sdk's SfCoreOrgAuthResolver.resolve.
+ * error (caught by the caller as 502 Deployment Failed) instead of a
+ * fuzzy mid-deploy 401 that SDR's auto-retry *usually* hides but can
+ * confuse when combined with unrelated failures. Mirrors the pattern
+ * in sfdx-agent-sdk's SfCoreOrgAuthResolver.resolve.
  *
  * `refreshAuth` is called defensively — test mocks of @salesforce/core's
- * Connection don't always implement it, and we don't want to force every
- * existing mock boundary to expand. If the method is missing we skip it;
- * real @salesforce/core Connection instances always have it.
+ * Connection don't always implement it, and we don't want to force
+ * every existing mock boundary to expand. If the method is missing we
+ * skip it; real @salesforce/core Connection instances always have it.
  */
 export async function buildConnectionFromAuth(auth: ResolvedAuth): Promise<Connection> {
-  if (auth.type === 'environment') {
-    const authInfo = await AuthInfo.create({ username: auth.username });
-    const conn = await Connection.create({ authInfo });
-    if (typeof (conn as { refreshAuth?: () => Promise<void> }).refreshAuth === 'function') {
-      await conn.refreshAuth();
-    }
-    return conn;
+  const authInfo = await AuthInfo.create({ username: auth.username });
+  const conn = await Connection.create({ authInfo });
+  if (typeof (conn as { refreshAuth?: () => Promise<void> }).refreshAuth === 'function') {
+    await conn.refreshAuth();
   }
-  return buildConnection(auth);
+  return conn;
 }
 
 /**
@@ -179,24 +164,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Derive the instanceUrl from the resolved auth + live connection. For
- * environment auth we ask the connection; for legacy credential auth
- * we already have it on the auth payload.
- */
-function instanceUrlFor(
-  auth: ResolvedAuth | OrgCredentials,
-  connection: Connection
-): string | undefined {
-  if ('type' in auth) {
-    if (auth.type === 'credentials') {
-      return auth.instanceUrl;
-    }
-    return connection.getAuthInfoFields().instanceUrl;
-  }
-  return auth.instanceUrl;
-}
-
-/**
  * Run a single ComponentSet deploy and return both the SDR response and
  * the extracted file responses. Shared by single-pass and staged deploys.
  */
@@ -260,7 +227,6 @@ async function runStagedDeploy(
   deploymentId: string,
   projectDir: string,
   stages: DeployStage[],
-  auth: ResolvedAuth | OrgCredentials,
   connection: Connection
 ): Promise<void> {
   if (await hasReactFiles(projectDir)) {
@@ -363,7 +329,7 @@ async function runStagedDeploy(
   if (aggregateStatus !== 'Failed') {
     const uiBundle = [...allFileResponses].reverse().find((f) => f.type === 'UIBundle');
     if (uiBundle) {
-      const instanceUrl = instanceUrlFor(auth, connection);
+      const instanceUrl = connection.getAuthInfoFields().instanceUrl;
       if (instanceUrl) {
         deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
       }
@@ -394,20 +360,18 @@ async function runStagedDeploy(
 export async function deployMetadataAsync(
   deploymentId: string,
   projectDir: string,
-  auth: ResolvedAuth | OrgCredentials
+  auth: ResolvedAuth
 ): Promise<void> {
   try {
     logger.info({ deploymentId, projectDir }, 'Starting async deployment');
 
-    // Support both ResolvedAuth (new) and OrgCredentials (legacy/existing tests)
-    const connection =
-      'type' in auth ? await buildConnectionFromAuth(auth) : await buildConnection(auth);
+    const connection = await buildConnectionFromAuth(auth);
 
     // Staged-deploy branch: if the project's template.json declares
     // `deployStages`, dispatch each manifest deploy in sequence.
     const stages = await readDeployStages(projectDir);
     if (stages) {
-      await runStagedDeploy(deploymentId, projectDir, stages, auth, connection);
+      await runStagedDeploy(deploymentId, projectDir, stages, connection);
       return;
     }
 
@@ -442,7 +406,7 @@ export async function deployMetadataAsync(
     if (runResult.status === 'Succeeded') {
       const uiBundle = runResult.fileResponses.find((f) => f.type === 'UIBundle');
       if (uiBundle) {
-        const instanceUrl = instanceUrlFor(auth, connection);
+        const instanceUrl = connection.getAuthInfoFields().instanceUrl;
         if (instanceUrl) {
           deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
         }

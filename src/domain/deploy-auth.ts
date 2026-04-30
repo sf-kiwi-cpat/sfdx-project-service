@@ -47,13 +47,11 @@ import { logger } from '../logger.js';
 import { resolveAlias } from './auth.js';
 
 /**
- * Resolved auth information. Either username-based (environment) or
- * credential-based (legacy, retained for backward compatibility with
- * sibling specs that predate the zero-auth contract).
+ * Resolved auth information. Username-based — the zero-auth contract
+ * requires the target org to be authed locally via `sf org login web`;
+ * the service never accepts caller-supplied tokens.
  */
-export type ResolvedAuth =
-  | { type: 'environment'; username: string }
-  | { type: 'credentials'; accessToken: string; instanceUrl: string };
+export type ResolvedAuth = { type: 'environment'; username: string };
 
 /**
  * Outcome of auth resolution for a deployment request.
