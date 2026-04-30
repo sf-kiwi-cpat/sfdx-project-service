@@ -25,6 +25,8 @@ import {
   createProject,
   getProject,
   getProjectDir,
+  renameProject,
+  updateLastAccessed,
   TemplateNotFoundError,
   ProjectNotFoundError,
 } from '../../src/domain/projects.js';
@@ -358,6 +360,75 @@ describe('createProject', () => {
       const result = await getProject(id);
 
       expect(result.initialMessages).toBeUndefined();
+    });
+  });
+
+  describe('updateLastAccessed (domain-level)', () => {
+    it('bumps lastAccessedAt when meta is valid', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+      const metaPath = path.join(projectDir, '.project-meta.json');
+      const before = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+
+      await new Promise((r) => setTimeout(r, 10));
+      await updateLastAccessed(projectDir);
+
+      const after = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+      expect(after.lastAccessedAt > before.lastAccessedAt).toBe(true);
+      expect(after.name).toBe(before.name);
+    });
+
+    it('is a no-op when the meta file is missing', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+      const metaPath = path.join(projectDir, '.project-meta.json');
+      await fs.unlink(metaPath);
+
+      await updateLastAccessed(projectDir);
+
+      await expect(fs.access(metaPath)).rejects.toThrow();
+    });
+
+    it('is a no-op when the meta file is unparseable', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+      const metaPath = path.join(projectDir, '.project-meta.json');
+      const corrupted = '{definitely-not-json';
+      await fs.writeFile(metaPath, corrupted);
+
+      await updateLastAccessed(projectDir);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+  });
+
+  describe('writeProjectMeta atomicity', () => {
+    it('leaves no tmp files behind after createBlankProject', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+      const entries = await fs.readdir(projectDir);
+      expect(entries.every((e) => !e.includes('.tmp'))).toBe(true);
+    });
+
+    it('leaves no tmp files behind after renameProject', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+
+      await renameProject(id, 'post-rename-name');
+
+      const entries = await fs.readdir(projectDir);
+      expect(entries.every((e) => !e.includes('.tmp'))).toBe(true);
+    });
+
+    it('leaves no tmp files behind after updateLastAccessed', async () => {
+      const { id } = await createBlankProject();
+      const projectDir = path.join(projectsRoot, id);
+
+      await updateLastAccessed(projectDir);
+
+      const entries = await fs.readdir(projectDir);
+      expect(entries.every((e) => !e.includes('.tmp'))).toBe(true);
     });
   });
 });
