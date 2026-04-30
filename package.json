@@ -23,6 +23,7 @@
     "test:spec": "vitest run spec/",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:deploy:live": "vitest run --config vitest.live.config.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
