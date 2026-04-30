@@ -225,6 +225,18 @@ describe('deploy routes integration', () => {
 
       expect(res.body.deploymentId).toBeDefined();
     });
+
+    // Empty-string orgAlias must 400, matching POST /v1/projects behavior.
+    // Without the minLength:1 schema guard, resolveDeployAuth would silently
+    // fall through to env/project/global — inconsistent with project
+    // creation, which throws OrgAliasEmptyError on "".
+    it('rejects empty-string orgAlias with 400', async () => {
+      const res = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: '' })
+        .expect(400);
+      expect(res.body.status).toBe(400);
+    });
   });
 
   // Regression coverage for the Vite-build-up-front change in runStagedDeploy:

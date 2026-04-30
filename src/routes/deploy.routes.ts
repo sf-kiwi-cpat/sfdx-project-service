@@ -35,7 +35,13 @@ import {
 const ProjectParams = Type.Object({ id: Type.String() });
 const DeploymentParams = Type.Object({ id: Type.String(), deploymentId: Type.String() });
 const DeploymentBody = Type.Object({
-  orgAlias: Type.Optional(Type.String()),
+  // `minLength: 1` rejects explicit empty-string aliases with a 400 at
+  // the schema layer. Without it, `resolveDeployAuth` would silently
+  // fall through to env/project/global — inconsistent with `POST
+  // /v1/projects`, where an empty `orgAlias` throws
+  // `OrgAliasEmptyError` (400). Mismatched behavior between the two
+  // endpoints is a latent footgun for callers.
+  orgAlias: Type.Optional(Type.String({ minLength: 1 })),
 });
 
 export async function deployRoutes(app: FastifyInstance): Promise<void> {
