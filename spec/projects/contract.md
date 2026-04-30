@@ -8,6 +8,8 @@ The projects system manages SFDX project creation, listing, retrieval, naming, a
 
 Templates may optionally declare an `initialMessages` array in their `template.json`. When a project is created from such a template, those messages are persisted to the project's metadata and surfaced on both `POST /projects` (create) and `GET /projects/:id` (retrieve) responses so a downstream UI (e.g., an agentic chat panel) can seed a conversation with pre-written context.
 
+`POST /projects` also accepts an optional `orgAlias` that names an SFDX-authenticated org. On success it is persisted to `.sf/config.json` as `target-org`, which the deploy endpoint then reads to resolve auth server-side (see `spec/deploy/contract.spec.ts` for the deploy-time resolution chain).
+
 ## Endpoints
 
 ### POST `/v1/projects`
@@ -19,6 +21,9 @@ Templates may optionally declare an `initialMessages` array in their `template.j
 - `template` (optional, string): Template identifier (e.g., `"local-react-test"`)
   - When provided: unzips the named template into a new project directory
   - When omitted: scaffolds a minimal blank SFDX project in-memory (no zip, no disk lookup)
+- `orgAlias` (optional, string): Alias of a Salesforce org already authenticated via `sf org login`
+  - When provided: validated against the local auth store (StateAggregator). A resolved alias is persisted to `.sf/config.json` as `target-org`.
+  - When omitted: no target-org is written. The deploy endpoint will fall back to the global default org (if any) or require an `orgAlias` on the POST body.
 
 **Responses:**
 
@@ -29,6 +34,7 @@ Templates may optionally declare an `initialMessages` array in their `template.j
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     "name": "brave-falcon",
     "lastAccessedAt": "2026-04-22T14:00:00.000Z",
+    "targetOrg": "my-scratch-org",
     "initialMessages": [
       { "role": "user", "content": "Build me something" },
       { "role": "assistant", "content": "On it!" }
@@ -39,24 +45,28 @@ Templates may optionally declare an `initialMessages` array in their `template.j
   - `id` is a UUID (lowercase hex, 8-4-4-4-12 format)
   - `name` is a non-empty string (auto-generated)
   - `lastAccessedAt` is a valid ISO 8601 timestamp equal to the creation time
+  - `targetOrg` (optional) — present as a string echoing the resolved `orgAlias` when one was provided; omitted when `orgAlias` was not provided
   - `initialMessages` (optional) — present as a non-empty array when the template's `template.json` declares `initialMessages`; each element has non-empty `role` (string) and non-empty `content` (string)
   - `initialMessages` is omitted entirely (not an empty array) when the project was created blank or the template does not declare them
-  - Returned for both template-based and blank projects (with the `initialMessages` rules above)
+  - Returned for both template-based and blank projects (with the `initialMessages` / `targetOrg` rules above)
   - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
   - The returned `initialMessages` (when present) matches the value that `GET /v1/projects/:id` will return for this project
 
 - **400 Bad Request** — Invalid input
   - Template name is not recognized
+  - `orgAlias` is an empty string
+  - `orgAlias` does not resolve to a username in the SFDX auth store (`detail` names the offending alias)
   - Response: RFC 9457 Problem Detail (`application/problem+json`)
 
 **Project Directory Contents:**
 
-| Scenario       | Contents                                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Template-based | Full template contents (unzipped from disk), including `sfdx-project.json` with `packageDirectories` (array, at least one entry)   |
-| Blank          | Minimal `sfdx-project.json` with `packageDirectories` (array, at least one entry) + empty `force-app/main/default/` directory tree |
+| Scenario        | Contents                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Template-based  | Full template contents (unzipped from disk), including `sfdx-project.json` with `packageDirectories` (array, at least one entry)   |
+| Blank           | Minimal `sfdx-project.json` with `packageDirectories` (array, at least one entry) + empty `force-app/main/default/` directory tree |
+| With `orgAlias` | In addition to the above, a `.sf/config.json` file containing `{ "target-org": "<alias>" }`                                        |
 
-Both scenarios produce a valid SFDX project with `sfdx-project.json` containing a non-empty `packageDirectories` array.
+Both template-based and blank scenarios produce a valid SFDX project with `sfdx-project.json` containing a non-empty `packageDirectories` array.
 
 ---
 

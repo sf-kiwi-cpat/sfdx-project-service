@@ -23,6 +23,7 @@ logs/
 coverage/
 .vitest/
 .nyc_output/
+tests/live/.last-run.json
 
 # Environment
 .env

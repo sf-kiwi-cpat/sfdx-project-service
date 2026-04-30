@@ -250,6 +250,22 @@ Deployments are **asynchronous**: `POST /v1/projects/:id/deployments`
 returns immediately with a `deploymentId`, and the client connects to
 the SSE events endpoint for progress. There is no polling endpoint.
 
+#### Org preconditions for React-based templates
+
+Templates that ship a `UIBundle` component (React apps hosted inside
+Salesforce) require the target org to have **Agentforce Vibe for
+Multi-Framework (Beta)** enabled. Deployments will fail with
+`UIBundle Metadata API is not enabled …` otherwise.
+
+To enable it: **Setup → Apps → React Development with Agentforce Vibes
+and Salesforce Multi-Framework (Beta)**, and toggle the preference on.
+
+This is an org-level configuration managed in Setup, not something the
+service can toggle. All built-in templates (`data-curator`,
+`local-react-test`, `metadata-ownership-tracking`, `work-tracking`)
+currently ship a UIBundle, so every one of them depends on this
+preference.
+
 #### `POST /v1/projects/:id/deployments`
 
 Start a metadata deployment to a Salesforce org.
@@ -301,9 +317,9 @@ SSE stream of deployment progress.
 | `complete` | Terminal: `{ deploymentId, status, numberComponentsDeployed, numberComponentsTotal, components[], appUrl? }`. The stream closes after this event. |
 
 **`complete.appUrl`** is present only when the deployment succeeded
-**and** included a `WebApplication` component. Format:
+**and** included a `UIBundle` component. Format:
 `{instanceUrl}/lwr/application/ai/c-{appName}`, where `appName` is the
-`WebApplication`'s `fullName`.
+`UIBundle`'s `fullName`.
 
 **Example stream:**
 

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Event_Type__c</fullName>
+    <label>Event Type</label>
+    <required>true</required>
+    <type>Picklist</type>
+    <valueSet>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>ScanCompleted</fullName>
+                <default>true</default>
+                <label>Scan Completed</label>
+            </value>
+            <value>
+                <fullName>OwnerAssigned</fullName>
+                <default>false</default>
+                <label>Owner Assigned</label>
+            </value>
+            <value>
+                <fullName>DuplicateDetected</fullName>
+                <default>false</default>
+                <label>Duplicate Detected</label>
+            </value>
+            <value>
+                <fullName>StaleAlert</fullName>
+                <default>false</default>
+                <label>Stale Alert</label>
+            </value>
+            <value>
+                <fullName>AgentRecommendation</fullName>
+                <default>false</default>
+                <label>Agent Recommendation</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

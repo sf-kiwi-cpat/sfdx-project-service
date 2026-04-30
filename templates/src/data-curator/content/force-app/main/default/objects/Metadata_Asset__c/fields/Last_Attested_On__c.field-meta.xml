@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Last_Attested_On__c</fullName>
+    <label>Last Attested On</label>
+    <required>false</required>
+    <type>Date</type>
+</CustomField>
+

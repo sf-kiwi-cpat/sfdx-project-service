@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Curator_Assign_Metadata_Owner</members>
+        <members>Curator_Build_Duplicate_Cleanup_Plan</members>
+        <members>Curator_Generate_Cleanup_Summary</members>
+        <members>Curator_Generate_Governance_Summary</members>
+        <members>Curator_Generate_Owner_Message</members>
+        <members>Curator_Generate_Stale_Brief</members>
+        <members>Curator_Get_Metadata_Inventory</members>
+        <members>Curator_Propose_Metadata_Owner</members>
+        <members>Curator_Run_Stale_Metadata_Review</members>
+        <name>Flow</name>
+    </types>
+    <version>67.0</version>
+</Package>

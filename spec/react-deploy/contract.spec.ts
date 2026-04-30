@@ -15,20 +15,54 @@
  * limitations under the License.
  */
 
+/**
+ * SPEC TESTS — Human-guarded contract (SDLC 2026)
+ *
+ * Contract for the Vite build step layered on top of
+ * `POST /v1/projects/:id/deployments`. When a project contains `.tsx` or
+ * `.jsx` source files, the service runs `vite.build()` before proceeding
+ * with metadata deployment. This spec asserts build-step behavior only —
+ * the deploy endpoint's auth contract is defined in
+ * `spec/deploy/contract.spec.ts`.
+ *
+ * Auth for these tests is resolved via the zero-auth contract: the body
+ * carries `{ orgAlias: 'test-alias' }` and `StateAggregator` is mocked to
+ * resolve that alias to a test username. No `Authorization` /
+ * `X-Salesforce-Instance-Url` headers are sent — those are not part of
+ * the HTTP contract.
+ *
+ * Mock boundary: @salesforce/core (auth) and vite (build). Real: Fastify,
+ * filesystem, deployment store, SDR.
+ *
+ * These tests are the source of truth for the Vite build-step contract.
+ * The AI implementation agent must NOT modify this file.
+ */
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
-// Mock @salesforce/core (auth requires network)
-const { mockConnectionCreate, mockAuthInfoCreate } = vi.hoisted(() => ({
+// Mock @salesforce/core (auth requires network / real keychain)
+const { mockConnectionCreate, mockAuthInfoCreate, mockGetUsername } = vi.hoisted(() => ({
   mockConnectionCreate: vi.fn(),
   mockAuthInfoCreate: vi.fn(),
+  mockGetUsername: vi.fn(),
 }));
 
 vi.mock('@salesforce/core', () => ({
   Connection: { create: mockConnectionCreate },
   AuthInfo: { create: mockAuthInfoCreate },
   Global: { SFDX_STATE_FOLDER: '.sfdx' },
-  StateAggregator: { clearInstance: vi.fn() },
+  StateAggregator: {
+    clearInstance: vi.fn(),
+    getInstance: vi.fn().mockResolvedValue({
+      aliases: { getUsername: mockGetUsername },
+    }),
+  },
+  ConfigAggregator: {
+    create: vi.fn().mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue(undefined),
+    }),
+  },
+  OrgConfigProperties: { TARGET_ORG: 'target-org' },
 }));
 
 // Mock vite module — control build() outcomes (success/fail/timeout)
@@ -42,7 +76,6 @@ vi.mock('vite', () => ({
 
 import { createApp } from '../../src/app.js';
 import {
-  TEST_CREDENTIALS,
   setupTempProject,
   cleanupTempProject,
   setupDefaultMocks,
@@ -51,6 +84,9 @@ import {
 } from '../deploy/fixtures.js';
 import { getDeploymentPollPromise, getDeployment } from '../../src/deployments.js';
 import { createReactProject, createMetadataOnlyProject } from './fixtures.js';
+
+const TEST_ORG_ALIAS = 'test-alias';
+const TEST_USERNAME = 'test-user@example.com';
 
 describe('POST /v1/projects/:id/deployments with Vite build step', () => {
   let app: ReturnType<typeof createApp>;
@@ -90,6 +126,12 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
 
     // Default: build succeeds
     mockViteBuild.mockResolvedValue(undefined);
+
+    // Default: TEST_ORG_ALIAS resolves to a known username. Individual tests
+    // can override mockGetUsername to simulate unresolvable aliases.
+    mockGetUsername.mockImplementation((alias: string) =>
+      alias === TEST_ORG_ALIAS ? TEST_USERNAME : undefined
+    );
   });
 
   afterEach(async () => {
@@ -101,8 +143,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
     it('returns 202 immediately and runs Vite build asynchronously', async () => {
       const res = await request(app.server)
         .post(`/v1/projects/${reactProjectId}/deployments`)
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(202);
 
       expect(res.body).toHaveProperty('deploymentId');
@@ -120,8 +161,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
 
       const res = await request(app.server)
         .post(`/v1/projects/${reactProjectId}/deployments`)
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(202);
 
       // Wait for async pipeline to complete
@@ -139,8 +179,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
 
       const res = await request(app.server)
         .post(`/v1/projects/${reactProjectId}/deployments`)
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(202);
 
       // Wait for async pipeline to complete
@@ -156,8 +195,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
     it('skips build → proceeds to deployment → 202 Accepted', async () => {
       const res = await request(app.server)
         .post(`/v1/projects/${metadataProjectId}/deployments`)
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(202);
 
       expect(res.body).toHaveProperty('deploymentId');
@@ -168,20 +206,10 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
   });
 
   describe('error cases', () => {
-    it('returns 400 when credentials are missing', async () => {
-      const res = await request(app.server)
-        .post(`/v1/projects/${defaultProjectId}/deployments`)
-        .expect(400);
-
-      expect(res.headers['content-type']).toContain('application/problem+json');
-      expect(res.body.status).toBe(400);
-    });
-
     it('returns 404 when project ID does not exist', async () => {
       const res = await request(app.server)
         .post('/v1/projects/00000000-0000-0000-0000-000000000000/deployments')
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(404);
 
       expect(res.body.status).toBe(404);
@@ -192,8 +220,7 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
 
       const res = await request(app.server)
         .post(`/v1/projects/${defaultProjectId}/deployments`)
-        .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-        .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl)
+        .send({ orgAlias: TEST_ORG_ALIAS })
         .expect(502);
 
       expect(res.body.status).toBe(502);

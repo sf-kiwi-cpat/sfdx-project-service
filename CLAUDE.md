@@ -11,9 +11,35 @@ npm test      # run tests (vitest)
 npm run test:unit          # unit tests only
 npm run test:integration   # integration tests only
 npm run test:coverage      # all tests + coverage report
+npm run test:deploy:live   # tier-3: deploy every template to a real org
 npm run lint  # eslint
 npm run dev   # dev server with watch mode
 ```
+
+## Deploy / template changes — required live-deploy check
+
+**Changes to any of these paths REQUIRE running `npm run test:deploy:live`
+before marking the work complete:**
+
+- `src/domain/deploy.ts`
+- `src/domain/deploy-auth.ts`
+- `src/domain/build.ts`
+- `src/routes/deployments.ts`
+- `templates/src/**` (any template source)
+- New templates added under `templates/src/`
+
+`npm run test:deploy:live` is a tier-3 suite that deploys every built-in
+template to a real Salesforce org (using the sf CLI default target-org,
+or `SF_TARGET_ORG=<alias>` if set) and verifies the contract end-to-end:
+deploy succeeds, UIBundle ships, `appUrl` populates, wall-clock fits
+budget. It is the only way to catch regressions that mocks and
+structural tests miss (org preference gating, API-version floors,
+metadata-API changes). See `tests/live/README.md`.
+
+If the target org isn't authed locally, the suite auto-skips cleanly.
+If it's skipped and you can't run it in your environment, **stop and
+surface to the user** rather than shipping the change — a green
+`npm test` is necessary but not sufficient for deploy/template edits.
 
 ## Git Hooks (husky)
 

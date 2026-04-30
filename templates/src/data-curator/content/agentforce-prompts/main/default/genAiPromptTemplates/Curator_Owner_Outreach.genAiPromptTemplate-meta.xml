@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenAiPromptTemplate xmlns="http://soap.sforce.com/2006/04/metadata">
+    <developerName>Curator_Owner_Outreach</developerName>
+    <masterLabel>Curator Owner Outreach</masterLabel>
+    <templateVersions>
+        <content>Draft a concise stewardship handoff message for a Salesforce admin.
+
+Asset:
+{!$Input:asset_name}
+
+Guidance:
+{!$Input:request_context}
+
+Write a short message that:
+1. Names the metadata asset
+2. Explains why the owner is being asked to steward it
+3. States the expected next step
+4. Uses a professional and collaborative tone</content>
+        <inputs>
+            <apiName>asset_name</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:asset_name</referenceName>
+            <required>true</required>
+        </inputs>
+        <inputs>
+            <apiName>request_context</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:request_context</referenceName>
+            <required>true</required>
+        </inputs>
+        <primaryModel>sfdc_ai__DefaultGPT4Omni</primaryModel>
+        <status>Published</status>
+    </templateVersions>
+    <type>einstein_gpt__flex</type>
+    <visibility>Global</visibility>
+</GenAiPromptTemplate>

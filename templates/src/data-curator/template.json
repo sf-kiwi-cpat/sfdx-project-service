@@ -1,0 +1,6 @@
+{
+  "id": "data-curator",
+  "name": "Data Curator",
+  "description": "Agent-driven metadata governance with custom objects, Flows, and Agentforce actions",
+  "categories": ["Governance", "Administration"]
+}
