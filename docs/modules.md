@@ -1,478 +1,556 @@
 # Module Reference
 
-Detailed documentation of all modules in SF Project Service.
+Detailed documentation of the modules in SF Project Service.
+Production code lives under `src/`:
+
+```
+src/
+├── index.ts           # entry point (excluded from coverage)
+├── app.ts             # Fastify app factory
+├── config.ts          # environment-backed configuration
+├── logger.ts          # Pino logger singleton
+├── errors.ts          # RFC 9457 helpers + error classes
+├── deployments.ts     # in-memory deployment store
+├── routes/            # HTTP layer (Fastify plugins)
+│   ├── index.ts
+│   ├── templates.routes.ts
+│   ├── projects.routes.ts
+│   ├── deploy.routes.ts
+│   └── fs-events.routes.ts
+└── domain/            # framework-agnostic business logic
+    ├── templates.ts
+    ├── projects.ts
+    ├── deploy.ts
+    ├── deploy-auth.ts
+    ├── auth.ts
+    ├── build.ts
+    ├── files.ts
+    └── watcher.ts
+```
 
 ## Table of Contents
 
-- [templates.ts](#templatests) — Template listing and metadata
-- [projects.ts](#projectsts) — Project creation and path resolution
-- [deploy.ts](#deployts) — Metadata deployment to Salesforce
-- [files.ts](#filests) — File tree building
-- [errors.ts](#errorsts) — RFC 9457 error handling
-- [config.ts](#configts) — Environment configuration
-- [logger.ts](#loggerts) — Structured logging
+### Domain (`src/domain/`)
+- [templates.ts](#domaintemplatests) — template listing
+- [projects.ts](#domainprojectsts) — project lifecycle
+- [deploy-auth.ts](#domaindeploy-authts) — zero-auth resolution
+- [deploy.ts](#domaindeployts) — metadata deployment
+- [auth.ts](#domainauthts) — `@salesforce/core` shim
+- [build.ts](#domainbuildts) — React/Vite build
+- [files.ts](#domainfilests) — file tree + guarded reads
+- [watcher.ts](#domainwatcherts) — chokidar-backed watcher manager
+
+### Cross-cutting (`src/`)
+- [errors.ts](#errorsts) — RFC 9457 error helpers + classes
+- [deployments.ts](#deploymentsts) — in-memory deployment store
+- [config.ts](#configts) — environment configuration
+- [logger.ts](#loggerts) — Pino logger
+
+### Routes (`src/routes/`)
+- [templates.routes.ts](#templatesroutests)
+- [projects.routes.ts](#projectsroutests)
+- [deploy.routes.ts](#deployroutests)
+- [fs-events.routes.ts](#fs-eventsroutests)
 
 ---
 
-## templates.ts
+## domain/templates.ts
 
-Template discovery and listing.
+Template discovery and listing. Templates live on disk at
+`templates/dist/<id>/` (produced by `scripts/zip-templates.js`). Each
+directory contains a `template.json` metadata file and a
+`content.zip` (zipped at build time from `templates/src/<id>/content/`).
 
 ### Exports
-
-#### `interface Template`
 
 ```typescript
 interface Template {
-  name: string;  // Display name (e.g., "Minimal", "Standard Package")
-  id: string;    // Template ID (filename without .zip)
+  id: string;
+  name: string;
+  description: string;
+  categories: string[];
 }
+
+async function listTemplates(): Promise<Template[]>
 ```
 
-#### `async function listTemplates(): Promise<Template[]>`
-
-Scans the templates directory and returns all available templates.
-
-**Returns:** Array of templates sorted by ID (alphabetical).
-
-**Example:**
-```typescript
-import { listTemplates } from './templates.js';
-
-const templates = await listTemplates();
-console.log(templates);
-// [
-//   { id: 'minimal', name: 'Minimal' },
-//   { id: 'standard-package', name: 'Standard Package' }
-// ]
-```
-
-**Implementation Notes:**
-- Looks for `.zip` files in the templates directory
-- Converts filename to display name (replaces `-` with space, title case)
-- Returns empty array if no templates found
-- Throws if templates directory doesn't exist
+`listTemplates()` reads each `templates/dist/<id>/template.json`,
+skips entries with `visible: false`, and returns the rest sorted by
+`id`. Directories without a parseable `template.json` are silently
+skipped.
 
 ---
 
-## projects.ts
+## domain/projects.ts
 
-Project lifecycle management.
+Project lifecycle: create (from template or blank), list, retrieve,
+rename, resolve on-disk directory.
 
-### Exports
-
-#### `class TemplateNotFoundError extends Error`
-
-Thrown when a template ID is invalid or doesn't exist.
+### Exports (selected)
 
 ```typescript
-throw new TemplateNotFoundError('unknown-template');
-// Error: Template not found: unknown-template
+interface Message { role: 'user' | 'assistant'; content: string }
+
+async function createProject(templateId: string): Promise<{
+  id: string;
+  name: string;
+  lastAccessedAt: string;
+  initialMessages?: Message[];
+}>;
+
+async function createBlankProject(orgAlias?: string): Promise<{
+  id: string;
+  name: string;
+  lastAccessedAt: string;
+}>;
+
+async function listProjects(): Promise<Array<{
+  id: string;
+  name: string;
+  lastAccessedAt: string;
+}>>;
+
+async function getProject(id: string): Promise<{
+  id: string;
+  name: string;
+  lastAccessedAt: string;
+  initialMessages?: Message[];
+}>;
+
+async function renameProject(id: string, name: string): Promise<...>;
+
+async function getProjectDir(projectId: string): Promise<string>;
+async function updateLastAccessed(projectDir: string): Promise<void>;
 ```
 
-#### `class ProjectNotFoundError extends Error`
+Behavior notes:
+- `createProject` unzips `templates/dist/<templateId>/content.zip`
+  into a new UUID-named directory under `PROJECTS_ROOT` and writes
+  `.project-meta.json`. If the template's `content/template.json`
+  declares a non-empty `initialMessages`, they're copied into project
+  meta and surfaced in the response.
+- `createBlankProject(orgAlias?)` scaffolds a minimal
+  `sfdx-project.json` + `force-app/` layout. An empty-string
+  `orgAlias` throws `OrgAliasEmptyError` (HTTP 400).
+- `getProject` and `updateLastAccessed` bump `lastAccessedAt` using
+  an atomic write-then-rename to prevent meta-file corruption.
+- `getProjectDir` validates the UUID shape and that the directory
+  exists; otherwise throws `ProjectNotFoundError` (HTTP 404).
 
-Thrown when a project ID is invalid or doesn't exist.
-
-```typescript
-throw new ProjectNotFoundError('invalid-uuid');
-// Error: Project not found: invalid-uuid
-```
-
-#### `async function createProject(templateId: string): Promise<string>`
-
-Creates a new project by unzipping a template into a UUID-named directory.
-
-**Parameters:**
-- `templateId` — Template ID to use (must match a `.zip` file in templates directory)
-
-**Returns:** UUID of the created project
-
-**Security:**
-- Validates templateId against regex `/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/`
-- Checks template ZIP exists before creating directory
-- Cleans up directory if extraction fails
-
-**Example:**
-```typescript
-import { createProject } from './projects.js';
-
-const projectId = await createProject('minimal');
-console.log(projectId);
-// '550e8400-e29b-41d4-a716-446655440000'
-```
-
-**Throws:**
-- `TemplateNotFoundError` — If templateId is invalid or template doesn't exist
-- `Error` — If directory creation or extraction fails
-
-#### `async function getProjectDir(projectId: string): Promise<string>`
-
-Resolves and validates a project directory path.
-
-**Parameters:**
-- `projectId` — Project UUID
-
-**Returns:** Absolute path to project directory
-
-**Security:**
-- Validates projectId against UUID regex pattern
-- Checks directory exists
-- Prevents path traversal attacks
-
-**Example:**
-```typescript
-import { getProjectDir } from './projects.js';
-
-const dir = await getProjectDir('550e8400-e29b-41d4-a716-446655440000');
-console.log(dir);
-// '/Users/dev/sfdx-project-service/projects/550e8400-e29b-41d4-a716-446655440000'
-```
-
-**Throws:**
-- `ProjectNotFoundError` — If projectId is invalid or project directory doesn't exist
+### Errors
+`TemplateNotFoundError`, `ProjectNotFoundError`, `OrgAliasEmptyError`
+(defined in [errors.ts](#errorsts)).
 
 ---
 
-## deploy.ts
+## domain/deploy-auth.ts
 
-Metadata deployment to Salesforce orgs.
+Zero-auth resolution for deployments. The service never accepts
+caller-supplied access tokens — it resolves an alias to a locally-
+authed Salesforce username server-side.
 
 ### Exports
 
-#### `interface OrgCredentials`
-
 ```typescript
-interface OrgCredentials {
-  accessToken: string;   // OAuth access token for Salesforce org
-  instanceUrl: string;   // Salesforce instance URL (e.g., https://org.salesforce.com)
-}
+type ResolvedAuth = { type: 'environment'; username: string };
+
+type AuthResolution =
+  | ResolvedAuth
+  | { type: 'missing' }
+  | { type: 'unresolved-alias'; alias: string };
+
+async function resolveDeployAuth(
+  projectDir: string,
+  bodyAlias?: string,
+): Promise<AuthResolution>;
 ```
 
-#### `async function deployMetadata(projectDir: string, credentials: OrgCredentials): Promise<DeployResult>`
+Priority chain:
 
-Deploys project metadata to a Salesforce org.
+1. `bodyAlias` (caller-supplied per-request override)
+2. `SF_TARGET_ORG` / `SFDX_TARGET_ORG` env var
+3. Project `target-org` (`<projectDir>/.sf/config.json`)
+4. Global default org (`$HOME/.sf/config.json`)
+5. `{ type: 'missing' }` — caller returns 400
 
-**Parameters:**
-- `projectDir` — Absolute path to project directory
-- `credentials` — Salesforce org credentials
+Priority 2–4 is delegated to `ConfigAggregator`, which applies
+`Environment > Local > Global` precedence natively. If `bodyAlias`
+is supplied but doesn't resolve to a username, the function
+short-circuits with `{ type: 'unresolved-alias', alias }` rather than
+falling through — so the HTTP layer can name the offending alias in
+the problem+json response.
 
-**Returns:** Deployment result object with status and components
-
-**Deployment Result Structure:**
-```typescript
-{
-  ok: boolean;
-  status: string;  // e.g., "Succeeded", "Failed"
-  numberComponentsDeployed: number;
-  numberComponentsTotal: number;
-  components: Array<{
-    fullName: string;
-    type: string;
-    state: string;  // e.g., "Created", "Updated", "Failed"
-  }>;
-}
-```
-
-**Example:**
-```typescript
-import { deployMetadata } from './deploy.js';
-
-const result = await deployMetadata('/path/to/project', {
-  accessToken: 'YOUR_TOKEN',
-  instanceUrl: 'https://org.salesforce.com'
-});
-
-console.log(result);
-// {
-//   ok: true,
-//   status: "Succeeded",
-//   numberComponentsDeployed: 3,
-//   numberComponentsTotal: 3,
-//   components: [...]
-// }
-```
-
-**Implementation Notes:**
-- Reads `sfdx-project.json` to extract package directories
-- Uses `@salesforce/source-deploy-retrieve` (SDR) for deployment
-- Polls deployment status until complete
-- Returns full result from SDR, including component details
-- Credentials are never stored or logged
-
-**Throws:**
-- `Error` — If sfdx-project.json is invalid or deployment fails
+`resolveDeployAuth` lives in its own module (not in `auth.ts`) so
+tests can `vi.mock('./auth.js')` to stub `resolveAlias` while keeping
+the real resolver wired up in `deploy.routes.ts`.
 
 ---
 
-## files.ts
+## domain/deploy.ts
 
-File tree traversal and building.
+Salesforce metadata deployment using
+`@salesforce/source-deploy-retrieve` (SDR).
 
 ### Exports
 
-#### `interface TreeNode`
+```typescript
+interface DeployStage {
+  manifest: string;
+  optional?: boolean;
+}
+
+async function buildConnectionFromAuth(
+  auth: ResolvedAuth,
+): Promise<Connection>;
+
+async function buildComponentSet(projectDir: string): Promise<ComponentSet>;
+
+async function readDeployStages(
+  projectDir: string,
+): Promise<DeployStage[] | undefined>;
+
+async function deployMetadataAsync(
+  deploymentId: string,
+  projectDir: string,
+  auth: ResolvedAuth,
+): Promise<void>;
+
+function mapStatusToProgressEvent(
+  deploymentId: string,
+  statusUpdate: Record<string, unknown>,
+): ProgressEvent;
+```
+
+Behavior notes:
+- `buildConnectionFromAuth` creates an `AuthInfo` + `Connection` and
+  proactively calls `refreshAuth()`, turning stale-token failures
+  into one clean synchronous error (502) rather than a mid-deploy
+  401 that SDR's auto-retry might hide.
+- `readDeployStages` parses `template.json` for a `deployStages`
+  array. Returns `undefined` if the file is missing or empty; throws
+  `BuildError` if the file is present but malformed or if any
+  `stage.manifest` path traverses outside `projectDir`.
+- `deployMetadataAsync` is never awaited by the POST handler — it
+  runs in the background:
+  1. Runs Vite build if the project has React sources.
+  2. If `deployStages` is declared, runs each manifest-based
+     deploy in order via `ComponentSet.fromManifest`. Required-stage
+     failures abort remaining stages; optional-stage failures emit a
+     `warning` SSE event and continue.
+  3. Otherwise, runs a single-pass `ComponentSet.fromSource()`
+     deploy over the project's `packageDirectories`.
+  4. Writes the final `DeploymentResult` into the deployments store.
+- `DeploymentResult.status` is one of `Succeeded`,
+  `SucceededWithWarnings`, or `Failed`.
+- `appUrl` is set on success when a `UIBundle` component was
+  deployed. For staged deploys, it comes from the last stage that
+  surfaced a `UIBundle`.
+
+### Errors
+`BuildError`, `DeploymentError` (502).
+
+---
+
+## domain/auth.ts
+
+Thin wrapper around `@salesforce/core` authentication helpers.
+
+```typescript
+async function resolveAlias(alias: string): Promise<string | undefined>;
+```
+
+Returns the username for a given SFDX alias, or `undefined` if the
+alias is unknown. Used by [`deploy-auth.ts`](#domaindeploy-authts).
+
+---
+
+## domain/build.ts
+
+React/Vite build pipeline used by deployments.
+
+```typescript
+async function hasReactFiles(projectDir: string): Promise<boolean>;
+async function runViteBuild(projectDir: string): Promise<void>;
+```
+
+`deployMetadataAsync` calls `hasReactFiles` before deploying; if
+true, it runs `runViteBuild` so UIBundle-bearing stages ship the
+latest built assets. Both functions are no-ops when the template
+doesn't ship React sources.
+
+---
+
+## domain/files.ts
+
+File tree traversal and guarded reads.
+
+### Exports
 
 ```typescript
 interface TreeNode {
   name: string;
   type: 'file' | 'directory';
-  children?: TreeNode[];  // Only present if type is 'directory'
+  children?: TreeNode[]; // directory only
 }
+
+async function buildTree(
+  name: string | undefined,
+  dir: string,
+): Promise<TreeNode>;
+
+async function readFile(
+  relPath: string,
+  projectDir: string,
+): Promise<string>;
 ```
 
-#### `async function buildTree(name?: string, dir?: string): Promise<TreeNode>`
+Behavior notes:
+- `buildTree` recursively walks `dir` and returns a `TreeNode`.
+  Returns children sorted.
+- `readFile` rejects:
+  - Missing `path` query parameter (at the route layer)
+  - Path traversal (`..`) attempts
+  - Restricted paths: `.git/`, `.sf/`, `node_modules/`, dotfiles
+  - Paths that resolve to a directory rather than a file
 
-Recursively builds a file tree structure.
+---
 
-**Parameters:**
-- `name` — Display name for root node (defaults to directory name)
-- `dir` — Directory path to traverse (defaults to current working directory)
+## domain/watcher.ts
 
-**Returns:** TreeNode representing the directory structure
+Chokidar-backed filesystem watcher manager, used by
+`fs-events.routes.ts` to stream per-project change events.
 
-**Example:**
-```typescript
-import { buildTree } from './files.js';
-
-const tree = await buildTree(undefined, '/Users/dev/my-project');
-console.log(JSON.stringify(tree, null, 2));
-// {
-//   "name": "my-project",
-//   "type": "directory",
-//   "children": [
-//     { "name": "package.json", "type": "file" },
-//     {
-//       "name": "src",
-//       "type": "directory",
-//       "children": [...]
-//     }
-//   ]
-// }
-```
-
-**Implementation Notes:**
-- Recursively walks directory tree
-- Returns files and directories in sorted order
-- Includes hidden files (starting with `.`)
-- No maximum depth limit (be careful with very large trees)
+The module exports a singleton `watcherManager` with a
+`closeAll()` method. `app.ts` registers an `onClose` hook that calls
+`watcherManager.closeAll()` to avoid leaked watchers between test
+runs and during SIGTERM.
 
 ---
 
 ## errors.ts
 
-RFC 9457 Problem Details error handling.
+RFC 9457 Problem Details helpers and domain error classes.
 
 ### Exports
 
-#### `const PROBLEM_JSON: string`
-
-Content-Type value for RFC 9457 responses:
 ```typescript
 const PROBLEM_JSON = 'application/problem+json';
-```
 
-#### `function problemDetail(status: number, title: string, detail: string): ProblemDetail`
-
-Creates an RFC 9457 Problem Detail object.
-
-**Parameters:**
-- `status` — HTTP status code
-- `title` — Human-readable error type
-- `detail` — Human-readable error description
-
-**Returns:** Problem Detail object
-
-**Example:**
-```typescript
-import { problemDetail, PROBLEM_JSON } from './errors.js';
-
-res.status(404)
-  .contentType(PROBLEM_JSON)
-  .json(problemDetail(404, 'Not Found', 'Project not found'));
-```
-
-#### `function errorToProblem(err: unknown): ProblemDetail`
-
-Converts any error to an RFC 9457 Problem Detail object.
-
-**Parameters:**
-- `err` — Any error object
-
-**Returns:** Problem Detail object
-
-**Behavior:**
-- Maps custom errors to appropriate HTTP status codes
-- Returns 500 Internal Server Error for unknown errors
-- Includes error message in detail field
-- Never includes stack traces in response (logged separately)
-
-**Example:**
-```typescript
-import { errorToProblem, PROBLEM_JSON } from './errors.js';
-
-try {
-  await deployMetadata(projectDir, credentials);
-} catch (err) {
-  const problem = errorToProblem(err);
-  res.status(problem.status)
-    .contentType(PROBLEM_JSON)
-    .json(problem);
+interface ProblemDetail {
+  status: number;
+  title: string;
+  detail: string;
+  type?: string;
+  instance?: string;
 }
+
+function problemDetail(
+  status: number,
+  title: string,
+  detail: string,
+): ProblemDetail;
+
+function errorToProblem(err: unknown): ProblemDetail;
+
+class TemplateNotFoundError extends Error   // → 400
+class ProjectNotFoundError extends Error    // → 404
+class OrgAliasEmptyError extends Error      // → 400
+class DeploymentError extends Error         // → 502
+class DeploymentNotFoundError extends Error // → 404
+class BuildError extends Error              // → 502
 ```
+
+`errorToProblem` is the single source of truth for mapping custom
+errors to HTTP status codes. Unknown errors become `500 Internal
+Server Error`. Stack traces are never returned to clients — the
+`app.setErrorHandler` in [`app.ts`](#architecture) logs them via
+Pino.
+
+---
+
+## deployments.ts
+
+In-memory deployment store. Shared by `POST /deployments` (the
+producer) and the SSE `GET /deployments/:deploymentId/events`
+endpoint (the consumer).
+
+### Exports (selected)
+
+```typescript
+interface DeploymentComponentResult {
+  fullName: string;
+  type: string;
+  state: string;
+}
+
+interface ProgressEvent {
+  deploymentId: string;
+  timestamp: string;
+  status: string;
+  numberComponentsDeployed: number;
+  numberComponentsTotal: number;
+  components: DeploymentComponentResult[];
+}
+
+interface DeploymentStageSummary {
+  name: string;
+  status: string;
+  numberComponentsDeployed: number;
+  numberComponentsTotal: number;
+  errorMessage?: string;
+}
+
+interface DeploymentWarning {
+  stage: string;
+  errorMessage: string;
+}
+
+interface DeploymentResult {
+  deploymentId: string;
+  status: string; // Succeeded | SucceededWithWarnings | Failed
+  numberComponentsDeployed: number;
+  numberComponentsTotal: number;
+  components: DeploymentComponentResult[];
+  stages?: DeploymentStageSummary[];
+  warnings?: DeploymentWarning[];
+  failedStage?: string;
+  appUrl?: string;
+  errorMessage?: string;
+}
+
+function createDeployment(projectId: string): string;
+function deploymentExists(deploymentId: string): boolean;
+function setDeploymentResult(id: string, r: DeploymentResult): void;
+function setDeploymentError(id: string, message: string): void;
+function getDeploymentResult(id: string): DeploymentResult | undefined;
+function addProgressEvent(id: string, e: ProgressEvent): void;
+function getProgressEvents(id: string): ProgressEvent[];
+function addStageEvent(id: string, e: DeploymentStageSummary): void;
+function getDeploymentStageEvents(id: string): DeploymentStageSummary[];
+function addWarningEvent(id: string, e: DeploymentWarning): void;
+function getDeploymentWarningEvents(id: string): DeploymentWarning[];
+function setDeploymentPollPromise(id: string, p: Promise<void>): void;
+```
+
+All state is per-process. Running multiple instances behind a
+reverse proxy requires pinning the SSE stream to the same instance
+that created the deployment, or externalising this store.
 
 ---
 
 ## config.ts
 
-Environment configuration and paths.
+Environment-backed configuration. All paths can be overridden via
+environment variables (useful for EFS-mounted deployments).
 
-### Exports
-
-#### `function getProjectPath(): string`
-
-Returns the path to the main SFDX project.
-
-**Returns:** Absolute path from `PROJECT_ROOT` environment variable or current working directory
-
-**Example:**
 ```typescript
-import { getProjectPath } from './config.js';
-
-const projectPath = getProjectPath();
-console.log(projectPath);
-// '/Users/dev/sfdx-project-service'
+function getProjectsRoot(): string;    // PROJECTS_ROOT or ./projects
+function getTemplatesDir(): string;    // TEMPLATES_DIR or package-local templates/dist/
+function getRoutingPrefix(): string | undefined; // ROUTING_PREFIX
 ```
-
-#### `function getProjectsRoot(): string`
-
-Returns the root directory for created projects.
-
-**Returns:** Absolute path from `PROJECTS_ROOT` environment variable or `./projects` relative to cwd
-
-**Example:**
-```typescript
-import { getProjectsRoot } from './config.js';
-
-const projectsRoot = getProjectsRoot();
-console.log(projectsRoot);
-// '/Users/dev/sfdx-project-service/projects'
-```
-
-#### `function getTemplatesDir(): string`
-
-Returns the directory containing template ZIP files.
-
-**Returns:** Absolute path from `TEMPLATES_DIR` environment variable or `./templates` relative to package root
-
-**Example:**
-```typescript
-import { getTemplatesDir } from './config.js';
-
-const templatesDir = getTemplatesDir();
-console.log(templatesDir);
-// '/Users/dev/sfdx-project-service/templates'
-```
-
-**Note:** This path is resolved relative to the package root at runtime (one level up from `dist/`).
 
 ---
 
 ## logger.ts
 
-Structured logging with Pino.
-
-### Exports
-
-#### `const logger: pino.Logger`
-
-Singleton Pino logger instance.
-
-**Example:**
 ```typescript
-import { logger } from './logger.js';
-
-logger.info({ projectId: 'uuid', templateId: 'minimal' }, 'Project created');
-logger.error({ err, stack }, 'Deployment failed');
-logger.warn({ status: 409 }, 'Conflict detected');
+const logger: pino.Logger;
 ```
 
-**Configuration:**
-- Format: JSON (structured)
-- Level: info (default)
-- HTTP logging via `pino-http` middleware in Express
+Singleton Pino logger, attached as Fastify's `loggerInstance` in
+`app.ts`. Every request is logged in structured JSON. The
+`setErrorHandler` also uses it to log unhandled `5xx` errors with
+their stack traces.
 
 ---
 
-## Route Modules
+## Routes
+
+All routers are Fastify plugins registered in
+`src/routes/index.ts` under the `/v1` prefix. They validate request
+shape via `@sinclair/typebox` schemas with
+`additionalProperties: false`, delegate to `domain/`, and translate
+thrown errors through `errors.ts` into problem+json responses.
 
 ### templates.routes.ts
 
-Exports `createTemplatesRouter()` which returns an Express router with:
-
-- `GET /templates` — List templates
+- `GET /templates` — `listTemplates()` → 200 JSON array
 
 ### projects.routes.ts
 
-Exports `createProjectsRouter()` which returns an Express router with:
-
-- `POST /projects` — Create project
-- `GET /projects/:id` — Retrieve a project by ID (includes `initialMessages` when the template defines them)
-- `GET /projects/:id/tree` — Get file tree
+- `POST /projects` — body `{ template?, orgAlias? }`
+  - `template` present → `createProject(template)` → 201
+  - omitted → `createBlankProject(orgAlias?)` → 201
+  - unknown property or empty `orgAlias` → 400
+- `GET /projects` — `listProjects()` → 200
+- `GET /projects/:id` — `getProject(id)` → 200 or 404
+- `PATCH /projects/:id` — body `{ name }` → `renameProject` → 200 or 400/404
+- `GET /projects/:id/file?path=...` — `readFile` → 200 `text/plain` or 400/404
+- `GET /projects/:id/tree` — `buildTree` → 200 or 404
 
 ### deploy.routes.ts
 
-Exports `createDeployRouter()` which returns an Express router with:
+- `POST /projects/:id/deployments` — body `{ orgAlias? }`
+  (minLength: 1). Resolves auth via
+  [`resolveDeployAuth`](#domaindeploy-authts), builds a connection
+  eagerly to surface stale-token errors, creates a deployment
+  record, starts `deployMetadataAsync` in the background, returns
+  `202 { deploymentId, status: 'Queued' }`.
+- `GET /projects/:id/deployments/:deploymentId/events` — SSE.
+  `preHandler` runs resource-existence checks (project +
+  deployment) so missing-deployment → `404` takes precedence over
+  missing-`Accept` → `400`, even through `@fastify/sse`'s route
+  wrapper. Replays all recorded `stage`, `progress`, and `warning`
+  events on connect; emits `complete` immediately if the deploy
+  already finished; otherwise polls every 100 ms until terminal
+  state, then closes.
 
-- `POST /projects/:id/deploy` — Deploy to Salesforce
+### fs-events.routes.ts
 
-All route handlers:
-- Validate input
-- Call business logic
-- Convert errors to RFC 9457 Problem Details
-- Use proper HTTP status codes
+- `GET /projects/:id/fs/events` — SSE. Streams `file-added`,
+  `file-changed`, and `file-removed` events from `watcherManager`.
+  Rejects missing/wrong `Accept` with `400`. Restricted paths
+  (`.git/`, `.sf/`, `node_modules/`, dotfiles, `.project-meta.json`)
+  and binary files > 100 KiB are filtered out of events.
 
 ---
 
 ## Integration Points
 
-### Creating a New Route
+### Adding a new route
 
-1. Create new file in `src/routes/` (e.g., `src/routes/custom.routes.ts`)
-2. Import and use business logic modules:
+1. Create a Fastify plugin in `src/routes/foo.routes.ts`:
    ```typescript
-   import { createProject } from '../projects.js';
-   import { errorToProblem, PROBLEM_JSON } from '../errors.js';
-   ```
-3. Create router function that validates and delegates:
-   ```typescript
-   export function createCustomRouter(): express.Router {
-     const router = express.Router();
-     router.get('/custom', async (req, res, next) => {
-       try {
-         // Validate input
-         // Call business logic
-         res.json(result);
-       } catch (err) {
-         next(err);
-       }
-     });
-     return router;
+   import { FastifyInstance } from 'fastify';
+   import { Type } from '@sinclair/typebox';
+
+   export async function fooRoutes(app: FastifyInstance): Promise<void> {
+     app.get('/foo', { schema: { querystring: Type.Object({ q: Type.String() }) } },
+       async (request) => {
+         const { q } = request.query as { q: string };
+         return await doSomething(q);
+       });
    }
    ```
-4. Register in `src/routes/index.ts`
+2. Keep business logic in `src/domain/`. No Fastify imports there.
+3. Register the plugin in `src/routes/index.ts`:
+   ```typescript
+   app.register(fooRoutes);
+   ```
+4. Let domain functions throw domain-specific errors;
+   `errorToProblem` maps them to HTTP status codes automatically.
+5. Add unit tests under `tests/unit/` and integration tests under
+   `tests/integration/`.
 
-### Error Handling Pattern
+### Error handling pattern
+
+Throw semantic errors from `domain/`:
 
 ```typescript
-try {
-  // Call business logic
-  const result = await createProject(templateId);
-  res.status(201).json({ id: result });
-} catch (err) {
-  // Pass to Express error handler
-  next(err);
-}
+if (!exists) throw new ProjectNotFoundError(id);
 ```
 
-The global error handler in `app.ts` converts errors to RFC 9457 and sends appropriate responses.
+`app.setErrorHandler` catches the throw, runs it through
+`errorToProblem`, and responds with `application/problem+json` at
+the correct status. Routes don't need try/catch boilerplate for
+expected error cases.

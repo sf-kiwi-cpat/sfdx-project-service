@@ -53,6 +53,12 @@ List all available project templates.
 ```json
 [
   {
+    "id": "data-curator",
+    "name": "Data Curator",
+    "description": "Agent-driven metadata governance with custom objects, Flows, and Agentforce actions",
+    "categories": ["Governance", "Administration"]
+  },
+  {
     "id": "metadata-ownership-tracking",
     "name": "Metadata Ownership Tracking",
     "description": "Custom object for tracking metadata ownership",
@@ -63,7 +69,10 @@ List all available project templates.
 
 Each template has `id`, `name`, `description` (non-empty), and
 `categories` (string array). Templates declared `visible: false` in their
-`template.json` (e.g., test fixtures) are excluded.
+`template.json` (e.g., test fixtures) are excluded. The authoritative
+list is whatever is present in `templates/dist/` at runtime; built-in
+templates currently include `data-curator`, `local-react-test`,
+`metadata-ownership-tracking`, and `work-tracking`.
 
 ---
 
@@ -75,10 +84,13 @@ Create a new project.
 
 **Request Body**
 
-| Field      | Type   | Required | Description                                                                   |
-| ---------- | ------ | -------- | ----------------------------------------------------------------------------- |
-| `template` | string | No       | Template identifier. When omitted, a minimal blank SFDX project is scaffolded. |
-| `orgAlias` | string | No       | Salesforce org alias to pin as the project's `target-org`.                    |
+| Field      | Type   | Required | Description                                                                                                          |
+| ---------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `template` | string | No       | Template identifier. When omitted, a minimal blank SFDX project is scaffolded.                                       |
+| `orgAlias` | string | No       | Salesforce org alias to pin as the project's `target-org`. Must be non-empty when supplied — explicit `""` → `400`. |
+
+Any other properties are rejected with `400 Bad Request` citing the
+offending key.
 
 **Response: 201 Created**
 
@@ -270,13 +282,23 @@ preference.
 
 Start a metadata deployment to a Salesforce org.
 
-**Auth resolution** (first match wins):
+**Request Body**
 
-1. Project `target-org` (set at creation time via `orgAlias`).
-2. Global SF CLI default org.
-3. `Authorization` header + `X-Salesforce-Instance-Url` header fallback.
+| Field      | Type   | Required | Description                                                                                             |
+| ---------- | ------ | -------- | ------------------------------------------------------------------------------------------------------- |
+| `orgAlias` | string | No       | Salesforce org alias. Must be non-empty when present — explicit empty strings are rejected with `400`. |
 
-If none of the above resolve, the request is rejected with `400`.
+**Zero-auth resolution** (first match wins — caller-supplied tokens
+are not part of the contract):
+
+1. Request body `orgAlias`.
+2. `SF_TARGET_ORG` / `SFDX_TARGET_ORG` environment variables.
+3. Project `target-org` (pinned at creation via `orgAlias`).
+4. Global SF CLI default org.
+
+If none of the above resolve to a locally-authed username, the
+request is rejected with `400`. `Authorization` and
+`X-Salesforce-Instance-Url` request headers are silently ignored.
 
 **Response: 202 Accepted**
 
@@ -290,13 +312,17 @@ If none of the above resolve, the request is rejected with `400`.
 The deployment continues in the background. Subscribe to
 `GET /v1/projects/:id/deployments/:deploymentId/events` for progress.
 
-**Response: 400 Bad Request** — no authentication available, or
-`instanceUrl` is not a valid URL. Problem-detail body.
+**Response: 400 Bad Request**
+
+- No authentication source resolved.
+- `orgAlias` was supplied but does not resolve to a locally-authed
+  username. Problem-detail mentions the offending alias.
+- `orgAlias` was an explicit empty string. Problem-detail body.
 
 **Response: 404 Not Found** — project does not exist. Problem-detail body.
 
 **Response: 502 Bad Gateway** — connection to Salesforce failed (e.g.,
-invalid token). Problem-detail body.
+expired access token that cannot be refreshed). Problem-detail body.
 
 ---
 
@@ -313,15 +339,29 @@ SSE stream of deployment progress.
 | Event      | Payload                                                                                 |
 | ---------- | --------------------------------------------------------------------------------------- |
 | `start`    | `{ "deploymentId": "..." }` — emitted immediately on connection.                        |
+| `stage`    | `{ deploymentId, name, index, total }` — emitted before each stage of a multi-stage deploy. Not emitted for single-pass (non-staged) deploys. |
 | `progress` | Deployment tick: `{ deploymentId, timestamp, status, numberComponentsDeployed, numberComponentsTotal, components[] }`. |
-| `complete` | Terminal: `{ deploymentId, status, numberComponentsDeployed, numberComponentsTotal, components[], appUrl? }`. The stream closes after this event. |
+| `warning`  | `{ stage, errorMessage }` — emitted when an **optional** stage in a staged deploy fails. The deployment continues; the `complete` event's status will be `SucceededWithWarnings` if no required stage fails. |
+| `complete` | Terminal: `{ deploymentId, status, numberComponentsDeployed, numberComponentsTotal, components[], stages?, warnings?, failedStage?, appUrl? }`. The stream closes after this event. |
+
+**`complete.status`** is one of `Succeeded`, `SucceededWithWarnings`
+(a required stage succeeded but an optional stage failed), or
+`Failed` (a required stage failed). `failedStage` names the required
+stage that aborted the deploy. `stages` is included for staged
+deploys and summarises per-stage status.
 
 **`complete.appUrl`** is present only when the deployment succeeded
 **and** included a `UIBundle` component. Format:
 `{instanceUrl}/lwr/application/ai/c-{appName}`, where `appName` is the
-`UIBundle`'s `fullName`.
+`UIBundle`'s `fullName`. For staged deploys, `appUrl` is taken from
+the last stage that surfaced a `UIBundle`.
 
-**Example stream:**
+The stream is **reconnect-safe**: on reconnect the server replays all
+previously recorded `stage`, `progress`, and `warning` events, and if
+the deployment already finished it emits `complete` immediately and
+closes.
+
+**Example stream (single-pass deploy):**
 
 ```
 event: start
@@ -332,6 +372,28 @@ data: {"deploymentId":"deploy_abc123","status":"InProgress","numberComponentsDep
 
 event: complete
 data: {"deploymentId":"deploy_abc123","status":"Succeeded","components":[...],"appUrl":"https://test.salesforce.com/lwr/application/ai/c-MyApp"}
+```
+
+**Example stream (staged deploy with one optional-stage warning):**
+
+```
+event: start
+data: {"deploymentId":"deploy_abc123"}
+
+event: stage
+data: {"deploymentId":"deploy_abc123","name":"manifest/package.xml","index":0,"total":3}
+
+event: progress
+data: {"deploymentId":"deploy_abc123","status":"Succeeded","numberComponentsDeployed":8,"numberComponentsTotal":8,"components":[...]}
+
+event: stage
+data: {"deploymentId":"deploy_abc123","name":"manifest/flows-package.xml","index":1,"total":3}
+
+event: warning
+data: {"stage":"manifest/flows-package.xml","errorMessage":"..."}
+
+event: complete
+data: {"deploymentId":"deploy_abc123","status":"SucceededWithWarnings","stages":[...],"warnings":[...]}
 ```
 
 **Response: 400 Bad Request** — `Accept` header missing or not
