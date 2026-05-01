@@ -1,0 +1,8 @@
+{
+  "codeRoots": ["src"],
+  "docRoots": ["docs", "README.md"],
+  "branchPrefix": "docs-sync-",
+  "excludePatterns": ["**/*.test.ts", "**/*.integration.test.ts", "dist/**", "coverage/**"],
+  "docSiteKind": "flat",
+  "assignOnCreate": "@me"
+}
