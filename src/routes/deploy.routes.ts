@@ -18,17 +18,18 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { problemDetail, problemJsonResponse, PROBLEM_JSON } from '../errors.js';
-import { extractOptionalCredentials } from '../utils/auth.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
-import { DeploymentError } from '../errors.js';
+import { DeploymentError, DeploymentNotFoundError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
-import { resolveDeployAuth } from '../domain/auth.js';
+import { resolveDeployAuth } from '../domain/deploy-auth.js';
 import {
   createDeployment,
   deploymentExists,
   getDeploymentResult,
   setDeploymentPollPromise,
   getProgressEvents,
+  getDeploymentStageEvents,
+  getDeploymentWarningEvents,
 } from '../deployments.js';
 
 const ProjectParams = Type.Object({
@@ -41,14 +42,19 @@ const DeploymentParams = Type.Object({
   }),
 });
 
-/** Request header schema for the companion `X-Salesforce-Instance-Url` credential. */
-const DeployHeaders = Type.Object({
-  'x-salesforce-instance-url': Type.Optional(
+const DeploymentBody = Type.Object({
+  // `minLength: 1` rejects explicit empty-string aliases with a 400 at
+  // the schema layer. Without it, `resolveDeployAuth` would silently
+  // fall through to env/project/global — inconsistent with `POST
+  // /v1/projects`, where an empty `orgAlias` throws
+  // `OrgAliasEmptyError` (400). Mismatched behavior between the two
+  // endpoints is a latent footgun for callers.
+  orgAlias: Type.Optional(
     Type.String({
+      minLength: 1,
       description:
-        'Salesforce org instance URL paired with the bearer access token ' +
-        '(e.g. `https://mycompany.my.salesforce.com`). Required when the project ' +
-        'has no configured `target-org` and no global default org is available.',
+        'Optional Salesforce CLI org alias to deploy against. When omitted, ' +
+        'auth resolves from the project `target-org` or the global default org.',
     })
   ),
 });
@@ -63,13 +69,12 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
           'Kicks off a metadata deployment to the authenticated Salesforce org ' +
           'and returns a deployment id to use with the SSE stream at ' +
           '`GET /v1/projects/{id}/deployments/{deploymentId}/events`. Auth is ' +
-          'resolved from (1) the project `target-org`, (2) the global default ' +
-          'org, or (3) the `Authorization` + `X-Salesforce-Instance-Url` headers. ' +
-          'If none yield credentials, the request fails with 400.',
+          'resolved server-side in priority order: (1) body `orgAlias`, ' +
+          '(2) project `target-org`, (3) global default org. If none yield ' +
+          'credentials, the request fails with 400.',
         tags: ['Deployments'],
-        security: [{ bearerAuth: [] }],
         params: ProjectParams,
-        headers: DeployHeaders,
+        body: DeploymentBody,
         response: {
           202: {
             description:
@@ -84,9 +89,9 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
             }),
           },
           400: problemJsonResponse(
-            'No authentication is available — the project has no target-org, no ' +
-              'global default org is configured, and the Authorization / ' +
-              'X-Salesforce-Instance-Url headers are missing or invalid.'
+            'No authentication is available — no `orgAlias` supplied, no project ' +
+              'target-org set, and no global default org configured; or the supplied ' +
+              '`orgAlias` does not resolve to a Salesforce username.'
           ),
           404: problemJsonResponse('No project exists with the supplied id.'),
           502: problemJsonResponse(
@@ -97,18 +102,16 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { orgAlias?: string };
 
       // Get project directory
       const projectDir = await getProjectDir(id);
 
-      // Extract optional credential headers (for legacy fallback)
-      const headerCredentials = extractOptionalCredentials(request);
+      // Zero-auth contract: auth is resolved server-side in the priority
+      // order body.orgAlias → project target-org → global default.
+      const auth = await resolveDeployAuth(projectDir, body.orgAlias);
 
-      // Resolve auth using priority chain:
-      // 1. Project target-org  2. Global default org  3. Credential headers  4. 400
-      const auth = await resolveDeployAuth(projectDir, headerCredentials ?? undefined);
-
-      if (!auth) {
+      if (auth.type === 'missing') {
         return reply
           .status(400)
           .type(PROBLEM_JSON)
@@ -116,7 +119,20 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
             problemDetail(
               400,
               'Bad Request',
-              'No authentication available. Provide orgAlias at project creation, configure a global default org, or pass Authorization and X-Salesforce-Instance-Url headers.'
+              'No authentication available. Supply an `orgAlias` in the request body, set the project target-org at project creation, or configure a global default org (`sf config set target-org <alias>`).'
+            )
+          );
+      }
+
+      if (auth.type === 'unresolved-alias') {
+        return reply
+          .status(400)
+          .type(PROBLEM_JSON)
+          .send(
+            problemDetail(
+              400,
+              'Bad Request',
+              `orgAlias '${auth.alias}' does not resolve to a Salesforce username. Run \`sf org login web --alias ${auth.alias}\` or use a different alias.`
             )
           );
       }
@@ -180,24 +196,24 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         },
       },
       sse: true,
+      // Resource-existence checks run in `preHandler` so they happen *before*
+      // `@fastify/sse`'s route wrapper takes over. When the wrapper sees
+      // `Accept: text/event-stream` it commits 200 text/event-stream headers
+      // around the handler body, which means a throw / reply.status(404) from
+      // inside the handler can no longer be rewritten to 404 problem+json —
+      // the browser just sees an empty 200 stream. See issue #206. Also
+      // satisfies the contract-pinned ordering: missing-project /
+      // missing-deployment → 404 takes precedence over missing-Accept → 400.
+      preHandler: async (request) => {
+        const { id, deploymentId } = request.params as { id: string; deploymentId: string };
+        await getProjectDir(id);
+        if (!deploymentExists(deploymentId)) {
+          throw new DeploymentNotFoundError(deploymentId);
+        }
+      },
     },
     async (request, reply) => {
-      const { id, deploymentId } = request.params as { id: string; deploymentId: string };
-
-      // Resource-existence checks run *before* the Accept check so
-      // missing-project / missing-deployment → 404 takes precedence over
-      // missing-Accept → 400 (contract-pinned ordering).
-
-      // Verify project exists (can throw ProjectNotFoundError → caught by error handler)
-      await getProjectDir(id);
-
-      // Check if deployment exists
-      if (!deploymentExists(deploymentId)) {
-        return reply
-          .status(404)
-          .type(PROBLEM_JSON)
-          .send(problemDetail(404, 'Deployment Not Found', `Deployment ${deploymentId} not found`));
-      }
+      const { deploymentId } = request.params as { id: string; deploymentId: string };
 
       // Strict SSE content negotiation: without `Accept: text/event-stream`,
       // the `@fastify/sse` plugin falls back to our handler without
@@ -215,7 +231,36 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       reply.sse.keepAlive();
       await reply.sse.send({ event: 'start', data: { deploymentId } });
 
-      let lastEventCount = 0;
+      // Replay any history recorded before this GET opened (reconnect-safe
+      // by design — tests poll by re-opening the stream). `lastXCount`
+      // prevents the subsequent poll loop from re-sending the same ones.
+      const replayedStages = getDeploymentStageEvents(deploymentId);
+      for (const stage of replayedStages) {
+        await reply.sse.send({ event: 'stage', data: stage });
+      }
+      let lastStageCount = replayedStages.length;
+
+      const replayedProgress = getProgressEvents(deploymentId);
+      for (const p of replayedProgress) {
+        await reply.sse.send({ event: 'progress', data: p });
+      }
+      let lastProgressCount = replayedProgress.length;
+
+      const replayedWarnings = getDeploymentWarningEvents(deploymentId);
+      for (const w of replayedWarnings) {
+        await reply.sse.send({ event: 'warning', data: w });
+      }
+      let lastWarningCount = replayedWarnings.length;
+
+      // If the deploy finished before this GET arrived, send `complete`
+      // immediately and close. This is the common path for tests that
+      // poll-until-complete.
+      const earlyResult = getDeploymentResult(deploymentId);
+      if (earlyResult) {
+        await reply.sse.send({ event: 'complete', data: earlyResult });
+        reply.sse.close();
+        return;
+      }
 
       // Belt-and-suspenders: the `onClose` callback below should stop the
       // poll when the client disconnects, but if it races against an
@@ -226,14 +271,28 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
           return;
         }
 
+        const stages = getDeploymentStageEvents(deploymentId);
+        for (let i = lastStageCount; i < stages.length; i++) {
+          /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new stage events */
+          reply.sse.send({ event: 'stage', data: stages[i] }).catch(() => {});
+        }
+        lastStageCount = stages.length;
+
         const events = getProgressEvents(deploymentId);
-        for (let i = lastEventCount; i < events.length; i++) {
+        for (let i = lastProgressCount; i < events.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new events */
           reply.sse.send({ event: 'progress', data: events[i] }).catch(() => {
             /* client went away; `isConnected` will be false next tick */
           });
         }
-        lastEventCount = events.length;
+        lastProgressCount = events.length;
+
+        const warns = getDeploymentWarningEvents(deploymentId);
+        for (let i = lastWarningCount; i < warns.length; i++) {
+          /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new warnings */
+          reply.sse.send({ event: 'warning', data: warns[i] }).catch(() => {});
+        }
+        lastWarningCount = warns.length;
 
         const result = getDeploymentResult(deploymentId);
         if (result) {

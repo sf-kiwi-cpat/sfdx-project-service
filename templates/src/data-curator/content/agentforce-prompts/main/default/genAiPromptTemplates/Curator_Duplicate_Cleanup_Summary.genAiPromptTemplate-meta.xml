@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenAiPromptTemplate xmlns="http://soap.sforce.com/2006/04/metadata">
+    <developerName>Curator_Duplicate_Cleanup_Summary</developerName>
+    <masterLabel>Curator Duplicate Cleanup Summary</masterLabel>
+    <templateVersions>
+        <content>You are preparing an approval-ready summary for duplicate metadata cleanup in Salesforce.
+
+Task:
+{!$Input:request_context}
+
+Duplicate Plan:
+{!$Input:inventory_snapshot}
+
+Respond with:
+1. Cleanup opportunity overview
+2. Estimated savings or simplification value
+3. Main dependency or blast-radius risks
+4. Recommended approval path
+
+Be concise and avoid inventing facts beyond the supplied plan.</content>
+        <inputs>
+            <apiName>request_context</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:request_context</referenceName>
+            <required>true</required>
+        </inputs>
+        <inputs>
+            <apiName>inventory_snapshot</apiName>
+            <definition>PRIMITIVE://String</definition>
+            <referenceName>Input:inventory_snapshot</referenceName>
+            <required>true</required>
+        </inputs>
+        <primaryModel>sfdc_ai__DefaultGPT4Omni</primaryModel>
+        <status>Published</status>
+    </templateVersions>
+    <type>einstein_gpt__flex</type>
+    <visibility>Global</visibility>
+</GenAiPromptTemplate>

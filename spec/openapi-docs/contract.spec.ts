@@ -33,7 +33,9 @@
  * non-JSON content types pinned where they matter (text/plain,
  * text/event-stream), application/problem+json for every 4xx response
  * (matching the real RFC 9457 responses the service returns),
- * parameter descriptions, field descriptions, and documented auth.
+ * parameter descriptions, field descriptions, and a documented
+ * credential input for the deploy endpoint (zero-auth surface —
+ * `orgAlias` in the request body, no header-based credentials).
  * Because the "every operation" invariants enumerate dynamically over
  * `paths`, new routes are automatically covered — you can't add an
  * undocumented endpoint without breaking this spec.
@@ -406,37 +408,46 @@ describe('OpenAPI document completeness', () => {
     });
   });
 
-  describe('Authentication', () => {
-    it('declares a bearer securityScheme for the access token', () => {
-      const schemes = spec.components?.securitySchemes ?? {};
-      const bearerSchemes = Object.values(schemes).filter(
-        (s) => s.type === 'http' && s.scheme === 'bearer'
-      );
-      expect(bearerSchemes.length).toBeGreaterThan(0);
+  describe('Credential input', () => {
+    // The service is zero-auth over HTTP — the deploy endpoint resolves
+    // credentials server-side from body `orgAlias` → project target-org →
+    // global default org. The doc must advertise the one caller-supplied
+    // input (`orgAlias`) with a description, and MUST NOT re-introduce
+    // the retired header-based credential path (Authorization /
+    // X-Salesforce-Instance-Url). If either of those headers resurfaces
+    // in the OpenAPI doc, a consumer will build a broken client against
+    // an input the service silently ignores.
+
+    it('POST /v1/projects/{id}/deployments declares an orgAlias body field with a description', () => {
+      const op = getOp(spec, 'POST', '/v1/projects/{id}/deployments');
+      const schema = op.requestBody?.content?.['application/json']?.schema;
+      const props = (schema as { properties?: Record<string, { description?: string }> })
+        ?.properties;
+      expect(
+        props?.orgAlias,
+        'orgAlias property must be declared on the request body'
+      ).toBeDefined();
+      expect((props!.orgAlias.description ?? '').trim().length).toBeGreaterThan(0);
     });
 
-    it('POST /v1/projects/{id}/deployments references a bearer security scheme', () => {
+    it('POST /v1/projects/{id}/deployments does not declare retired header-based credentials', () => {
       const op = getOp(spec, 'POST', '/v1/projects/{id}/deployments');
-      const schemes = spec.components?.securitySchemes ?? {};
-      const bearerNames = new Set(
-        Object.entries(schemes)
-          .filter(([, s]) => s.type === 'http' && s.scheme === 'bearer')
-          .map(([name]) => name)
-      );
-      const security = op.security ?? [];
-      const referenced = security.some((req) =>
-        Object.keys(req).some((name) => bearerNames.has(name))
-      );
-      expect(referenced).toBe(true);
+      const retired = new Set(['authorization', 'x-salesforce-instance-url']);
+      const offenders = (op.parameters ?? [])
+        .filter((p) => p.in === 'header' && retired.has(p.name.toLowerCase()))
+        .map((p) => p.name);
+      expect(offenders).toEqual([]);
     });
 
-    it('POST /v1/projects/{id}/deployments declares the X-Salesforce-Instance-Url header parameter', () => {
-      const op = getOp(spec, 'POST', '/v1/projects/{id}/deployments');
-      const instanceUrlHeader = (op.parameters ?? []).find(
-        (p) => p.in === 'header' && p.name.toLowerCase() === 'x-salesforce-instance-url'
-      );
-      expect(instanceUrlHeader).toBeDefined();
-      expect((instanceUrlHeader!.description ?? '').trim().length).toBeGreaterThan(0);
+    it('does not declare a retired header-based security scheme on any operation', () => {
+      // Belt-and-suspenders for the whole doc: even if a future route added
+      // bearer/basic auth back in, that would contradict the zero-auth
+      // contract. Catch it here rather than at runtime.
+      const schemes = spec.components?.securitySchemes ?? {};
+      const offenders = Object.entries(schemes)
+        .filter(([, s]) => s.type === 'http' && (s.scheme === 'bearer' || s.scheme === 'basic'))
+        .map(([name]) => name);
+      expect(offenders).toEqual([]);
     });
   });
 });

@@ -39,6 +39,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts', 'spec/**/*.spec.ts'],
+    // Exclude the tier-3 live deploy suite from default runs — it
+    // targets a real Salesforce org and has its own entry point
+    // (`npm run test:deploy:live`). If you want to opt in without the
+    // script, pass the path to vitest explicitly.
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/live/**'],
     // Run test files serially. Several specs perform global-state
     // operations (spec/npm-package runs `npm run build`, which wipes
     // and regenerates templates/dist/; spec/fs-events spawns chokidar

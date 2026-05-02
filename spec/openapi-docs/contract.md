@@ -48,6 +48,15 @@ text — only that every route declares what a consumer needs.
   requires the OpenAPI doc to advertise that same media type, so
   consumers build error handling against what the service actually
   returns.
+- **Zero-auth surface.** The HTTP contract is zero-auth over the
+  network — the deploy endpoint resolves credentials server-side
+  from body `orgAlias` → project `target-org` → global default org.
+  The OpenAPI doc must advertise the one caller-supplied input
+  (`orgAlias`) with a description, and MUST NOT re-introduce the
+  retired header-based credential path (`Authorization` /
+  `X-Salesforce-Instance-Url`) or any `http`/`bearer`/`basic`
+  security scheme — if they resurface, consumers will build broken
+  clients against inputs the service silently ignores.
 - **Dual failure reporting.** Per-invariant checks collect all
   offending operations into a single assertion so a missing tag on
   one route produces one clear failure listing every offender, not a
@@ -151,20 +160,21 @@ must advertise the same media type.
   `application/problem+json` as a content type, with a schema that
   declares either a `$ref` or a `type`.
 
-## Authentication
+## Credential input
 
-The deploy route accepts two credential headers:
-
-- `Authorization: Bearer <accessToken>` — modeled as an OpenAPI
-  `http` / `bearer` security scheme.
-- `X-Salesforce-Instance-Url: <url>` — modeled as a required header
-  parameter (since OpenAPI security schemes cannot express a
-  "bearer + companion header" combination cleanly).
+The service is zero-auth over the network. The deploy endpoint
+resolves credentials server-side in the priority order
+`body.orgAlias` → project `target-org` → global default org. The only
+caller-supplied credential input is the optional `orgAlias` field on
+the `POST /v1/projects/{id}/deployments` request body.
 
 ### Assertions
-- `components.securitySchemes` declares at least one `http` / `bearer` scheme
-- `POST /v1/projects/{id}/deployments` references that bearer scheme in its `security` array
-- `POST /v1/projects/{id}/deployments` declares the `X-Salesforce-Instance-Url` header parameter with a non-empty description
+- `POST /v1/projects/{id}/deployments` declares an `orgAlias` body
+  field with a non-empty description
+- `POST /v1/projects/{id}/deployments` does not declare the retired
+  `Authorization` or `X-Salesforce-Instance-Url` header parameters
+- `components.securitySchemes` does not declare any `http`/`bearer`
+  or `http`/`basic` scheme (zero-auth over HTTP)
 
 ## Summary
 
@@ -174,4 +184,4 @@ The deploy route accepts two credential headers:
 - 3 non-JSON content-type assertions (1 text/plain + 2 text/event-stream)
 - 4 error-response presence assertions
 - 2 error-response shape assertions (RFC 9457 problem+json)
-- 3 authentication assertions
+- 3 credential-input assertions (zero-auth surface)

@@ -1,0 +1,312 @@
+# Data Curator Agent
+# Governance-focused employee agent for Salesforce metadata administration.
+
+system:
+  instructions: |
+    You are Data Curator, an internal governance copilot for Salesforce admins.
+    Help the user understand metadata health, stale assets, unassigned ownership, and duplicate clusters.
+    Be concise, explicit about risk, and do not make destructive changes without confirmation.
+
+  messages:
+    welcome: "Hi, I'm Data Curator. I can inspect metadata health, assign ownership, triage stale assets, and draft governance summaries."
+    error: "I couldn't complete that action. Please review the action output or run the associated Flow manually."
+
+config:
+  developer_name: "DataCuratorAgent"
+  agent_label: "Data Curator Agent"
+  agent_type: "AgentforceEmployeeAgent"
+  description: "Helps Salesforce admins govern metadata using Flow-backed actions and generated governance briefings."
+
+variables:
+  selected_department: mutable string = ""
+  selected_asset: mutable string = ""
+  last_inventory_snapshot: mutable string = ""
+  last_health_score: mutable number = 0
+  last_summary: mutable string = ""
+  last_remediation_plan: mutable string = ""
+
+start_agent topic_selector:
+  description: "Route the conversation into the right governance workflow."
+
+  reasoning:
+    instructions: |
+      Route to the best governance workflow.
+      Use executive summary for briefing requests.
+      Use stale metadata triage for low-usage, out-of-date, or re-attestation requests.
+      Use ownership recovery for orphaned or unassigned assets.
+      Use duplicate remediation for overlap, consolidation, or redundancy cleanup requests.
+
+    actions:
+      route_to_summary: @utils.transition to @topic.executive_summary
+        description: "Route here when the user asks for an executive brief, health summary, or status snapshot."
+
+      route_to_stale: @utils.transition to @topic.stale_metadata_triage
+        description: "Route here when the user asks about stale metadata, dormant assets, attestation, or archival."
+
+      route_to_ownership: @utils.transition to @topic.ownership_recovery
+        description: "Route here when the user asks to identify or assign owners for metadata."
+
+      route_to_duplicates: @utils.transition to @topic.duplicate_remediation
+        description: "Route here when the user asks about duplicates, overlap, cleanup, or consolidation."
+
+topic executive_summary:
+  description: "Summarize the current governance posture and recommend the highest impact next step."
+
+  reasoning:
+    instructions: ->
+      | Help the admin understand metadata health and the best next remediation step.
+      | Start by gathering a fresh inventory snapshot with {!@actions.get_metadata_inventory}.
+      | Then use {!@actions.generate_governance_summary} to produce an executive-ready summary.
+      | Emphasize stale metadata, unassigned ownership, duplicate risk, and owner concentration.
+      | Recommend one high-confidence next action.
+
+    actions:
+      get_metadata_inventory: @actions.get_metadata_inventory
+        with department_filter=...
+        with status_filter="all"
+        set @variables.selected_department = @outputs.department_filter_used
+        set @variables.last_inventory_snapshot = @outputs.inventory_snapshot
+        set @variables.last_health_score = @outputs.health_score
+
+      generate_governance_summary: @actions.generate_governance_summary
+        with request_context="Provide an executive governance summary and recommend the highest-impact action for today."
+        with inventory_snapshot=@variables.last_inventory_snapshot
+        set @variables.last_summary = @outputs.promptResponse
+
+  actions:
+    get_metadata_inventory:
+      description: "Retrieve a current metadata inventory snapshot including health, stale counts, duplicate counts, and ownership coverage."
+      inputs:
+        department_filter: string
+          description: "Department or business unit to analyze. Use 'all' if none is specified."
+          is_required: False
+        status_filter: string
+          description: "Status scope to retrieve, such as all, healthy, stale, or duplicate."
+          is_required: True
+      outputs:
+        inventory_snapshot: string
+          description: "JSON summary of inventory metrics and high-risk assets."
+        department_filter_used: string
+          description: "Department value that the Flow actually used."
+        health_score: object
+          description: "Calculated health score for the selected inventory slice."
+          complex_data_type_name: "lightning__numberType"
+        unassigned_count: object
+          description: "Count of metadata assets missing an assigned owner."
+          complex_data_type_name: "lightning__numberType"
+        stale_count: object
+          description: "Count of stale or un-attested metadata assets."
+          complex_data_type_name: "lightning__numberType"
+      target: "flow://Curator_Get_Metadata_Inventory"
+
+    generate_governance_summary:
+      description: "Generate an executive summary from the latest inventory snapshot and recommend the next best governance action."
+      inputs:
+        request_context: string
+          description: "Specific guidance for the executive summary."
+          is_required: True
+        inventory_snapshot: string
+          description: "Serialized inventory payload returned by the inventory Flow."
+          is_required: True
+      outputs:
+        promptResponse: string
+          description: "Executive-ready summary generated from the inventory snapshot."
+          is_used_by_planner: True
+          is_displayable: True
+      target: "flow://Curator_Generate_Governance_Summary"
+
+topic stale_metadata_triage:
+  description: "Review stale metadata, summarize impact, and launch a remediation or re-attestation plan."
+
+  reasoning:
+    instructions: ->
+      | Help the admin investigate stale metadata.
+      | Gather a fresh stale review with {!@actions.run_stale_review}.
+      | If the user asks for a concise brief or stakeholder note, use {!@actions.generate_stale_brief}.
+      | Recommend re-attestation for assets that are still in use and archival review for clearly dormant assets.
+
+    actions:
+      run_stale_review: @actions.run_stale_review
+        with department_filter=...
+        with stale_threshold_days=180
+        set @variables.last_inventory_snapshot = @outputs.review_snapshot
+
+      generate_stale_brief: @actions.generate_stale_brief
+        with request_context="Summarize stale metadata risk, blast radius, and recommended remediation."
+        with review_snapshot=@variables.last_inventory_snapshot
+
+  actions:
+    run_stale_review:
+      description: "Find metadata assets that have not been accessed or attested within the stale threshold and return remediation candidates."
+      inputs:
+        department_filter: string
+          description: "Optional department filter."
+          is_required: False
+        stale_threshold_days: object
+          description: "Number of days without access or attestation before an asset is considered stale."
+          is_required: True
+          complex_data_type_name: "lightning__numberType"
+      outputs:
+        review_snapshot: string
+          description: "Serialized stale metadata payload."
+        stale_asset_count: object
+          description: "Number of stale assets found."
+          complex_data_type_name: "lightning__numberType"
+        critical_asset_count: object
+          description: "Number of stale assets that are tied to critical processes."
+          complex_data_type_name: "lightning__numberType"
+      target: "flow://Curator_Run_Stale_Metadata_Review"
+
+    generate_stale_brief:
+      description: "Create a concise stale-metadata briefing for admins or stewards."
+      inputs:
+        request_context: string
+          description: "What kind of stale metadata briefing to create."
+          is_required: True
+        review_snapshot: string
+          description: "Serialized stale metadata review payload."
+          is_required: True
+      outputs:
+        promptResponse: string
+          description: "A stale metadata briefing or follow-up note."
+          is_used_by_planner: True
+          is_displayable: True
+      target: "flow://Curator_Generate_Stale_Brief"
+
+topic ownership_recovery:
+  description: "Identify unowned metadata and launch owner assignment with audit-friendly communication."
+
+  reasoning:
+    instructions: ->
+      | Help the admin recover ownership for metadata assets.
+      | When the user names an asset or department, use {!@actions.propose_owner_assignment}.
+      | If the user approves, run {!@actions.assign_metadata_owner}.
+      | Use {!@actions.generate_owner_message} when the admin wants a polished outreach note.
+
+    actions:
+      propose_owner_assignment: @actions.propose_owner_assignment
+        with asset_name=...
+        with department_filter=...
+        set @variables.selected_asset = @outputs.asset_name_result
+
+      assign_metadata_owner: @actions.assign_metadata_owner
+        with asset_name=@variables.selected_asset
+        with owner_user_id=...
+
+      generate_owner_message: @actions.generate_owner_message
+        with asset_name=@variables.selected_asset
+        with request_context="Draft a concise stewardship handoff note that explains why the owner was selected."
+
+  actions:
+    propose_owner_assignment:
+      description: "Recommend the best metadata owner candidate based on usage, department, and historical stewardship."
+      inputs:
+        asset_name: string
+          description: "API name or label of the asset that needs an owner."
+          is_required: False
+        department_filter: string
+          description: "Optional department hint used when asset name is not supplied."
+          is_required: False
+      outputs:
+        asset_name_result: string
+          description: "Resolved asset name."
+        recommended_owner_id: string
+          description: "Recommended Salesforce user ID for ownership."
+          complex_data_type_name: "lightning__textType"
+        recommended_owner_name: string
+          description: "Recommended Salesforce user display name."
+        reasoning_summary: string
+          description: "Why the recommendation is a good match."
+      target: "flow://Curator_Propose_Metadata_Owner"
+
+    assign_metadata_owner:
+      description: "Assign the approved owner to a metadata asset and record the governance audit details."
+      inputs:
+        asset_name: string
+          description: "Asset being updated."
+          is_required: True
+        owner_user_id: string
+          description: "Salesforce user ID for the approved owner."
+          is_required: True
+          complex_data_type_name: "lightning__textType"
+      outputs:
+        assignment_status: string
+          description: "Result of the ownership assignment."
+        audit_record_id: string
+          description: "Audit record created for the ownership change."
+          complex_data_type_name: "lightning__textType"
+      target: "flow://Curator_Assign_Metadata_Owner"
+
+    generate_owner_message:
+      description: "Draft an owner outreach message that explains the stewardship assignment."
+      inputs:
+        asset_name: string
+          description: "Asset included in the outreach note."
+          is_required: True
+        request_context: string
+          description: "Tone or framing guidance for the note."
+          is_required: True
+      outputs:
+        promptResponse: string
+          description: "Owner assignment outreach draft."
+          is_used_by_planner: True
+          is_displayable: True
+      target: "flow://Curator_Generate_Owner_Message"
+
+topic duplicate_remediation:
+  description: "Review duplicate clusters, estimate impact, and draft a clean-up plan."
+
+  reasoning:
+    instructions: ->
+      | Help the admin understand duplicate metadata clusters and choose the safest remediation path.
+      | Use {!@actions.build_duplicate_cleanup_plan} to analyze duplicates.
+      | If the user wants a concise readout, use {!@actions.generate_cleanup_summary}.
+      | Always call out dependency risk and recommend approval before irreversible consolidation work.
+
+    actions:
+      build_duplicate_cleanup_plan: @actions.build_duplicate_cleanup_plan
+        with department_filter=...
+        with confidence_threshold=0.8
+        set @variables.last_remediation_plan = @outputs.plan_summary
+
+      generate_cleanup_summary: @actions.generate_cleanup_summary
+        with request_context="Summarize duplicate clusters, projected savings, and next approval step."
+        with plan_summary=@variables.last_remediation_plan
+
+  actions:
+    build_duplicate_cleanup_plan:
+      description: "Analyze duplicate metadata clusters and create a ranked remediation plan."
+      inputs:
+        department_filter: string
+          description: "Optional department scope."
+          is_required: False
+        confidence_threshold: object
+          description: "Minimum confidence score required to include a duplicate cluster in the plan."
+          is_required: True
+          complex_data_type_name: "lightning__numberType"
+      outputs:
+        plan_summary: string
+          description: "Serialized duplicate cleanup plan."
+        duplicate_cluster_count: object
+          description: "Count of duplicate clusters included in the plan."
+          complex_data_type_name: "lightning__numberType"
+        projected_monthly_savings: object
+          description: "Estimated monthly savings from removing duplication."
+          complex_data_type_name: "lightning__currencyType"
+      target: "flow://Curator_Build_Duplicate_Cleanup_Plan"
+
+    generate_cleanup_summary:
+      description: "Generate an executive-ready cleanup summary from the duplicate remediation plan."
+      inputs:
+        request_context: string
+          description: "Specific direction for the generated summary."
+          is_required: True
+        plan_summary: string
+          description: "Serialized duplicate remediation plan."
+          is_required: True
+      outputs:
+        promptResponse: string
+          description: "Readable cleanup summary."
+          is_used_by_planner: True
+          is_displayable: True
+      target: "flow://Curator_Generate_Cleanup_Summary"

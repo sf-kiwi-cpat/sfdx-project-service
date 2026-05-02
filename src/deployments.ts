@@ -27,6 +27,28 @@ export interface DeploymentComponentResult {
   state: string;
 }
 
+/**
+ * Per-stage summary recorded in the `complete` event when a staged deploy
+ * runs. See `spec/deploy/contract.md` for the contract.
+ */
+export interface DeploymentStageSummary {
+  name: string;
+  status: string;
+  numberComponentsDeployed?: number;
+  numberComponentsTotal?: number;
+  errorMessage?: string;
+}
+
+/**
+ * Warning recorded when an optional stage fails. Surfaces both as an
+ * SSE `warning` event during streaming and aggregated on the final
+ * `complete` event's `warnings[]` array.
+ */
+export interface DeploymentWarning {
+  stage: string;
+  errorMessage: string;
+}
+
 export interface DeploymentResult {
   deploymentId: string;
   status: string;
@@ -35,6 +57,12 @@ export interface DeploymentResult {
   components?: DeploymentComponentResult[];
   errorMessage?: string;
   appUrl?: string;
+  /** Populated for staged deploys — one entry per declared stage. */
+  stages?: DeploymentStageSummary[];
+  /** Aggregated optional-stage failures. */
+  warnings?: DeploymentWarning[];
+  /** Name of the required stage that aborted the deploy (if any). */
+  failedStage?: string;
 }
 
 export interface ProgressEvent {
@@ -46,6 +74,17 @@ export interface ProgressEvent {
   components: DeploymentComponentResult[];
 }
 
+/**
+ * Emitted before each declared stage begins so clients can show
+ * "Stage X of Y" UI in real time.
+ */
+export interface StageEvent {
+  deploymentId: string;
+  name: string;
+  index: number;
+  total: number;
+}
+
 interface StoredDeployment {
   deploymentId: string;
   projectId: string;
@@ -54,6 +93,8 @@ interface StoredDeployment {
   error: string | null;
   pollPromise: Promise<void> | null;
   progressEvents: ProgressEvent[];
+  stageEvents: StageEvent[];
+  warningEvents: DeploymentWarning[];
 }
 
 const deploymentStore = new Map<string, StoredDeployment>();
@@ -78,6 +119,8 @@ export function createDeployment(projectId: string): string {
     error: null,
     pollPromise: null,
     progressEvents: [],
+    stageEvents: [],
+    warningEvents: [],
   });
   return deploymentId;
 }
@@ -158,6 +201,42 @@ export function addProgressEvent(deploymentId: string, event: ProgressEvent): vo
 export function getProgressEvents(deploymentId: string): ProgressEvent[] {
   const deployment = deploymentStore.get(deploymentId);
   return deployment?.progressEvents ?? [];
+}
+
+/**
+ * Record a stage event for a staged deployment.
+ */
+export function addStageEvent(deploymentId: string, event: StageEvent): void {
+  const deployment = deploymentStore.get(deploymentId);
+  if (deployment) {
+    deployment.stageEvents.push(event);
+  }
+}
+
+/**
+ * Get all stage events for a staged deployment.
+ */
+export function getDeploymentStageEvents(deploymentId: string): StageEvent[] {
+  const deployment = deploymentStore.get(deploymentId);
+  return deployment?.stageEvents ?? [];
+}
+
+/**
+ * Record a warning (optional stage failure) for a staged deployment.
+ */
+export function addWarningEvent(deploymentId: string, event: DeploymentWarning): void {
+  const deployment = deploymentStore.get(deploymentId);
+  if (deployment) {
+    deployment.warningEvents.push(event);
+  }
+}
+
+/**
+ * Get all warning events for a deployment.
+ */
+export function getDeploymentWarningEvents(deploymentId: string): DeploymentWarning[] {
+  const deployment = deploymentStore.get(deploymentId);
+  return deployment?.warningEvents ?? [];
 }
 
 /**

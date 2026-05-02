@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Auditable events produced by scans, agent actions, and metadata governance remediation.</description>
+    <enableActivities>true</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <label>Governance Event</label>
+    <nameField>
+        <label>Governance Event Name</label>
+        <type>Text</type>
+    </nameField>
+    <pluralLabel>Governance Events</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+</CustomObject>
+

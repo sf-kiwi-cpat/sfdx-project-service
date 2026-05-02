@@ -52,8 +52,10 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
  * Run vite.build() programmatically with a 5-minute timeout.
  *
  * The service owns the build config — the user's project has no build tooling.
- * Build output goes to force-app/main/default/webapplications/App/dist/ so SDR
- * picks it up as part of the WebApplication metadata deployment.
+ * Build output goes to force-app/main/default/uiBundles/App/dist/ so SDR
+ * picks it up as part of the UIBundle metadata deployment. (SDR renamed
+ * WebApplication → UIBundle in 12.33.0; the lowercased `uibundle`
+ * suffix landed in 12.35.0 and is the canonical on-disk form.)
  *
  * Coalesces concurrent builds for the same project directory.
  */
@@ -76,12 +78,23 @@ export async function runViteBuild(projectDir: string): Promise<void> {
 async function doBuild(projectDir: string): Promise<void> {
   logger.info({ projectDir }, 'Running Vite build');
 
-  const outDir = path.join(projectDir, 'force-app/main/default/webapplications/App/dist');
+  // Resolve the real path so Vite/rolldown don't see symlink-prefixed
+  // absolute paths (e.g. `/tmp/...` -> `/private/tmp/...` on macOS).
+  // Without this, the vite:build-html plugin can reject `index.html`'s
+  // absolute path during asset emission.
+  const resolvedProjectDir = await fs.realpath(projectDir);
+  const outDir = path.join(resolvedProjectDir, 'force-app/main/default/uiBundles/App/dist');
   let timer: NodeJS.Timeout | undefined;
   try {
     const buildPromise = build({
-      root: projectDir,
+      root: resolvedProjectDir,
       base: './',
+      configFile: false, // ignore any vite.config.* shipped with the template;
+      // our programmatic options are authoritative for the deploy
+      // pipeline. JSX is compiled by Vite's built-in esbuild —
+      // templates that need babel plugins or decorators must land
+      // per-template build hooks rather than reintroducing a config
+      // file.
       build: {
         outDir,
         emptyOutDir: true,

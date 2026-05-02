@@ -16,53 +16,37 @@
  */
 
 /**
- * Auth resolution for deployments.
+ * Auth leaf module (zero-auth contract).
  *
- * Priority:
- * 1. Project-level target-org (from .sf/config.json)
- * 2. Global default org (from SFDX global config via ConfigAggregator)
- * 3. Legacy credential headers (Authorization + X-Salesforce-Instance-Url)
- * 4. null if none available
+ * This module is the alias→username lookup leaf AND the project/global
+ * target-org I/O helper layer. It is deliberately kept free of the
+ * `resolveDeployAuth` orchestrator: `resolveDeployAuth` lives in
+ * `deploy-auth.ts` and imports `resolveAlias` FROM this module with a
+ * static named import. That arrangement lets the deploy spec's
+ * `vi.mock('../../src/domain/auth.js', ...)` replace `resolveAlias` at
+ * the module boundary and have the replacement take effect INSIDE
+ * `resolveDeployAuth`. If `resolveDeployAuth` lived in this same file,
+ * the call would be a same-module binding and unmockable. Equivalent to
+ * agent-service's `SfCoreOrgAuthResolver.resolve` subclass-override
+ * pattern, adapted for a function-based codebase.
+ *
+ * The HTTP surface does NOT accept caller-supplied credentials.
+ * `Authorization` and `X-Salesforce-Instance-Url` headers are not part
+ * of the contract; if sent, they are ignored.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { StateAggregator, ConfigAggregator, OrgConfigProperties } from '@salesforce/core';
-import { logger } from '../logger.js';
-
-/**
- * Resolved auth information. Either username-based (environment) or
- * credential-based (legacy headers).
- */
-export type ResolvedAuth =
-  | { type: 'environment'; username: string }
-  | { type: 'credentials'; accessToken: string; instanceUrl: string };
-
-/**
- * Read the target-org alias from a project's .sf/config.json.
- * Returns undefined if the file doesn't exist or has no target-org.
- */
-export async function readProjectTargetOrg(projectDir: string): Promise<string | undefined> {
-  try {
-    const raw = await fs.readFile(path.join(projectDir, '.sf', 'config.json'), 'utf-8');
-    const config = JSON.parse(raw) as Record<string, string>;
-    return config['target-org'] || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Write the target-org alias to a project's .sf/config.json.
- */
-export async function writeProjectTargetOrg(projectDir: string, alias: string): Promise<void> {
-  const sfDir = path.join(projectDir, '.sf');
-  await fs.mkdir(sfDir, { recursive: true });
-  await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
-}
+import { StateAggregator } from '@salesforce/core';
 
 /**
  * Resolve an org alias to a username via the Salesforce StateAggregator.
- * Returns undefined if the alias is not found or StateAggregator is unavailable.
+ * Returns undefined if the alias is not found or StateAggregator is
+ * unavailable. Never throws — failures collapse to `undefined` so the
+ * caller can branch on the zero-auth priority chain cleanly.
+ *
+ * Contract-critical: this function is mocked at the module boundary by
+ * `spec/deploy/contract.spec.ts`. Do not inline or move its definition
+ * without updating the spec test's mock target.
  */
 export async function resolveAlias(alias: string): Promise<string | undefined> {
   try {
@@ -74,60 +58,13 @@ export async function resolveAlias(alias: string): Promise<string | undefined> {
 }
 
 /**
- * Get the global default target-org alias from ConfigAggregator.
- * Returns undefined if no global default is configured or ConfigAggregator is unavailable.
+ * Write the target-org alias to a project's .sf/config.json.
+ * Called by `projects.ts` when a user pins an `orgAlias` at project
+ * creation time; the deploy chain later reads this via
+ * `ConfigAggregator.create({ projectPath })` in `deploy-auth.ts`.
  */
-export async function getGlobalDefaultOrg(): Promise<string | undefined> {
-  try {
-    const configAggregator = await ConfigAggregator.create();
-    const value = configAggregator.getPropertyValue(OrgConfigProperties.TARGET_ORG);
-    return (value as string) || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Resolve auth for a deployment using the priority chain:
- * 1. Project-level target-org
- * 2. Global default org
- * 3. Legacy credential headers
- * 4. null if none available
- */
-export async function resolveDeployAuth(
-  projectDir: string,
-  headerCredentials?: { accessToken: string; instanceUrl: string }
-): Promise<ResolvedAuth | null> {
-  // 1. Check project-level target-org
-  const projectTargetOrg = await readProjectTargetOrg(projectDir);
-  if (projectTargetOrg) {
-    const username = await resolveAlias(projectTargetOrg);
-    if (username) {
-      logger.info({ projectTargetOrg, username }, 'Using project target-org for auth');
-      return { type: 'environment', username };
-    }
-  }
-
-  // 2. Check global default org
-  const globalDefault = await getGlobalDefaultOrg();
-  if (globalDefault) {
-    const username = await resolveAlias(globalDefault);
-    if (username) {
-      logger.info({ globalDefault, username }, 'Using global default org for auth');
-      return { type: 'environment', username };
-    }
-  }
-
-  // 3. Fall back to credential headers
-  if (headerCredentials) {
-    logger.info('Using legacy credential headers for auth');
-    return {
-      type: 'credentials',
-      accessToken: headerCredentials.accessToken,
-      instanceUrl: headerCredentials.instanceUrl,
-    };
-  }
-
-  // 4. No auth available
-  return null;
+export async function writeProjectTargetOrg(projectDir: string, alias: string): Promise<void> {
+  const sfDir = path.join(projectDir, '.sf');
+  await fs.mkdir(sfDir, { recursive: true });
+  await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
 }

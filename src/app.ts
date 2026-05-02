@@ -109,20 +109,6 @@ export function createApp() {
             'correctly.',
         },
       ],
-      components: {
-        securitySchemes: {
-          bearerAuth: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'Salesforce Access Token',
-            description:
-              'Salesforce access token passed as `Authorization: Bearer <token>`. ' +
-              'Must be paired with the `X-Salesforce-Instance-Url` header when ' +
-              'the project has no configured `target-org` and no global default ' +
-              'org is available.',
-          },
-        },
-      },
       // When set (e.g. ROUTING_PREFIX=/project-service), swagger-ui uses this as the
       // base URL for "Try it out" requests so they route correctly through the proxy.
       ...(process.env.ROUTING_PREFIX ? { servers: [{ url: process.env.ROUTING_PREFIX }] } : {}),

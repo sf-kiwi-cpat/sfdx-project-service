@@ -16,7 +16,7 @@
  */
 
 /**
- * Shared test fixtures for deployment spec tests
+ * Shared test fixtures for deployment spec tests (zero-auth contract).
  */
 import { vi } from 'vitest';
 import request from 'supertest';
@@ -26,25 +26,18 @@ import os from 'node:os';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { createApp } from '../../src/app.js';
 
-export const TEST_CREDENTIALS = {
-  accessToken: 'test-access-token',
-  instanceUrl: 'https://test.salesforce.com',
-};
-
 /**
- * Apply auth headers to a supertest request
+ * Canonical instance URL used for deriving appUrl in complete-event assertions.
+ * The zero-auth contract resolves instanceUrl via @salesforce/core's
+ * Connection, which is mocked in tests to return this value.
  */
-export function withAuthHeaders(req: ReturnType<typeof request>) {
-  return req
-    .set('Authorization', `Bearer ${TEST_CREDENTIALS.accessToken}`)
-    .set('X-Salesforce-Instance-Url', TEST_CREDENTIALS.instanceUrl);
-}
+export const TEST_INSTANCE_URL = 'https://test.salesforce.com';
 
 export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },
   { fullName: 'Hello_World__c.Priority__c', type: 'CustomField', state: 'Created' },
-  { fullName: 'App', type: 'WebApplication', state: 'Created' },
+  { fullName: 'App', type: 'UIBundle', state: 'Created' },
 ];
 
 export const COMPONENT_RESPONSES_NO_APP = [
@@ -54,7 +47,8 @@ export const COMPONENT_RESPONSES_NO_APP = [
 ];
 
 /**
- * Set up a temporary project directory and return project ID
+ * Set up a temporary project directory and return project ID.
+ * The created project has no target-org configured (clean slate for auth tests).
  */
 export async function setupTempProject(): Promise<{ tmpDir: string; projectId: string }> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-test-'));
@@ -78,18 +72,52 @@ export async function cleanupTempProject(tmpDir: string): Promise<void> {
 }
 
 /**
- * Create default mock responses for auth and connection
+ * Write target-org to .sf/config.json under the given project dir.
+ */
+export async function setProjectTargetOrg(
+  tmpDir: string,
+  projectId: string,
+  alias: string
+): Promise<void> {
+  const projectDir = path.join(tmpDir, projectId);
+  const sfDir = path.join(projectDir, '.sf');
+  await fs.mkdir(sfDir, { recursive: true });
+  await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
+}
+
+/**
+ * Remove target-org setting from a project.
+ */
+export async function clearProjectTargetOrg(tmpDir: string, projectId: string): Promise<void> {
+  const configPath = path.join(tmpDir, projectId, '.sf', 'config.json');
+  try {
+    await fs.rm(configPath);
+  } catch {
+    // File may not exist; ignore.
+  }
+}
+
+/**
+ * Create default mock responses for auth and connection.
+ * The ConfigAggregator/StateAggregator mocks are set up inline in the spec
+ * file to allow per-test control of which alias resolves to which username.
  */
 export function setupDefaultMocks(
   mockConnectionCreate: ReturnType<typeof vi.fn>,
   mockAuthInfoCreate: ReturnType<typeof vi.fn>
 ): void {
   mockAuthInfoCreate.mockResolvedValue({});
-  mockConnectionCreate.mockResolvedValue({});
+  mockConnectionCreate.mockResolvedValue({
+    // buildConnectionFromAuth now calls conn.refreshAuth() proactively
+    // (matches sfdx-agent-sdk's SfCoreOrgAuthResolver.resolve), so the
+    // default Connection mock must include a no-op refreshAuth.
+    refreshAuth: vi.fn().mockResolvedValue(undefined),
+    getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
+  });
 }
 
 /**
- * Create a successful deployment mock response (includes WebApplication)
+ * Successful deployment mock response (includes UIBundle)
  */
 export function createSuccessDeployResponse(): {
   response: {
@@ -110,7 +138,7 @@ export function createSuccessDeployResponse(): {
 }
 
 /**
- * Create a successful deployment mock response without a WebApplication component
+ * Successful deployment mock response without a UIBundle component
  */
 export function createSuccessDeployResponseWithoutApp(): {
   response: {
@@ -182,4 +210,162 @@ export function setupDeployMock(mockPollStatus: ReturnType<typeof vi.fn>): void 
     pollStatus: mockPollStatus,
     onUpdate: vi.fn().mockReturnValue(undefined),
   } as never);
+}
+
+/**
+ * Describes a declared deploy stage in a template-under-test.
+ */
+export interface StageSpec {
+  manifest: string;
+  optional?: boolean;
+}
+
+/**
+ * Write a minimal template tree on disk that has a template.json with
+ * `deployStages` plus empty manifest XML files at the declared paths.
+ * Used by staged-deploy spec tests.
+ */
+export async function writeStagedTemplate(projectDir: string, stages: StageSpec[]): Promise<void> {
+  // Write template.json at the project root so the deploy code can discover
+  // deployStages via a known name.
+  const templateJson = {
+    id: 'spec-staged-template',
+    name: 'Staged Template (spec fixture)',
+    description: 'Fixture template for staged-deploy spec tests',
+    categories: ['Test'],
+    deployStages: stages,
+  };
+  await fs.writeFile(path.join(projectDir, 'template.json'), JSON.stringify(templateJson, null, 2));
+
+  // Minimal sfdx-project.json so SDR can root paths.
+  await fs.writeFile(
+    path.join(projectDir, 'sfdx-project.json'),
+    JSON.stringify({
+      packageDirectories: [{ path: 'force-app', default: true }],
+      sourceApiVersion: '66.0',
+    })
+  );
+
+  // Write each referenced manifest file with a minimal but valid Package XML.
+  for (const stage of stages) {
+    const manifestPath = path.join(projectDir, stage.manifest);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+      manifestPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+  <version>64.0</version>
+</Package>
+`
+    );
+  }
+
+  // Create an empty force-app/main/default directory so ComponentSet.fromSource
+  // has somewhere to root itself if it is used as a fallback.
+  await fs.mkdir(path.join(projectDir, 'force-app', 'main', 'default'), {
+    recursive: true,
+  });
+}
+
+/**
+ * Set up a staged-template project: tmpdir + PROJECTS_ROOT + created project
+ * + staged-template files on disk.
+ */
+export async function setupStagedTemplateProject(opts: {
+  stages: StageSpec[];
+}): Promise<{ tmpDir: string; projectId: string }> {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-staged-test-'));
+  process.env.PROJECTS_ROOT = tmpDir;
+
+  const app = createApp();
+  await app.ready();
+  const createRes = await request(app.server).post('/v1/projects').send({});
+  const projectId = createRes.body.id;
+  await app.close();
+
+  const projectDir = path.join(tmpDir, projectId);
+  await writeStagedTemplate(projectDir, opts.stages);
+
+  return { tmpDir, projectId };
+}
+
+/**
+ * Clean up a staged-template project fixture.
+ */
+export async function cleanupStagedTemplateProject(tmpDir: string): Promise<void> {
+  delete process.env.PROJECTS_ROOT;
+  await fs.rm(tmpDir, { recursive: true, force: true });
+}
+
+/**
+ * Set up a hermetic `$HOME` for tests that exercise real `@salesforce/core`
+ * (e.g. `ConfigAggregator.create(...)`). Redirects `process.env.HOME` to a
+ * fresh tmpdir and creates `$HOME/.sf/` so later writes have somewhere to go.
+ * Also sets `SF_ENV=test` so `@salesforce/core` uses an in-memory logger
+ * instead of writing to disk — avoids pino async-file-transport races
+ * with temp cleanup on CI. Matches agentic-dx's
+ * `sfdx-agent-sdk/test/org-auth-resolver.test.ts` pattern.
+ *
+ * Returns the hermetic home path so the caller can pass it to
+ * `setGlobalTargetOrg` / `cleanupHermeticHome`.
+ *
+ * Caller must also save the original `process.env.HOME` if they want to
+ * restore it on cleanup — `cleanupHermeticHome` handles that bookkeeping
+ * when called with the original-home value.
+ */
+const originalHomeByHermeticPath = new Map<string, string | undefined>();
+const originalSfEnvByHermeticPath = new Map<string, string | undefined>();
+
+export async function setupHermeticHome(): Promise<string> {
+  const hermeticHome = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-deploy-spec-home-'));
+  originalHomeByHermeticPath.set(hermeticHome, process.env.HOME);
+  originalSfEnvByHermeticPath.set(hermeticHome, process.env.SF_ENV);
+  process.env.HOME = hermeticHome;
+  process.env.SF_ENV = 'test';
+  await fs.mkdir(path.join(hermeticHome, '.sf'), { recursive: true });
+  return hermeticHome;
+}
+
+/**
+ * Restore the original `$HOME` and remove the hermetic tmpdir.
+ */
+export async function cleanupHermeticHome(hermeticHome: string): Promise<void> {
+  const originalHome = originalHomeByHermeticPath.get(hermeticHome);
+  const originalSfEnv = originalSfEnvByHermeticPath.get(hermeticHome);
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
+  if (originalSfEnv === undefined) {
+    delete process.env.SF_ENV;
+  } else {
+    process.env.SF_ENV = originalSfEnv;
+  }
+  originalHomeByHermeticPath.delete(hermeticHome);
+  originalSfEnvByHermeticPath.delete(hermeticHome);
+  await fs.rm(hermeticHome, { recursive: true, force: true });
+}
+
+/**
+ * Write global target-org to `$HOME/.sf/config.json` inside a hermetic
+ * home. Real `ConfigAggregator.create()` (no projectPath) will resolve it
+ * via the GLOBAL tier.
+ */
+export async function setGlobalTargetOrg(hermeticHome: string, alias: string): Promise<void> {
+  const sfDir = path.join(hermeticHome, '.sf');
+  await fs.mkdir(sfDir, { recursive: true });
+  await fs.writeFile(path.join(sfDir, 'config.json'), JSON.stringify({ 'target-org': alias }));
+}
+
+/**
+ * Remove global target-org from the hermetic home. Idempotent.
+ */
+export async function clearGlobalTargetOrg(hermeticHome: string): Promise<void> {
+  const configPath = path.join(hermeticHome, '.sf', 'config.json');
+  try {
+    await fs.rm(configPath);
+  } catch {
+    // File may not exist; ignore.
+  }
 }

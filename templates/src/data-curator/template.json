@@ -1,0 +1,16 @@
+{
+  "id": "data-curator",
+  "name": "Data Curator",
+  "description": "Agent-driven metadata governance with custom objects, Flows, and Agentforce actions",
+  "categories": ["Governance", "Administration"],
+  "initialMessages": [
+    {
+      "role": "user",
+      "content": "I want to build a data curation app on Salesforce backed by Agentforce. It should let admins review and govern custom metadata — objects, fields, and flows — with fields for curator, review status (Pending/Approved/Rejected), last curated date, and notes. I need an agent surface that can triage proposed changes, a dashboard for items awaiting review and stale entries (not curated in 60+ days), and Flows that capture curator decisions as an audit trail."
+    },
+    {
+      "role": "assistant",
+      "content": "I'll build that for you. The project has a React frontend, Salesforce metadata scaffolding, and an Agentforce authoring bundle ready to go. I'll start with the curation data model and review queue, then wire up the agent actions and audit Flows. Here goes!"
+    }
+  ]
+}

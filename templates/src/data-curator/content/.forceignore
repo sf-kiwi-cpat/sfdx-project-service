@@ -1,0 +1,25 @@
+# Exclude local build tooling and source files from the packaged Salesforce web app deploy.
+force-app/main/default/uiBundles/App/node_modules/**
+force-app/main/default/uiBundles/App/build/**
+force-app/main/default/uiBundles/App/e2e/**
+force-app/main/default/uiBundles/App/scripts/**
+force-app/main/default/uiBundles/App/src/**
+force-app/main/default/uiBundles/App/.graphqlrc.yml
+force-app/main/default/uiBundles/App/.prettierignore
+force-app/main/default/uiBundles/App/.prettierrc
+force-app/main/default/uiBundles/App/CHANGELOG.md
+force-app/main/default/uiBundles/App/README.md
+force-app/main/default/uiBundles/App/codegen.yml
+force-app/main/default/uiBundles/App/eslint.config.js
+force-app/main/default/uiBundles/App/index.html
+force-app/main/default/uiBundles/App/package-lock.json
+force-app/main/default/uiBundles/App/package.json
+force-app/main/default/uiBundles/App/playwright.config.ts
+force-app/main/default/uiBundles/App/tsconfig.json
+force-app/main/default/uiBundles/App/tsconfig.node.json
+force-app/main/default/uiBundles/App/tsconfig.tsbuildinfo
+force-app/main/default/uiBundles/App/vite-env.d.ts
+force-app/main/default/uiBundles/App/vite.config.ts
+force-app/main/default/uiBundles/App/vitest-env.d.ts
+force-app/main/default/uiBundles/App/vitest.config.ts
+force-app/main/default/uiBundles/App/vitest.setup.ts

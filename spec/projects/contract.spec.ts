@@ -19,7 +19,7 @@
  * SPEC TESTS — Human-guarded contract (SDLC 2026)
  *
  * These tests define the contract for the Projects API:
- *   - POST /projects        — create a project (returns id + name + lastAccessedAt, + initialMessages when template defines them)
+ *   - POST /projects        — create a project (returns id + name + lastAccessedAt, + initialMessages when template defines them, + targetOrg when orgAlias is provided)
  *   - GET /projects          — list all projects (id + name + lastAccessedAt)
  *   - GET /projects/:id      — retrieve a project by ID (id + name + lastAccessedAt, + initialMessages when present)
  *   - PATCH /projects/:id    — rename a project (returns id + name + lastAccessedAt)
@@ -28,7 +28,9 @@
  * Every response that references a project includes lastAccessedAt. Create and
  * rename operations bump it; accessing a project by :id (GET, PATCH, tree, file)
  * also updates it. A freshly created project's lastAccessedAt equals its
- * creation time.
+ * creation time. That "every access bumps" invariant applies only to projects
+ * with a valid meta file on disk — see the "meta file integrity" block below
+ * for the narrow carve-out when the meta file is missing or unparseable.
  *
  * Templates may declare an initialMessages array in their template.json. When
  * a project is created from such a template, those messages are persisted to
@@ -37,16 +39,58 @@
  * is NOT included in GET /projects (list). Blank projects and templates
  * without initialMessages omit the field entirely (not an empty array).
  *
+ * POST /projects accepts an optional `orgAlias` that names a Salesforce org
+ * already authenticated via the SFDX CLI. When provided:
+ *   - The alias is validated against the local auth store (StateAggregator).
+ *     A non-empty alias that does not resolve to a username → 400.
+ *     An empty string → 400.
+ *   - On success, the alias is persisted to `.sf/config.json` as `target-org`
+ *     in the project directory. `POST /v1/projects/:id/deployments` reads
+ *     this value to resolve auth server-side (see spec/deploy/contract.spec.ts
+ *     for the deploy-time resolution chain).
+ *   - The create response includes `targetOrg: "<alias>"`. When omitted,
+ *     `targetOrg` is absent from the response.
+ *
  * They are the source of truth for these endpoints' external behavior. The
  * AI implementation agent must NOT modify this file.
+ *
+ * Mock boundary: @salesforce/core — specifically `StateAggregator.getInstance`
+ * — is mocked so tests can control alias → username resolution without a real
+ * keychain. Real: filesystem, Fastify, template unzipping.
  */
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+
+const { mockGetUsername } = vi.hoisted(() => ({
+  mockGetUsername: vi.fn(),
+}));
+
+// By default aliases resolve to nothing. Individual tests override this mock
+// to register specific alias → username mappings.
+vi.mock('@salesforce/core', () => ({
+  StateAggregator: {
+    clearInstance: vi.fn(),
+    getInstance: vi.fn().mockResolvedValue({
+      aliases: { getUsername: mockGetUsername },
+    }),
+  },
+  ConfigAggregator: {
+    create: vi.fn().mockResolvedValue({
+      getPropertyValue: vi.fn().mockReturnValue(undefined),
+    }),
+  },
+  OrgConfigProperties: { TARGET_ORG: 'target-org' },
+  Global: { SFDX_STATE_FOLDER: '.sfdx' },
+}));
+
 import { createApp } from '../../src/app.js';
+
+const TEST_ORG_ALIAS = 'my-scratch-org';
+const TEST_USERNAME = 'test-user@example.com';
 
 describe('Projects API', () => {
   let app: ReturnType<typeof createApp>;
@@ -192,6 +236,71 @@ describe('Projects API', () => {
       const getRes = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
 
       expect(getRes.body.initialMessages).toEqual(createRes.body.initialMessages);
+    });
+
+    describe('orgAlias', () => {
+      beforeEach(() => {
+        // Default for this describe: the canonical test alias resolves to a
+        // known username; any other alias is unknown.
+        mockGetUsername.mockImplementation((alias: string) =>
+          alias === TEST_ORG_ALIAS ? TEST_USERNAME : undefined
+        );
+      });
+
+      afterEach(() => {
+        mockGetUsername.mockReset();
+      });
+
+      it('returns 201 with targetOrg when orgAlias is provided', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(201);
+
+        expect(res.body).toHaveProperty('id');
+        expect(res.body).toHaveProperty('name');
+        expect(res.body).toHaveProperty('targetOrg', TEST_ORG_ALIAS);
+      });
+
+      it('persists target-org in .sf/config.json', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(201);
+
+        const configPath = path.join(tmpDir, res.body.id, '.sf', 'config.json');
+        const raw = await fs.readFile(configPath, 'utf-8');
+        const config = JSON.parse(raw) as Record<string, string>;
+        expect(config['target-org']).toBe(TEST_ORG_ALIAS);
+      });
+
+      it('omits targetOrg from the response when orgAlias is not provided', async () => {
+        const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+        expect(res.body.targetOrg).toBeUndefined();
+      });
+
+      it('returns 400 Problem Detail when orgAlias is an empty string', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: '' })
+          .expect(400);
+
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.status).toBe(400);
+      });
+
+      it('returns 400 Problem Detail when orgAlias does not resolve in the auth store', async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ orgAlias: 'unknown-alias' })
+          .expect(400);
+
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.status).toBe(400);
+        // Error detail must name the offending alias so callers can act.
+        expect(res.body.detail).toContain('unknown-alias');
+      });
     });
   });
 
@@ -568,6 +677,108 @@ describe('Projects API', () => {
 
       expect(res.headers['content-type']).toContain('application/problem+json');
       expect(res.body.status).toBe(404);
+    });
+  });
+
+  describe('meta file integrity', () => {
+    // Context: issue #200 / W-22261249. An access route that bumps
+    // lastAccessedAt must never fabricate or overwrite .project-meta.json
+    // when the file is missing or unparseable at access time. Writing a
+    // synthesized { name: <uuid> } back to disk is how the original bug
+    // silently corrupted projects.
+    //
+    // Narrowed contract: "every access bumps lastAccessedAt" applies only
+    // to projects with a valid meta file. Missing or unparseable meta
+    // skips the bump to preserve recoverability — a later explicit write
+    // (e.g. PATCH rename) can restore the project's name.
+
+    it('does not overwrite .project-meta.json when it is missing at access time', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      await fs.unlink(metaPath);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      // Either the file stays absent, or (if something legitimately
+      // recreated it) its `name` must NOT be the UUID — fabricating
+      // UUID-as-name is the bug this contract rules out.
+      let exists = true;
+      try {
+        await fs.access(metaPath);
+      } catch {
+        exists = false;
+      }
+      if (exists) {
+        const parsed = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as { name?: string };
+        expect(parsed.name).not.toBe(createRes.body.id);
+      }
+    });
+
+    it('does not overwrite .project-meta.json when it is unparseable', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{invalid-json-sentinel';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+
+    it('tree access also leaves a corrupted .project-meta.json unchanged', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{corrupt-through-tree-route';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server).get(`/v1/projects/${createRes.body.id}/tree`).expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+
+    it('file read also leaves a corrupted .project-meta.json unchanged', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      const corrupted = '{corrupt-through-file-route';
+      await fs.writeFile(metaPath, corrupted);
+
+      await request(app.server)
+        .get(`/v1/projects/${createRes.body.id}/file`)
+        .query({ path: 'sfdx-project.json' })
+        .expect(200);
+
+      const after = await fs.readFile(metaPath, 'utf-8');
+      expect(after).toBe(corrupted);
+    });
+
+    it('PATCH rename recovers a project whose .project-meta.json is corrupted', async () => {
+      // This test enforces the recovery promise made in contract.md:
+      // a human can always heal a corrupted project via PATCH rename. Without
+      // this assertion, an implementation could throw on any unreadable meta
+      // (including inside renameProject) and silently break the recovery story
+      // that justifies the narrowed lastAccessedAt invariant above.
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+      const metaPath = path.join(tmpDir, createRes.body.id, '.project-meta.json');
+
+      await fs.writeFile(metaPath, '{not-valid-json');
+
+      const patchRes = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'recovered-name' })
+        .expect(200);
+
+      expect(patchRes.body.name).toBe('recovered-name');
+
+      // Post-rename meta must be valid JSON with the new name — not the UUID.
+      const parsed = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as { name?: string };
+      expect(parsed.name).toBe('recovered-name');
+      expect(parsed.name).not.toBe(createRes.body.id);
     });
   });
 });

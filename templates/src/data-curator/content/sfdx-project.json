@@ -1,0 +1,12 @@
+{
+  "packageDirectories": [
+    { "path": "force-app", "default": true },
+    { "path": "force-app-flows", "default": false },
+    { "path": "agentforce-prompts", "default": false },
+    { "path": "agentforce-bundle", "default": false }
+  ],
+  "name": "data-curator",
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com/",
+  "sourceApiVersion": "67.0"
+}

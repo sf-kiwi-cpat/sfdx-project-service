@@ -1,0 +1,8 @@
+{
+  "deployStages": [
+    { "manifest": "manifest/package.xml" },
+    { "manifest": "manifest/flows-package.xml" },
+    { "manifest": "manifest/authoring-bundle-package.xml", "optional": true },
+    { "manifest": "manifest/prompts-package.xml", "optional": true }
+  ]
+}
