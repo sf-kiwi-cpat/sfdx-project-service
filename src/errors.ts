@@ -64,6 +64,22 @@ export function problemDetail(status: number, title: string, detail: string): Pr
 
 export const PROBLEM_JSON = 'application/problem+json';
 
+/**
+ * Shared OpenAPI fragment for responses served as `application/problem+json`.
+ *
+ * Used in route schema definitions to declare a 4xx/5xx response body that
+ * references the reusable `Problem` component schema. Keeping this helper
+ * centralized avoids drift across route files if the problem shape changes.
+ */
+export const problemJsonResponse = (description: string): Record<string, unknown> => ({
+  description,
+  content: {
+    [PROBLEM_JSON]: {
+      schema: { $ref: 'Problem#' },
+    },
+  },
+});
+
 /** Maximum allowed path length (characters). Paths longer than this are rejected before fs calls. */
 export const MAX_PATH_LENGTH = 1024;
 

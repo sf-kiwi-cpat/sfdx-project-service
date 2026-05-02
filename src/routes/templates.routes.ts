@@ -19,20 +19,33 @@ import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { listTemplates } from '../domain/templates.js';
 
+const TemplateListItem = Type.Object({
+  id: Type.String({ description: 'Stable identifier for the template.' }),
+  name: Type.String({ description: 'Display name of the template.' }),
+  description: Type.String({
+    description: 'Short explanation of what the template scaffolds.',
+  }),
+  categories: Type.Array(Type.String(), {
+    description: 'Classification tags used by IDE UIs for grouping.',
+  }),
+});
+
 export async function templateRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/templates',
     {
       schema: {
+        summary: 'List available SFDX project templates',
+        description:
+          'Returns the catalog of templates that can be used when creating a ' +
+          'new project via POST /v1/projects. Each entry is a stable handle; ' +
+          'templates never disappear silently.',
+        tags: ['Templates'],
         response: {
-          200: Type.Array(
-            Type.Object({
-              id: Type.String(),
-              name: Type.String(),
-              description: Type.String(),
-              categories: Type.Array(Type.String()),
-            })
-          ),
+          200: {
+            description: 'Array of available templates.',
+            ...Type.Array(TemplateListItem),
+          },
         },
       },
     },
