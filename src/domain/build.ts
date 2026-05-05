@@ -51,22 +51,64 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
   return walk(projectDir);
 }
 
+interface ResolvedLayout {
+  viteRoot: string;
+  outDir: string;
+  layout: 'bundle' | 'legacy';
+}
+
 /**
- * Ensure a ui-bundle.json exists at the project root so
- * `@salesforce/vite-plugin-ui-bundle` can resolve it during `configResolved`
- * (the plugin reads `${vite.root}/ui-bundle.json`). For projects that already
- * have a manifest at the bundle dir, this writes a minimal project-root alias
- * pointing at the bundle's output dir. If the file is already present it's
- * a no-op.
+ * Determine Vite's root directory for a project.
  *
- * This is a transitional shim. The long-term shape is that templates live
- * entirely under `force-app/main/default/uiBundles/<name>/` and Vite's root
- * is the bundle dir — matching the webapps `base-react-app` convention.
- * Until templates are restructured, synthesizing at the project root keeps
- * the build working without changing the on-disk layout.
+ * Two supported layouts:
+ *
+ * - **Bundle layout** (preferred, matches webapps `base-react-app` convention):
+ *   `<project>/force-app/main/default/uiBundles/App/` contains `index.html`,
+ *   `src/`, `vite.config.ts`, `package.json`, and `ui-bundle.json`. Vite roots
+ *   at the bundle dir and builds into `<bundle>/dist`. This is also the layout
+ *   the preview-service requires, so restructured templates can be both built
+ *   and previewed.
+ *
+ * - **Legacy layout** (transitional): `index.html` + `src/` at project root,
+ *   bundle dir only holds metadata (`App.uibundle-meta.xml`). Vite roots at
+ *   the project dir; a `ui-bundle.json` is synthesized at the project root
+ *   for the plugin. Output still goes to `<bundle>/dist` via Vite's
+ *   `build.outDir` override so SDR picks it up as a `UIBundle`.
+ *
+ * Layout is detected by checking for `<bundle>/index.html`. When neither
+ * layout applies (no `.tsx`/`.jsx` anywhere), the caller should have
+ * short-circuited via `hasReactFiles` and not invoked the build at all.
  */
-async function ensureUiBundleManifest(projectDir: string, outDir: string): Promise<void> {
-  const manifestPath = path.join(projectDir, 'ui-bundle.json');
+async function resolveLayout(projectDir: string): Promise<ResolvedLayout> {
+  const bundleDir = path.join(projectDir, BUNDLE_DIR);
+  const bundleIndexHtml = path.join(bundleDir, 'index.html');
+  try {
+    await fs.access(bundleIndexHtml);
+    return {
+      viteRoot: bundleDir,
+      outDir: path.join(bundleDir, 'dist'),
+      layout: 'bundle',
+    };
+  } catch {
+    /* fall through to legacy layout */
+  }
+  return {
+    viteRoot: projectDir,
+    outDir: path.join(projectDir, BUNDLE_DIR, 'dist'),
+    layout: 'legacy',
+  };
+}
+
+/**
+ * Ensure a `ui-bundle.json` exists at Vite's root so
+ * `@salesforce/vite-plugin-ui-bundle` can resolve it during `configResolved`
+ * (the plugin reads `${config.root}/ui-bundle.json`). If the template
+ * already ships one — which is the case under bundle layout — leave it
+ * alone. Under legacy layout, synthesize a minimal one at the project
+ * root pointing at the bundle's output dir.
+ */
+async function ensureUiBundleManifest(viteRoot: string, outDir: string): Promise<void> {
+  const manifestPath = path.join(viteRoot, 'ui-bundle.json');
   try {
     await fs.access(manifestPath);
     return;
@@ -74,11 +116,11 @@ async function ensureUiBundleManifest(projectDir: string, outDir: string): Promi
     /* not present — synthesize */
   }
   const manifest = {
-    outputDir: path.relative(projectDir, outDir),
+    outputDir: path.relative(viteRoot, outDir),
     routing: { trailingSlash: 'never' as const, fallback: 'index.html' },
   };
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-  logger.info({ projectDir, manifestPath }, 'Synthesized ui-bundle.json for build');
+  logger.info({ viteRoot, manifestPath }, 'Synthesized ui-bundle.json for build');
 }
 
 /**
@@ -115,20 +157,19 @@ export async function runViteBuild(projectDir: string, orgAlias?: string): Promi
 }
 
 async function doBuild(projectDir: string, orgAlias?: string): Promise<void> {
-  logger.info({ projectDir, orgAlias }, 'Running Vite build');
-
   // Resolve the real path so Vite/rolldown don't see symlink-prefixed
   // absolute paths (e.g. `/tmp/...` -> `/private/tmp/...` on macOS).
   // Without this, the vite:build-html plugin can reject `index.html`'s
   // absolute path during asset emission.
   const resolvedProjectDir = await fs.realpath(projectDir);
-  const outDir = path.join(resolvedProjectDir, BUNDLE_DIR, 'dist');
-  await ensureUiBundleManifest(resolvedProjectDir, outDir);
+  const { viteRoot, outDir, layout } = await resolveLayout(resolvedProjectDir);
+  logger.info({ projectDir, orgAlias, viteRoot, layout }, 'Running Vite build');
+  await ensureUiBundleManifest(viteRoot, outDir);
 
   let timer: NodeJS.Timeout | undefined;
   try {
     const buildPromise = build({
-      root: resolvedProjectDir,
+      root: viteRoot,
       base: './',
       configFile: false,
       plugins: [react(), uiBundlePlugin({ orgAlias, debug: false })],
