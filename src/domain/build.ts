@@ -17,12 +17,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'vite';
+import react from '@vitejs/plugin-react';
+import uiBundlePlugin from '@salesforce/vite-plugin-ui-bundle';
 import { BuildError } from '../errors.js';
 import { logger } from '../logger.js';
 import { shouldIgnoreEntry } from './files.js';
 
 const BUILD_TIMEOUT_MS = 300_000; // 5 minutes
 const REACT_EXTENSIONS = new Set(['.tsx', '.jsx']);
+const BUNDLE_DIR = 'force-app/main/default/uiBundles/App';
 
 const buildLocks = new Map<string, Promise<void>>();
 
@@ -49,24 +52,60 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
 }
 
 /**
+ * Ensure a ui-bundle.json exists at the project root so
+ * `@salesforce/vite-plugin-ui-bundle` can resolve it during `configResolved`
+ * (the plugin reads `${vite.root}/ui-bundle.json`). For projects that already
+ * have a manifest at the bundle dir, this writes a minimal project-root alias
+ * pointing at the bundle's output dir. If the file is already present it's
+ * a no-op.
+ *
+ * This is a transitional shim. The long-term shape is that templates live
+ * entirely under `force-app/main/default/uiBundles/<name>/` and Vite's root
+ * is the bundle dir — matching the webapps `base-react-app` convention.
+ * Until templates are restructured, synthesizing at the project root keeps
+ * the build working without changing the on-disk layout.
+ */
+async function ensureUiBundleManifest(projectDir: string, outDir: string): Promise<void> {
+  const manifestPath = path.join(projectDir, 'ui-bundle.json');
+  try {
+    await fs.access(manifestPath);
+    return;
+  } catch {
+    /* not present — synthesize */
+  }
+  const manifest = {
+    outputDir: path.relative(projectDir, outDir),
+    routing: { trailingSlash: 'never' as const, fallback: 'index.html' },
+  };
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  logger.info({ projectDir, manifestPath }, 'Synthesized ui-bundle.json for build');
+}
+
+/**
  * Run vite.build() programmatically with a 5-minute timeout.
  *
- * The service owns the build config — the user's project has no build tooling.
+ * The service owns the build plugins — `@vitejs/plugin-react` compiles JSX
+ * and `@salesforce/vite-plugin-ui-bundle` applies Salesforce-specific
+ * transforms (API-version injection, base-href, manifest routing). Templates
+ * ship React sources only; no per-template `vite.config.*` is honored
+ * (`configFile: false`), preserving the deploy contract.
+ *
  * Build output goes to force-app/main/default/uiBundles/App/dist/ so SDR
- * picks it up as part of the UIBundle metadata deployment. (SDR renamed
- * WebApplication → UIBundle in 12.33.0; the lowercased `uibundle`
- * suffix landed in 12.35.0 and is the canonical on-disk form.)
+ * picks it up as part of the UIBundle metadata deployment.
+ *
+ * `orgAlias` is forwarded to the plugin so `getOrgInfo` can resolve the
+ * target org's API version and inject `__SF_API_VERSION__` at build time.
  *
  * Coalesces concurrent builds for the same project directory.
  */
-export async function runViteBuild(projectDir: string): Promise<void> {
+export async function runViteBuild(projectDir: string, orgAlias?: string): Promise<void> {
   const existing = buildLocks.get(projectDir);
   if (existing) {
     logger.info({ projectDir }, 'Build already in progress, waiting');
     return existing;
   }
 
-  const promise = doBuild(projectDir);
+  const promise = doBuild(projectDir, orgAlias);
   buildLocks.set(projectDir, promise);
   try {
     await promise;
@@ -75,26 +114,24 @@ export async function runViteBuild(projectDir: string): Promise<void> {
   }
 }
 
-async function doBuild(projectDir: string): Promise<void> {
-  logger.info({ projectDir }, 'Running Vite build');
+async function doBuild(projectDir: string, orgAlias?: string): Promise<void> {
+  logger.info({ projectDir, orgAlias }, 'Running Vite build');
 
   // Resolve the real path so Vite/rolldown don't see symlink-prefixed
   // absolute paths (e.g. `/tmp/...` -> `/private/tmp/...` on macOS).
   // Without this, the vite:build-html plugin can reject `index.html`'s
   // absolute path during asset emission.
   const resolvedProjectDir = await fs.realpath(projectDir);
-  const outDir = path.join(resolvedProjectDir, 'force-app/main/default/uiBundles/App/dist');
+  const outDir = path.join(resolvedProjectDir, BUNDLE_DIR, 'dist');
+  await ensureUiBundleManifest(resolvedProjectDir, outDir);
+
   let timer: NodeJS.Timeout | undefined;
   try {
     const buildPromise = build({
       root: resolvedProjectDir,
       base: './',
-      configFile: false, // ignore any vite.config.* shipped with the template;
-      // our programmatic options are authoritative for the deploy
-      // pipeline. JSX is compiled by Vite's built-in esbuild —
-      // templates that need babel plugins or decorators must land
-      // per-template build hooks rather than reintroducing a config
-      // file.
+      configFile: false,
+      plugins: [react(), uiBundlePlugin({ orgAlias, debug: false })],
       build: {
         outDir,
         emptyOutDir: true,
