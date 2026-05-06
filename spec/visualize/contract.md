@@ -101,7 +101,7 @@ The specific allowlist (which origins, how it's configured) is an implementation
 
 Two parallel `POST /visualize` calls on the same project must each return their own correct result. How the implementation achieves this — request-scoped engines, a serialization queue, or an upstream framework fix — is its concern.
 
-- Parallel `POST /visualize` calls on the same project each return their own correct result (one anchored on `SchemaTestA__c` returns `{A, B}`; one anchored on `SchemaTestB__c` returns `{B}` alone).
+- Parallel `POST /visualize` calls on the same project each return their own correct result. Anchoring on `SchemaTestA__c` returns the connected subgraph `{A, B}`; anchoring in parallel on a disconnected lone object returns just that object. The two payloads differ in identity and cardinality, so cross-contamination between the parallel calls is observable.
 
 ## Error Format
 

@@ -543,12 +543,42 @@ describe('Metadata visualization endpoints', () => {
   // engines, a serialization queue, a framework fix) is its concern.
   describe('concurrency — parallel visualize calls return their own results', () => {
     it('parallel POST /visualize calls on the same project each return their own result', async () => {
+      // Seed a lone object disconnected from the A↔B subgraph. The schema
+      // plugin's relationship BFS is undirected, so anchoring on B would
+      // still pull in A through the reverse edge — anchoring on a
+      // disconnected object is what produces a payload that's
+      // unambiguously distinct from the A anchor's payload, in both
+      // identity and cardinality. That distinctness is what makes this
+      // test sensitive to cross-contamination between parallel calls
+      // (e.g. a shared error-listener slot, a leaky engine cache, a
+      // serialization bug).
+      const loneDir = path.join(
+        tmpDir,
+        projectId,
+        'force-app',
+        'main',
+        'default',
+        'objects',
+        'LoneConc__c'
+      );
+      await fs.mkdir(loneDir, { recursive: true });
+      await fs.writeFile(
+        path.join(loneDir, 'LoneConc__c.object-meta.xml'),
+        `<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+  <label>Lone Conc</label><pluralLabel>Lone Concs</pluralLabel>
+  <nameField><label>Name</label><type>Text</type></nameField>
+  <deploymentStatus>Deployed</deploymentStatus>
+  <sharingModel>ReadWrite</sharingModel>
+</CustomObject>`
+      );
+
       const results = await Promise.all([
         request(app.server).post(`/v1/projects/${projectId}/visualize`).send({
           filePath: 'force-app/main/default/objects/SchemaTestA__c/SchemaTestA__c.object-meta.xml',
         }),
         request(app.server).post(`/v1/projects/${projectId}/visualize`).send({
-          filePath: 'force-app/main/default/objects/SchemaTestB__c/SchemaTestB__c.object-meta.xml',
+          filePath: 'force-app/main/default/objects/LoneConc__c/LoneConc__c.object-meta.xml',
         }),
       ]);
 
@@ -559,10 +589,12 @@ describe('Metadata visualization endpoints', () => {
         r.body.data.objects.map((o: { apiName: string }) => o.apiName).sort()
       );
       // First call anchored on A — connected subgraph includes A and B.
-      // Second call anchored on B — B has no outbound lookups in the fixture,
-      // so the subgraph is just B.
+      // Second call anchored on a lone disconnected object — subgraph is
+      // just that object. The two payloads differ in both identity and
+      // cardinality, so any crossover between the parallel calls is
+      // observable.
       expect(apiNamesByCall[0]).toEqual(['SchemaTestA__c', 'SchemaTestB__c']);
-      expect(apiNamesByCall[1]).toEqual(['SchemaTestB__c']);
+      expect(apiNamesByCall[1]).toEqual(['LoneConc__c']);
     });
   });
 });
