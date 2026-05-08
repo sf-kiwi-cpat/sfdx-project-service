@@ -22,8 +22,7 @@ import {
   readFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import AdmZip from 'adm-zip';
+import { execFileSync, execSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
@@ -78,11 +77,17 @@ for (const name of templates) {
     execSync('npm install --ignore-scripts', { cwd: contentDir, stdio: 'pipe' });
   }
 
-  // Zip content/ directory
-  const zip = new AdmZip();
-  zip.addLocalFolder(contentDir);
+  // Zip content/ directory using the `zip` CLI. We intentionally avoid an
+  // adm-zip dev dep here — the production code uses extract-zip (async,
+  // yauzl-backed) and we don't want adm-zip in package.json at all.
+  // `zip -r <out> .` from within contentDir produces relative entries that
+  // mirror what adm-zip's addLocalFolder did. -X strips extra file
+  // attributes for reproducibility; -q quiets per-file output.
   const zipPath = join(outDir, 'content.zip');
-  zip.writeZip(zipPath);
+  // Remove any pre-existing output so `zip` writes a fresh archive instead
+  // of appending. (rmSync above clears distDir, but be explicit.)
+  rmSync(zipPath, { force: true });
+  execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: contentDir, stdio: 'pipe' });
   console.error(`  ${name} → ${outDir}/`);
 }
 
