@@ -157,6 +157,11 @@ describe('deploy routes integration', () => {
       // enters the poll loop). All subsequent calls also reject,
       // simulating a fully-doomed stream.
       const faultApp = createApp();
+      // Lifecycle note: the `Object.defineProperty` accessor below is scoped
+      // to this `faultApp` instance and is torn down with it via
+      // `faultApp.close()` in the `finally` block — no `afterEach` cleanup
+      // is needed (and adding one would fight the per-test fresh-app
+      // pattern this test relies on).
       faultApp.addHook('preHandler', async (_request, reply) => {
         let actualSse: { send: (...a: unknown[]) => Promise<void> } | undefined;
         Object.defineProperty(reply, 'sse', {
