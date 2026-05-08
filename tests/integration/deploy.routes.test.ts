@@ -21,6 +21,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createApp } from '../../src/app.js';
+import * as deployments from '../../src/deployments.js';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { build as viteBuild } from 'vite';
 
@@ -138,6 +139,113 @@ describe('deploy routes integration', () => {
       expect(res.headers['content-type']).toContain('text/event-stream');
       expect(res.text).toContain('start');
       expect(res.text).toContain('complete');
+    });
+
+    // Regression for issue #90: when `reply.sse.send(...)` rejects mid-stream
+    // (e.g. broken pipe on abrupt client disconnect), the poll interval must
+    // be torn down from the rejection handler — not left to the next-tick
+    // `isConnected` guard or `onClose` to catch up. Without the fix, a
+    // doomed stream keeps polling and re-attempting failed sends until one
+    // of the belt-and-suspenders paths fires.
+    it('clears the poll interval when reply.sse.send rejects mid-stream', async () => {
+      // Build a fresh app so we can register the fault-injection hook
+      // before `app.ready()`. The shared `app` from the outer beforeEach
+      // is already listening, and `addHook` rejects on a started instance.
+      // The hook wraps `reply.sse.send` so that the *second* call rejects
+      // with a broken-pipe-shaped error (the first call is the
+      // synchronous `start` send, which we let succeed so the handler
+      // enters the poll loop). All subsequent calls also reject,
+      // simulating a fully-doomed stream.
+      const faultApp = createApp();
+      faultApp.addHook('preHandler', async (_request, reply) => {
+        let actualSse: { send: (...a: unknown[]) => Promise<void> } | undefined;
+        Object.defineProperty(reply, 'sse', {
+          configurable: true,
+          get: () => actualSse,
+          set: (val: { send: (...a: unknown[]) => Promise<void> }) => {
+            const origSend = val.send.bind(val);
+            let callCount = 0;
+            val.send = (...args: unknown[]): Promise<void> => {
+              callCount++;
+              if (callCount === 1) return origSend(...args);
+              const err = new Error('write EPIPE') as Error & { code: string };
+              err.code = 'EPIPE';
+              return Promise.reject(err);
+            };
+            actualSse = val;
+          },
+        });
+      });
+      await faultApp.ready();
+      const projectRes = await request(faultApp.server).post('/v1/projects').send({});
+      const faultProjectId = projectRes.body.id as string;
+
+      try {
+        // Hold the deployment in InProgress so the poll loop never reaches
+        // its terminal `complete` send — the test exercises the non-terminal
+        // stage/progress/warning rejection path.
+        mockPollStatus.mockImplementation(
+          () =>
+            new Promise(() => {
+              /* never resolves */
+            })
+        );
+
+        // The replay phase reads stage events synchronously and `await`s
+        // each `send`. The first call to `getDeploymentStageEvents` in
+        // the handler is replay; we return [] there so `lastStageCount`
+        // stays 0 and the handler enters the poll interval cleanly.
+        // Subsequent calls happen inside the poll interval (where sends
+        // are .catch()-handled, not awaited) — those return a stage so
+        // the loop attempts a non-terminal `send` that rejects.
+        const stageSpy = vi.spyOn(deployments, 'getDeploymentStageEvents');
+        const stageEvent = {
+          name: 'stage-1',
+          stageIndex: 0,
+          totalStages: 1,
+          numberComponentsDeployed: 0,
+          numberComponentsTotal: 1,
+          startedAt: new Date().toISOString(),
+        } as unknown as deployments.StageEvent;
+        let stageCalls = 0;
+        stageSpy.mockImplementation(() => {
+          stageCalls++;
+          // Call 1 = synchronous replay during handler prelude. Calls
+          // 2+ = poll-interval ticks where the rejection path is wired.
+          return stageCalls === 1 ? [] : [stageEvent];
+        });
+
+        const deployRes = await request(faultApp.server)
+          .post(`/v1/projects/${faultProjectId}/deployments`)
+          .send({ orgAlias: 'test-alias' })
+          .expect(202);
+        const deploymentId = deployRes.body.deploymentId;
+
+        // Open the stream. Handler sends `start` (success — call #1 in
+        // the wrapped `send`). Replay reads stages → []; reads progress
+        // → []; reads warnings → []. Handler enters the poll interval
+        // and returns. First tick: stage spy returns [stageEvent], the
+        // loop calls `reply.sse.send({event: 'stage', ...}).catch(...)`
+        // — call #2 in the wrapped `send` rejects. The fix tears down
+        // the interval and closes the stream from the rejection
+        // handler, so the response ends.
+        const res = await request(faultApp.server)
+          .get(`/v1/projects/${faultProjectId}/deployments/${deploymentId}/events`)
+          .set('Accept', 'text/event-stream')
+          .expect(200);
+        expect(res.text).toContain('start');
+
+        // Snapshot how many times the storage layer was polled, then wait
+        // longer than several poll-interval cycles (100ms each). If the
+        // interval was correctly torn down from the rejection handler, the
+        // count must not grow. Without the fix, the doomed stream keeps
+        // polling on each tick.
+        const callsAfterClose = stageSpy.mock.calls.length;
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        expect(stageSpy.mock.calls.length).toBe(callsAfterClose);
+      } finally {
+        await faultApp.close();
+      }
     });
 
     it('handles SSE for in-progress deployments', async () => {

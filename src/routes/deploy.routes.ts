@@ -190,6 +190,21 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
 
+      // A rejected `reply.sse.send(...)` (e.g. broken pipe from an abrupt
+      // client disconnect) is treated as a stream-terminal signal: the
+      // poll interval is cleared and the SSE stream is closed directly
+      // from the rejection handler, instead of waiting for `onClose` /
+      // the next-tick `isConnected` guard to catch up. Both of those
+      // remain in place as belt-and-suspenders, but neither responds
+      // synchronously to a write failure, which would leave a doomed
+      // stream re-attempting failed sends until the next tick.
+      // `close()` and `clearInterval()` are both idempotent, so it is
+      // safe if we race with `onClose` or another rejected send.
+      const teardownOnSendFailure = (): void => {
+        clearInterval(pollInterval);
+        reply.sse.close();
+      };
+
       // Belt-and-suspenders: the `onClose` callback below should stop the
       // poll when the client disconnects, but if it races against an
       // in-flight tick, this guard catches it too.
@@ -202,23 +217,21 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         const stages = getDeploymentStageEvents(deploymentId);
         for (let i = lastStageCount; i < stages.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new stage events */
-          reply.sse.send({ event: 'stage', data: stages[i] }).catch(() => {});
+          reply.sse.send({ event: 'stage', data: stages[i] }).catch(teardownOnSendFailure);
         }
         lastStageCount = stages.length;
 
         const events = getProgressEvents(deploymentId);
         for (let i = lastProgressCount; i < events.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new events */
-          reply.sse.send({ event: 'progress', data: events[i] }).catch(() => {
-            /* client went away; `isConnected` will be false next tick */
-          });
+          reply.sse.send({ event: 'progress', data: events[i] }).catch(teardownOnSendFailure);
         }
         lastProgressCount = events.length;
 
         const warns = getDeploymentWarningEvents(deploymentId);
         for (let i = lastWarningCount; i < warns.length; i++) {
           /* v8 ignore next 2 -- timing-dependent: only hit when poll catches new warnings */
-          reply.sse.send({ event: 'warning', data: warns[i] }).catch(() => {});
+          reply.sse.send({ event: 'warning', data: warns[i] }).catch(teardownOnSendFailure);
         }
         lastWarningCount = warns.length;
 
