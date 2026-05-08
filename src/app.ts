@@ -30,9 +30,17 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 
 /**
  * Create and configure the Fastify app. Exported for testing.
+ *
+ * No explicit `: FastifyInstance` return type: passing `loggerInstance`
+ * narrows the inferred Logger generic from `FastifyBaseLogger` to pino's
+ * concrete `Logger<...>`, and pinning the default annotation here causes
+ * a build error. Let TypeScript infer it. (See src/CLAUDE.md.)
  */
 export function createApp() {
   const app = Fastify({
+    // Fastify 5 renamed this option from `logger` to `loggerInstance` for
+    // pre-built pino instances. Using `logger` with an instance throws
+    // "logger options only accepts a configuration object" at runtime.
     loggerInstance: logger,
     // Override @fastify/ajv-compiler defaults: `removeAdditional: true` would
     // silently strip unknown properties before `additionalProperties: false`

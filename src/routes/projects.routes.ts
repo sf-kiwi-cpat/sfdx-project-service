@@ -28,6 +28,13 @@ import {
   updateLastAccessed,
 } from '../domain/projects.js';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
+
+// Route schemas in this file intentionally omit a `response` block. With
+// TypeBox + Fastify's type provider, declaring `response: { 201: ... }`
+// constrains `reply.status()` to only the listed codes, so handlers that
+// also emit 400/404 problem+json (which most of these do via the global
+// error handler) fail to typecheck. Reserve `response` schemas for
+// single-success-path endpoints. See src/CLAUDE.md.
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/projects',
