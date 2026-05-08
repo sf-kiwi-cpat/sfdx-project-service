@@ -281,17 +281,15 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   // critical because templates have grown to ~40 MB (data-curator) and a
   // synchronous extraction stalls all in-flight requests for the duration.
   //
-  // defaultFileMode/defaultDirMode keep extracted file modes byte-identical
-  // to the adm-zip behavior we're replacing: dirs 0o755, files 0o666 when
-  // the zip entry has no embedded mode bits. Templates are zipped with
-  // -X (no extra attrs), so this branch always applies for our archives.
+  // File modes come from the zip entries themselves: our build path
+  // (`zip -r -X` in scripts/zip-templates.js) writes Unix mode bits into
+  // every entry's external file attributes (files 0o644, dirs 0o755), and
+  // extract-zip honors those embedded modes. extract-zip's defaultFileMode
+  // / defaultDirMode options only kick in when an entry's mode is 0, which
+  // never happens for our archives, so we don't pass them.
   try {
     // extract-zip's `dir` option requires an absolute path.
-    await extract(templatePath, {
-      dir: path.resolve(projectDir),
-      defaultDirMode: 0o755,
-      defaultFileMode: 0o666,
-    });
+    await extract(templatePath, { dir: path.resolve(projectDir) });
   } catch (err) {
     await fs.rm(projectDir, { recursive: true, force: true });
     throw err;
