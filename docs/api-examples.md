@@ -1,6 +1,7 @@
 # API Examples
 
-Practical examples for using SF Project Service APIs.
+Practical examples for using SF Project Service APIs. See
+[api.md](./api.md) for the full endpoint reference.
 
 ## Setup
 
@@ -11,9 +12,14 @@ npm run dev
 # Listening on http://localhost:3000
 ```
 
+Auth note: deployments use the **zero-auth** model. You don't pass
+access tokens to the service — instead, you `sf org login web --alias
+<alias>` on the host running the service, then declare that alias
+when you deploy.
+
 ## Example: Complete Workflow
 
-### 1. List Templates
+### 1. List templates
 
 ```bash
 curl http://localhost:3000/v1/templates
@@ -23,32 +29,34 @@ curl http://localhost:3000/v1/templates
 ```json
 [
   {
-    "id": "minimal",
-    "name": "Minimal"
+    "id": "data-curator",
+    "name": "Data Curator",
+    "description": "Agent-driven metadata governance with custom objects, Flows, and Agentforce actions",
+    "categories": ["Governance", "Administration"]
   },
   {
-    "id": "standard-package",
-    "name": "Standard Package"
-  },
-  {
-    "id": "enterprise",
-    "name": "Enterprise"
+    "id": "metadata-ownership-tracking",
+    "name": "Metadata Ownership Tracking",
+    "description": "Custom object for tracking metadata ownership",
+    "categories": ["metadata", "governance"]
   }
 ]
 ```
 
-### 2. Create a Project
+### 2. Create a project
 
 ```bash
 curl -X POST http://localhost:3000/v1/projects \
   -H "Content-Type: application/json" \
-  -d '{"template":"minimal"}'
+  -d '{"template":"metadata-ownership-tracking"}'
 ```
 
-**Response:**
+**Response: `201 Created`**
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440000"
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "brave-falcon",
+  "lastAccessedAt": "2026-04-27T12:00:00.000Z"
 }
 ```
 
@@ -57,7 +65,15 @@ Save the project ID:
 PROJECT_ID="550e8400-e29b-41d4-a716-446655440000"
 ```
 
-### 3. Inspect Project Tree
+Optionally pin a deploy target at creation time:
+
+```bash
+curl -X POST http://localhost:3000/v1/projects \
+  -H "Content-Type: application/json" \
+  -d '{"template":"metadata-ownership-tracking","orgAlias":"my-scratch-org"}'
+```
+
+### 3. Inspect the project tree
 
 ```bash
 curl http://localhost:3000/v1/projects/$PROJECT_ID/tree | jq .
@@ -69,119 +85,124 @@ curl http://localhost:3000/v1/projects/$PROJECT_ID/tree | jq .
   "name": "550e8400-e29b-41d4-a716-446655440000",
   "type": "directory",
   "children": [
-    {
-      "name": ".gitignore",
-      "type": "file"
-    },
-    {
-      "name": "sfdx-project.json",
-      "type": "file"
-    },
-    {
-      "name": "force-app",
-      "type": "directory",
-      "children": [
-        {
-          "name": "main",
-          "type": "directory",
-          "children": [
-            {
-              "name": "default",
-              "type": "directory",
-              "children": [
-                {
-                  "name": "aura",
-                  "type": "directory",
-                  "children": []
-                },
-                {
-                  "name": "classes",
-                  "type": "directory",
-                  "children": []
-                },
-                {
-                  "name": "staticresources",
-                  "type": "directory",
-                  "children": []
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+    { "name": "sfdx-project.json", "type": "file" },
+    { "name": "force-app", "type": "directory", "children": [] }
   ]
 }
 ```
 
-### 4. Deploy to Salesforce Org
-
-First, obtain Salesforce credentials (OAuth access token and instance URL). Example using Salesforce CLI:
+### 4. Read a specific file
 
 ```bash
-sfdx auth:web:login -a myorg
-sfdx org:display -u myorg --json | jq '.result'
-# Extract: accessToken and instanceUrl
+curl "http://localhost:3000/v1/projects/$PROJECT_ID/file?path=sfdx-project.json"
 ```
 
-Deploy:
+Returns the raw file bytes as `text/plain`.
+
+### 5. Subscribe to filesystem events (in a separate terminal)
 
 ```bash
-curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
+curl -N -H "Accept: text/event-stream" \
+  http://localhost:3000/v1/projects/$PROJECT_ID/fs/events
+```
+
+Any write under the project directory surfaces here — from agent
+tool calls, MCP tools, shell commands, or manual edits.
+
+### 6. Start a deployment
+
+Deployments are asynchronous. The POST returns `202 Accepted` with a
+`deploymentId`; progress streams over SSE.
+
+```bash
+# Body is empty — auth resolves from (in order) SF_TARGET_ORG, the
+# project's pinned target-org, or the global sf default org.
+DEPLOYMENT=$(curl -sX POST \
+  http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
   -H "Content-Type: application/json" \
-  -d '{
-    "accessToken": "00D50000000IZ3dEAG!AQcAQG21FjPFfbvpABqyQfGlZT_y-KzHJSzZ...",
-    "instanceUrl": "https://org-instance.my.salesforce.com"
-  }'
+  -d '{}')
+DEPLOYMENT_ID=$(echo "$DEPLOYMENT" | jq -r '.deploymentId')
+echo "$DEPLOYMENT" | jq .
+# {
+#   "deploymentId": "deploy_1711353600000_a1b2c3d",
+#   "status": "Queued"
+# }
 ```
 
-**Response:**
-```json
-{
-  "ok": true,
-  "status": "Succeeded",
-  "numberComponentsDeployed": 3,
-  "numberComponentsTotal": 3,
-  "components": [
-    {
-      "fullName": "HelloWorld",
-      "type": "ApexClass",
-      "state": "Created"
-    },
-    {
-      "fullName": "Account",
-      "type": "CustomObject",
-      "state": "Created"
-    },
-    {
-      "fullName": "CustomApp",
-      "type": "CustomApplication",
-      "state": "Created"
-    }
-  ]
-}
+To override the target org for this deploy only:
+
+```bash
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
+  -H "Content-Type: application/json" \
+  -d '{"orgAlias":"my-scratch-org"}'
 ```
+
+### 7. Stream deployment progress
+
+```bash
+curl -N -H "Accept: text/event-stream" \
+  http://localhost:3000/v1/projects/$PROJECT_ID/deployments/$DEPLOYMENT_ID/events
+```
+
+**Example stream (single-pass deploy):**
+```
+event: start
+data: {"deploymentId":"deploy_1711353600000_a1b2c3d"}
+
+event: progress
+data: {"deploymentId":"deploy_1711353600000_a1b2c3d","status":"InProgress","numberComponentsDeployed":1,"numberComponentsTotal":3,"components":[...]}
+
+event: complete
+data: {"deploymentId":"deploy_1711353600000_a1b2c3d","status":"Succeeded","numberComponentsDeployed":3,"numberComponentsTotal":3,"components":[...]}
+```
+
+**Example stream (staged deploy, e.g. `data-curator`):**
+```
+event: start
+data: {"deploymentId":"..."}
+
+event: stage
+data: {"deploymentId":"...","name":"manifest/package.xml","index":0,"total":4}
+
+event: progress
+data: {"deploymentId":"...","status":"Succeeded","numberComponentsDeployed":12,"numberComponentsTotal":12,"components":[...]}
+
+event: stage
+data: {"deploymentId":"...","name":"manifest/flows-package.xml","index":1,"total":4}
+
+event: progress
+...
+
+event: complete
+data: {"deploymentId":"...","status":"Succeeded","stages":[...],"appUrl":"https://test.salesforce.com/lwr/application/ai/c-MyApp"}
+```
+
+The stream is reconnect-safe: a fresh subscription replays every
+prior `stage`, `progress`, and `warning` event, and if the deploy
+has already finished you get `complete` immediately.
 
 ## Error Handling Examples
 
-### Missing Template Field
+### Unknown property
+
+All product endpoints reject unknown body fields.
 
 ```bash
 curl -X POST http://localhost:3000/v1/projects \
   -H "Content-Type: application/json" \
-  -d '{}'
+  -d '{"template":"metadata-ownership-tracking","typo":"oops"}'
 ```
 
-**Response:** 400 Bad Request
+**Response: `400 Bad Request`**
 ```json
 {
   "status": 400,
   "title": "Bad Request",
-  "detail": "template is required in request body"
+  "detail": "body must NOT have additional properties: 'typo'"
 }
 ```
 
-### Invalid Template
+### Unknown template
 
 ```bash
 curl -X POST http://localhost:3000/v1/projects \
@@ -189,255 +210,247 @@ curl -X POST http://localhost:3000/v1/projects \
   -d '{"template":"does-not-exist"}'
 ```
 
-**Response:** 404 Not Found
-```json
-{
-  "status": 404,
-  "title": "Not Found",
-  "detail": "Template not found: does-not-exist"
-}
-```
+**Response: `400 Bad Request`** — `detail: "Template not found: does-not-exist"`.
 
-### Invalid Project ID
+### Invalid / unknown project ID
 
 ```bash
 curl http://localhost:3000/v1/projects/invalid-id/tree
 ```
 
-**Response:** 404 Not Found
-```json
-{
-  "status": 404,
-  "title": "Not Found",
-  "detail": "Project not found: invalid-id"
-}
-```
+**Response: `404 Not Found`**
 
-### Missing Deployment Credentials
+### Empty `orgAlias`
 
 ```bash
-curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
   -H "Content-Type: application/json" \
-  -d '{"instanceUrl":"https://org.salesforce.com"}'
+  -d '{"orgAlias":""}'
 ```
 
-**Response:** 400 Bad Request
+**Response: `400 Bad Request`** — explicit empty strings are
+rejected on both `POST /v1/projects` and
+`POST /v1/projects/:id/deployments`. (The deploy endpoint rejects
+at the schema layer via `minLength: 1`; `POST /v1/projects`
+rejects in `createBlankProject` via `OrgAliasEmptyError`.)
+
+### `orgAlias` that isn't logged in
+
+```bash
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
+  -H "Content-Type: application/json" \
+  -d '{"orgAlias":"not-a-real-alias"}'
+```
+
+**Response: `400 Bad Request`**
 ```json
 {
   "status": 400,
   "title": "Bad Request",
-  "detail": "accessToken and instanceUrl are required in the request body"
+  "detail": "orgAlias 'not-a-real-alias' does not resolve to a Salesforce username. Run `sf org login web --alias not-a-real-alias` or use a different alias."
 }
 ```
 
-### Deployment Failure
+### No auth available
 
 ```bash
-curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "accessToken": "invalid_token",
-    "instanceUrl": "https://org.salesforce.com"
-  }'
+# With no SF_TARGET_ORG, no project target-org, and no global default
+curl -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
+  -H "Content-Type: application/json" -d '{}'
 ```
 
-**Response:** 502 Bad Gateway
-```json
-{
-  "status": 502,
-  "title": "Deployment Failed",
-  "detail": "Invalid access token provided"
-}
+**Response: `400 Bad Request`** — `detail` explains the zero-auth
+chain and how to populate it.
+
+### SSE without `Accept` header
+
+```bash
+curl http://localhost:3000/v1/projects/$PROJECT_ID/fs/events
 ```
+
+**Response: `400 Bad Request`** — the stream never opens.
 
 ## Scripted Usage (Bash)
 
-### Create and Deploy Multiple Projects
+### Create and deploy multiple projects
 
 ```bash
 #!/bin/bash
+set -euo pipefail
 
-TEMPLATES=("minimal" "standard-package")
-ACCESS_TOKEN="your_access_token"
-INSTANCE_URL="https://your-instance.salesforce.com"
+ORG_ALIAS="my-scratch-org"            # pre-authed via `sf org login web`
+TEMPLATES=("metadata-ownership-tracking" "work-tracking")
 
 for template in "${TEMPLATES[@]}"; do
   echo "Creating project from $template..."
-  response=$(curl -s -X POST http://localhost:3000/v1/projects \
+  response=$(curl -sX POST http://localhost:3000/v1/projects \
     -H "Content-Type: application/json" \
-    -d "{\"template\":\"$template\"}")
-
+    -d "{\"template\":\"$template\",\"orgAlias\":\"$ORG_ALIAS\"}")
   project_id=$(echo "$response" | jq -r '.id')
   echo "Created project: $project_id"
 
-  echo "Deploying $project_id..."
-  curl -s -X POST http://localhost:3000/v1/projects/$project_id/deploy \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"accessToken\":\"$ACCESS_TOKEN\",
-      \"instanceUrl\":\"$INSTANCE_URL\"
-    }" | jq .
+  echo "Starting deployment..."
+  deployment=$(curl -sX POST \
+    http://localhost:3000/v1/projects/$project_id/deployments \
+    -H "Content-Type: application/json" -d '{}')
+  deployment_id=$(echo "$deployment" | jq -r '.deploymentId')
 
+  echo "Tailing deployment events..."
+  curl -N -H "Accept: text/event-stream" \
+    http://localhost:3000/v1/projects/$project_id/deployments/$deployment_id/events
   echo "---"
 done
 ```
 
-### Wait for Project Tree Availability
+### Poll for project tree availability
 
 ```bash
 #!/bin/bash
-
 PROJECT_ID="550e8400-e29b-41d4-a716-446655440000"
-MAX_RETRIES=10
-RETRY_DELAY=1
-
-for i in $(seq 1 $MAX_RETRIES); do
-  response=$(curl -s -w "\n%{http_code}" http://localhost:3000/v1/projects/$PROJECT_ID/tree)
-  http_code=$(echo "$response" | tail -1)
-
+for i in $(seq 1 10); do
+  http_code=$(curl -so /dev/null -w "%{http_code}" \
+    http://localhost:3000/v1/projects/$PROJECT_ID/tree)
   if [ "$http_code" = "200" ]; then
-    echo "Project tree available!"
-    echo "$response" | head -n -1 | jq .
+    curl -s http://localhost:3000/v1/projects/$PROJECT_ID/tree | jq .
     exit 0
   fi
-
-  echo "Attempt $i/$MAX_RETRIES failed (HTTP $http_code). Retrying in ${RETRY_DELAY}s..."
-  sleep $RETRY_DELAY
+  echo "Attempt $i: HTTP $http_code. Retrying..."
+  sleep 1
 done
-
-echo "Project not available after $MAX_RETRIES attempts"
+echo "Project not available"
 exit 1
 ```
 
 ## Using with jq
 
-Filter and format responses:
-
 ```bash
-# Get first template ID
+# First template id
 curl -s http://localhost:3000/v1/templates | jq -r '.[0].id'
 
-# Extract deployment status
-curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq '.status'
-
-# Count deployed components
-curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq '.numberComponentsDeployed'
-
-# List component names
-curl -s -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ... | jq -r '.components[].fullName'
+# Just the deployment id
+curl -sX POST http://localhost:3000/v1/projects/$PROJECT_ID/deployments \
+  -H "Content-Type: application/json" -d '{}' | jq -r '.deploymentId'
 ```
 
 ## Using with JavaScript/Node.js
 
 ```javascript
-const fetch = require('node-fetch');
-
 const BASE_URL = 'http://localhost:3000';
 
 async function listTemplates() {
-  const response = await fetch(`${BASE_URL}/v1/templates`);
-  return response.json();
+  const res = await fetch(`${BASE_URL}/v1/templates`);
+  return res.json();
 }
 
-async function createProject(templateId) {
-  const response = await fetch(`${BASE_URL}/v1/projects`, {
+async function createProject(template, orgAlias) {
+  const res = await fetch(`${BASE_URL}/v1/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template: templateId })
+    body: JSON.stringify({ template, orgAlias }),
   });
-  return response.json();
+  return res.json();
 }
 
-async function deployProject(projectId, accessToken, instanceUrl) {
-  const response = await fetch(`${BASE_URL}/v1/projects/${projectId}/deploy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accessToken, instanceUrl })
-  });
-  return response.json();
-}
-
-// Usage
-(async () => {
-  const templates = await listTemplates();
-  console.log('Templates:', templates);
-
-  const project = await createProject(templates[0].id);
-  console.log('Created project:', project.id);
-
-  const result = await deployProject(
-    project.id,
-    'YOUR_TOKEN',
-    'https://your-org.salesforce.com'
+async function startDeployment(projectId, orgAlias) {
+  const res = await fetch(
+    `${BASE_URL}/v1/projects/${projectId}/deployments`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(orgAlias ? { orgAlias } : {}),
+    },
   );
-  console.log('Deployment result:', result);
-})();
+  return res.json(); // { deploymentId, status: 'Queued' }
+}
+
+async function streamDeployment(projectId, deploymentId, onEvent) {
+  const res = await fetch(
+    `${BASE_URL}/v1/projects/${projectId}/deployments/${deploymentId}/events`,
+    { headers: { Accept: 'text/event-stream' } },
+  );
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop();
+    for (const block of events) onEvent(parseSseBlock(block));
+  }
+}
+
+function parseSseBlock(block) {
+  const lines = block.split('\n');
+  const event = lines.find((l) => l.startsWith('event: '))?.slice(7);
+  const data = lines.find((l) => l.startsWith('data: '))?.slice(6);
+  return { event, data: data ? JSON.parse(data) : undefined };
+}
 ```
 
 ## Using with Python
 
 ```python
-import requests
 import json
+import requests
 
 BASE_URL = 'http://localhost:3000'
 
 def list_templates():
-    response = requests.get(f'{BASE_URL}/v1/templates')
-    return response.json()
+    return requests.get(f'{BASE_URL}/v1/templates').json()
 
-def create_project(template_id):
-    response = requests.post(
-        f'{BASE_URL}/v1/projects',
-        json={'template': template_id}
-    )
-    return response.json()
+def create_project(template, org_alias=None):
+    body = {'template': template}
+    if org_alias:
+        body['orgAlias'] = org_alias
+    return requests.post(f'{BASE_URL}/v1/projects', json=body).json()
 
-def deploy_project(project_id, access_token, instance_url):
-    response = requests.post(
-        f'{BASE_URL}/v1/projects/{project_id}/deploy',
-        json={'accessToken': access_token, 'instanceUrl': instance_url}
-    )
-    return response.json()
+def start_deployment(project_id, org_alias=None):
+    body = {'orgAlias': org_alias} if org_alias else {}
+    return requests.post(
+        f'{BASE_URL}/v1/projects/{project_id}/deployments',
+        json=body,
+    ).json()  # {'deploymentId': ..., 'status': 'Queued'}
 
-# Usage
-templates = list_templates()
-print('Templates:', templates)
-
-project = create_project(templates[0]['id'])
-print('Created project:', project['id'])
-
-result = deploy_project(
-    project['id'],
-    'YOUR_TOKEN',
-    'https://your-org.salesforce.com'
-)
-print('Deployment result:', json.dumps(result, indent=2))
+def stream_deployment(project_id, deployment_id):
+    url = (f'{BASE_URL}/v1/projects/{project_id}'
+           f'/deployments/{deployment_id}/events')
+    with requests.get(url,
+                      headers={'Accept': 'text/event-stream'},
+                      stream=True) as r:
+        event = None
+        for raw in r.iter_lines(decode_unicode=True):
+            if not raw:
+                continue
+            if raw.startswith('event: '):
+                event = raw[len('event: '):]
+            elif raw.startswith('data: '):
+                yield event, json.loads(raw[len('data: '):])
+                event = None
 ```
 
 ## Performance Considerations
 
-### Deployment Time
+### Deployment time
 
 Deployments can take 30 seconds to several minutes depending on:
-- Number of components
-- Org metadata complexity
+- Component count and metadata complexity
 - Network latency
 - Salesforce infrastructure load
+- Number of stages for staged deploys (e.g., `data-curator` ships
+  four stages)
 
-Consider implementing client-side timeouts:
+Prefer the SSE stream over polling. Since the stream is
+reconnect-safe, you can drop and reconnect freely without losing
+history.
 
-```bash
-curl --max-time 300 \  # 5 minute timeout
-  -X POST http://localhost:3000/v1/projects/$PROJECT_ID/deploy ...
-```
+### Project creation
 
-### Project Creation
+Template extraction is typically sub-second for small templates.
 
-Project creation (template extraction) is typically < 1 second for small templates.
+### File tree
 
-### File Tree Operations
-
-File tree traversal is fast for typical SFDX project sizes (< 100ms for 1000 files).
-
-For very large projects (> 10,000 files), consider implementing pagination or caching on the client side.
+Tree traversal is fast for typical SFDX projects (< 100ms for
+~1,000 files). For very large trees, consider client-side caching —
+the service does not paginate.

@@ -33,7 +33,7 @@ offers to create a worktree and hand off to `/cdd-spec`.
 `contract.spec.ts` (executable test code, the actual source of truth) and a
 `contract.md` (prose description, auto-generated from the tests). You review
 both, edit the test code if needed, and approve when it looks right. The spec
-gets pushed and labeled `spec:ready-for-agent-review`. The PR body includes a
+gets pushed and labeled `spec:agent-reviewing`. The PR body includes a
 **human spec approval checklist** — downstream automation requires every box
 to be ticked before implementation begins.
 
@@ -47,7 +47,7 @@ Posts findings as a PR comment. If there are gaps, the label moves to
 the tests pass. It also creates unit and integration tests, checks coverage
 thresholds, and pushes the result. It cannot modify spec files. If a spec
 seems wrong, it flags it rather than working around it. Labels move to
-`impl:ready-for-agent-review` when done.
+`impl:agent-reviewing` when done.
 
 `/cdd-code-review` reviews the implementation using blind contract derivation
 (a separate agent reads only the production code and tries to derive what the
@@ -82,21 +82,21 @@ a `{phase}:{actor}-{state}` pattern. Transitions happen when a skill or
 monitor completes its work.
 
 ```
-/cdd-spec              sets   spec:ready-for-agent-review
+/cdd-spec              sets   spec:agent-reviewing
 /cdd-spec-review       sets   spec:agent-approved      (if solid)
                          or   spec:agent-comments      (if gaps found)
-cdd-spec-fix-monitor   sets   spec:ready-for-agent-review  (after fixing)
+cdd-spec-fix-monitor   sets   spec:agent-reviewing  (after fixing)
 You approve            sets   spec:human-approved
                               (checklist in PR body must be fully ticked)
 cdd-implement-monitor  validates checklist:
                          pass → runs /cdd-implement
                          fail → reverts to spec:agent-approved + PR comment
-/cdd-implement         sets   impl:agent-in-progress, then impl:ready-for-agent-review
+/cdd-implement         sets   impl:agent-in-progress, then impl:agent-reviewing
 /cdd-code-review       sets   impl:agent-approved      (if passing)
                          or   impl:agent-comments      (if needs work)
 cdd-impl-fix-monitor   checks for recurring findings:
                          recurrence → escalates to #app-studio-alerts, no fix
-                         new        → sets impl:ready-for-agent-review (after fixing)
+                         new        → sets impl:agent-reviewing (after fixing)
 You merge the PR
 ```
 
@@ -107,7 +107,7 @@ can mechanically verify that each fix actually resolved the finding it
 referenced.
 
 You can also fix things manually — push your changes and move the label back
-to `spec:ready-for-agent-review` or `impl:ready-for-agent-review`.
+to `spec:agent-reviewing` or `impl:agent-reviewing`.
 
 You can always override. If a spec review says HAS GAPS but you disagree,
 set `spec:human-approved` directly (but the checklist gate still applies).
@@ -144,7 +144,7 @@ contributors.
 
 Open five terminals and paste one command into each:
 
-**cdd-spec-review-monitor** polls for `spec:ready-for-agent-review` and runs
+**cdd-spec-review-monitor** polls for `spec:agent-reviewing` and runs
 `/cdd-spec-review`. Copy the command from
 `.claude/loops/cdd-spec-review-monitor.md`.
 
@@ -156,7 +156,7 @@ findings, fixes the spec, and relabels for re-review. Copy the command from
 `/cdd-implement`. Copy the command from
 `.claude/loops/cdd-implement-monitor.md`.
 
-**cdd-code-review-monitor** polls for `impl:ready-for-agent-review` and runs
+**cdd-code-review-monitor** polls for `impl:agent-reviewing` and runs
 `/cdd-code-review`. Copy the command from
 `.claude/loops/cdd-code-review-monitor.md`.
 
@@ -205,12 +205,12 @@ the right label and is assigned to your `gh` user. Make sure the loop
 terminal is still running.
 
 **Need to re-run implementation.** Remove `impl:agent-in-progress` or
-`impl:ready-for-agent-review` from the PR, re-add `spec:human-approved`.
+`impl:agent-reviewing` from the PR, re-add `spec:human-approved`.
 `cdd-implement-monitor` picks it up next cycle.
 
 **Need to re-run a review after fixes.** Move the label from
-`spec:agent-comments` back to `spec:ready-for-agent-review`, or from
-`impl:agent-comments` back to `impl:ready-for-agent-review`.
+`spec:agent-comments` back to `spec:agent-reviewing`, or from
+`impl:agent-comments` back to `impl:agent-reviewing`.
 
 **Worktree problems.** Git worktrees share source files but not
 `node_modules`. The `SessionStart` hook runs `npm install` automatically

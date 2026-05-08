@@ -1,6 +1,6 @@
 # Development Guide
 
-Instructions for developing, testing, and deploying SFDX Project Service.
+Instructions for developing, testing, and shipping SFDX Project Service.
 
 ## Setup
 
@@ -9,6 +9,9 @@ Instructions for developing, testing, and deploying SFDX Project Service.
 - Node.js ≥ 20
 - npm 10+
 - Git
+- Salesforce CLI (`sf`) — required for live deployments; `sf org
+  login web --alias <alias>` ahead of time authenticates the zero-
+  auth chain used by `POST /v1/projects/:id/deployments`
 
 ### Installation
 
@@ -18,323 +21,324 @@ cd sfdx-project-service
 npm install
 ```
 
-Git hooks will install automatically via the `prepare` script.
+Git hooks install automatically via the `prepare` script.
 
 ## Development Workflow
 
-### Start Dev Server
+### Start dev server
 
 ```bash
 npm run dev
 ```
 
-Starts the server with file watching (reloads on changes). Listen on `http://localhost:3000`.
+Runs `scripts/zip-templates.js` then `tsx watch src/index.ts`.
+Listening on `http://localhost:3000`. The watcher re-runs on
+`src/**` changes; edits under `templates/src/` require rerunning
+`npm run build:templates` manually (the watcher does not re-zip
+templates).
 
-### Build TypeScript
-
-```bash
-npm run build
-```
-
-Compiles `src/` to `dist/`. Required before running with `npm start`.
-
-### Format & Lint
+### Build
 
 ```bash
-npm run lint          # Check for linting errors
-npm run lint:fix      # Auto-fix linting errors
-npm run format        # Format with Prettier
+npm run build           # tsc + build:templates
+npm run build:templates # just re-zip templates (scripts/zip-templates.js)
 ```
 
-**Pre-commit hook** runs `prettier` and `eslint --fix` on staged `.ts` files.
+Output goes to `dist/` (compiled TS) and `templates/dist/<id>/`
+(zipped template content).
+
+### Run in production mode
+
+```bash
+npm start  # node dist/index.js
+```
+
+### Format & lint
+
+```bash
+npm run lint       # eslint (check only)
+npm run lint:fix   # eslint --fix
+npm run format     # prettier
+```
+
+The pre-commit hook runs `prettier` and `eslint --fix` on staged
+`.ts` files and unit tests.
 
 ## Testing
 
-### Run All Tests
+### Commands
 
 ```bash
-npm run test          # Run all tests with coverage (90% threshold)
-npm test:coverage     # Explicit coverage report
+npm test               # everything (vitest run)
+npm run test:unit      # tests/unit/
+npm run test:integration # tests/integration/
+npm run test:spec      # spec/ (Contract-Driven Development tests)
+npm run test:quality   # alias for tests/ (unit + integration)
+npm run test:coverage  # coverage for the full suite
+npm run test:watch     # watch mode
+npm run test:deploy:live # opt-in, hits a real Salesforce org
 ```
 
-### Run Subsets
+### Tiers
 
-```bash
-npm run test:unit       # Unit tests only (3 files)
-npm run test:integration # Integration tests only (4 files)
-npm run test:watch      # Watch mode (re-runs on file change)
-```
+- **Unit tests** (`tests/unit/`) — pure functions, no I/O.
+  Vitest, mocked `@salesforce/core` where needed. Files:
+  `auth.test.ts`, `build.test.ts`, `config.test.ts`,
+  `deploy.test.ts`, `deployments.test.ts`, `errors.test.ts`,
+  `logger.test.ts`, `projects.test.ts`, `templates.test.ts`,
+  `watcher.test.ts`.
+- **Integration tests** (`tests/integration/`) — Fastify app
+  instance, real filesystem, mocked Salesforce API.
+  Files: `deploy.routes.test.ts`, `docs.test.ts`,
+  `files.test.ts`, `fs-events.routes.test.ts`, `routes.test.ts`,
+  `templates.deployable.test.ts` (tier-1 deployability check:
+  every template runs through the full build+ComponentSet
+  pipeline to catch manifest/shape regressions).
+- **Spec tests** (`spec/**/*.spec.ts`) — Contract-Driven
+  Development executable contracts. Each feature directory
+  (`spec/deploy/`, `spec/projects/`, etc.) contains
+  `contract.spec.ts` (source of truth) and `contract.md` (derived
+  prose). See `spec/CLAUDE.md` for the conventions and
+  [workflow-guide.md](./workflow-guide.md) for how CDD works.
+- **Live deploy tests** (`tests/live/templates.deploy.live.test.ts`,
+  `npm run test:deploy:live`) — opt-in. Deploys every template
+  against a real Salesforce org. Requires a pre-authed alias. Uses
+  `vitest.live.config.ts` (separate config so the default suite
+  stays hermetic).
 
 ### Coverage
 
-Coverage reports are generated to `coverage/`. Open `coverage/index.html` in a browser to view detailed reports.
+Thresholds enforced in CI and in the pre-push hook:
+- 90% overall
+- 85% per file on branches
 
-**Coverage thresholds** (enforced):
-- Global: 90%
-- Per-file on branches: 85%
+Coverage **must** be measured against the full suite. Unit-only
+coverage is misleading because integration tests drive most of the
+route + SSE code paths.
 
-Must run full test suite (not unit-only) for coverage to work correctly — integration tests provide most coverage.
+Reports land in `coverage/`. Open `coverage/index.html` for line-
+level detail.
 
-### Test Files
+### When you must run `test:deploy:live`
 
-- **Unit tests** (`src/**/*.test.ts`) — Pure functions, no I/O
-  - `logger.test.ts`
-  - `config.test.ts`
-  - `errors.test.ts`
-
-- **Integration tests** (`src/**/*.integration.test.ts`) — Real filesystem, mocked Salesforce API
-  - `files.integration.test.ts`
-  - `docs.integration.test.ts`
-  - `routes.integration.test.ts`
-  - `deploy.test.ts` (includes integration tests)
-
-- **Acceptance tests** (`src/**/*.acceptance.test.ts`) — Full flow simulation
-  - `projects.acceptance.test.ts`
-  - `deploy.acceptance.test.ts`
-  - `templates.acceptance.test.ts`
-
-### Test Framework
-
-Uses **Vitest** (configured in `vitest.config.ts`):
-
-```bash
-vitest                  # Interactive watch mode
-vitest run              # Single run (used by npm test)
-vitest run --coverage   # With coverage
-```
+Changes under `src/domain/deploy*.ts`, `src/domain/build.ts`, or
+`templates/src/**` need a live run before merge — they touch the
+production deploy pipeline where mocks can mask real-world failures.
+See `CLAUDE.md` for the full guardrail.
 
 ## Git Hooks
 
-Hooks are installed via Husky. **Do not skip them** (`--no-verify`).
+Installed via Husky. **Do not** skip with `--no-verify`.
 
 ### Pre-commit
 
-Runs on `git commit`:
-1. **lint-staged** — Run Prettier + ESLint on staged `.ts` files
-2. **Unit tests** — Ensure unit tests pass
-
-Blocks commit if linting fails or tests fail.
+1. `lint-staged` — prettier + eslint on staged `.ts` files
+2. `vitest run tests/unit` — unit tests must pass
 
 ### Pre-push
 
-Runs on `git push`:
-1. **Build** — Compile TypeScript (`npm run build`)
-2. **All tests** — Run full test suite with coverage
-3. **Coverage check** — Ensure 90% threshold met
-
-Blocks push if build fails, tests fail, or coverage is insufficient.
+1. `npm run build`
+2. `npm run test:coverage` — full suite + coverage thresholds
 
 ## Git Worktrees
 
-Worktrees create isolated branches with separate `node_modules`:
+Worktrees share the working tree but **not** `node_modules`:
 
 ```bash
 git worktree add .claude/worktrees/feature-name feature-branch
 cd .claude/worktrees/feature-name
-npm install  # Install dependencies for this worktree
+npm install
 npm test
 ```
 
-**Important:** Each worktree needs its own `npm install`. The `SessionStart` hook in `.claude/settings.json` handles this automatically for Claude Code sessions.
+Removal:
 
-To clean up:
 ```bash
-cd /path/to/main
 git worktree remove .claude/worktrees/feature-name
 ```
+
+Claude Code sessions auto-run `npm install` via the `SessionStart`
+hook in `.claude/settings.json`. If deps seem missing, the hook may
+have been skipped — run `npm install` manually.
 
 ## Project Structure
 
 ```
 src/
-├── index.ts                    # Server entry
-├── app.ts                      # Express app
-├── config.ts                   # Config (env vars)
-├── logger.ts                   # Pino logger
-├── errors.ts                   # RFC 9457 error handling
-├── templates.ts                # Template operations
-├── projects.ts                 # Project CRUD
-├── deploy.ts                   # Deployment logic
-├── files.ts                    # File tree
-├── routes/
-│   ├── index.ts               # Route aggregation
-│   ├── templates.routes.ts    # GET /templates
-│   ├── projects.routes.ts     # POST/GET /projects/*
-│   └── deploy.routes.ts       # POST /projects/:id/deploy
-├── *.test.ts                  # Unit tests
-├── *.integration.test.ts       # Integration tests
-└── *.acceptance.test.ts        # Acceptance tests
+├── index.ts            # entry point
+├── app.ts              # Fastify factory
+├── config.ts           # env configuration
+├── logger.ts           # Pino singleton
+├── errors.ts           # RFC 9457 + domain errors
+├── deployments.ts      # in-memory deployment store
+├── routes/             # Fastify plugin routers
+│   ├── index.ts
+│   ├── templates.routes.ts
+│   ├── projects.routes.ts
+│   ├── deploy.routes.ts
+│   └── fs-events.routes.ts
+└── domain/             # framework-agnostic business logic
+    ├── templates.ts
+    ├── projects.ts
+    ├── deploy.ts
+    ├── deploy-auth.ts
+    ├── auth.ts
+    ├── build.ts
+    ├── files.ts
+    └── watcher.ts
 
-dist/                           # Compiled JS (generated)
-docs/                          # Documentation
-templates/                     # Template ZIP files
-projects/                      # Created project dirs (generated)
-coverage/                      # Test coverage reports (generated)
+spec/                   # executable contracts (human-guarded)
+tests/
+├── unit/
+├── integration/
+└── live/               # opt-in (npm run test:deploy:live)
+
+templates/
+├── src/<id>/           # source templates (checked in)
+│   ├── template.json   # listing metadata
+│   └── content/        # files shipped into each new project
+└── dist/<id>/          # built by scripts/zip-templates.js
+
+scripts/
+└── zip-templates.js    # builds templates/dist/ from templates/src/
+
+dist/                   # compiled TS (generated)
+coverage/               # test coverage (generated)
+docs/                   # documentation
 ```
 
-## Configuration
+## Configuration Files
 
-### TypeScript (`tsconfig.json`)
-
-- Strict mode enabled
-- ES2020 target
-- ESM output
-- Module resolution: Node.js
-
-### ESLint (`.eslintrc.js`)
-
-- TypeScript-eslint rules
-- Strict type checking
-- No `any` unless justified
-
-### Prettier (`.prettierrc`)
-
-- 2-space indentation
-- Single quotes
-- Trailing commas
+- `tsconfig.json` — strict mode, ESNext module, ESM output
+- `vitest.config.ts` — default test config
+- `vitest.live.config.ts` — live-deploy test config
+- `eslint.config.js` — typescript-eslint, strict rules
+- `.prettierrc` — 2-space indent, single quotes, trailing commas
+- `.husky/` — pre-commit and pre-push hooks
+- `.sync-docs.json` — inputs to the `/sync-docs` skill
+- `.claude/` — team-shared settings, skills, loops
 
 ## API Documentation
 
-### Swagger UI
+- **Swagger UI** at `GET /docs` (served by `@fastify/swagger-ui`)
+- **OpenAPI JSON** at `GET /openapi.json`
 
-Available at `GET /docs` when server is running.
+OpenAPI is generated from the Typebox schemas declared inline on
+each Fastify route (not from JSDoc). Route-level `schema.body`,
+`schema.params`, `schema.querystring`, and `schema.response` drive
+both runtime validation and the published spec.
 
-### OpenAPI JSON
-
-Available at `GET /openapi.json`.
-
-Swagger definitions are embedded in route files as JSDoc comments:
-
-```typescript
-/**
- * @openapi
- * /templates:
- *   get:
- *     summary: List templates
- *     responses:
- *       '200':
- *         description: List of templates
- */
-router.get('/templates', ...)
-```
+`ROUTING_PREFIX` (env) populates the OpenAPI `servers` array so the
+"Try it out" button in Swagger UI routes through reverse proxies
+correctly.
 
 ## Debugging
 
-### Enable Debug Logging
+### Verbose logs
 
 ```bash
-DEBUG=* npm run dev
+LOG_LEVEL=debug npm run dev
 ```
 
-Pino logger will output more verbose logs.
-
-### Use Node Debugger
+### Node inspector
 
 ```bash
-node --inspect dist/index.js
+node --inspect-brk dist/index.js
 ```
 
-Open `chrome://inspect` in Chrome to attach debugger.
-
-### VSCode Debug Configuration
-
-Add to `.vscode/launch.json`:
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "Launch Program",
-      "program": "${workspaceFolder}/dist/index.js",
-      "preLaunchTask": "npm: build",
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"]
-    }
-  ]
-}
-```
+Attach via `chrome://inspect` or a VS Code launch configuration.
 
 ## Common Tasks
 
-### Add a New Endpoint
+### Add a new endpoint
 
-1. Create a new route file in `src/routes/` (e.g., `src/routes/myroute.routes.ts`)
-2. Export a function that creates and returns an Express router
-3. Add JSDoc `@openapi` comments for Swagger
-4. Import and use the router in `src/routes/index.ts`
-5. Add tests in `src/myroute.integration.test.ts`
-6. Run `npm run lint:fix` to format
-7. Run `npm test` to verify coverage
+1. Create a Fastify plugin under `src/routes/foo.routes.ts`.
+2. Keep business logic in `src/domain/`. Routes should stay thin.
+3. Declare Typebox schemas with `additionalProperties: false` on the
+   body and reject unknown fields with 400.
+4. Register the plugin in `src/routes/index.ts`.
+5. Add an integration test under `tests/integration/`.
+6. If the endpoint changes observable behavior, write an executable
+   contract in `spec/<feature>/contract.spec.ts` first — see the
+   workflow guide.
 
-### Add a New Template
+### Add a new template
 
-1. Create an SFDX project structure in a temporary directory
-2. Ensure it includes `sfdx-project.json` with proper `packageDirectories`
-3. ZIP the directory: `zip -r templates/mytemplate.zip .`
-4. Verify by creating a project: `POST /projects { "template": "mytemplate" }`
+1. Create `templates/src/<id>/` with:
+   - `template.json` — `{ id, name, description, categories }`
+   - `content/` — full SFDX project layout (includes its own
+     `sfdx-project.json`; optionally `template.json` with
+     `deployStages` for multi-stage deploy, and `initialMessages`
+     to seed a new project's chat history).
+2. `npm run build:templates` — zips content and copies metadata
+   into `templates/dist/<id>/`.
+3. Verify: `curl -X POST http://localhost:3000/v1/projects -d
+   '{"template":"<id>"}'`.
+4. Add tier-1 deployability coverage in
+   `tests/integration/templates.deployable.test.ts`.
+5. For React/UIBundle-bearing templates, also verify via
+   `npm run test:deploy:live`.
 
-### Update Dependencies
+### Update dependencies
 
 ```bash
-npm outdated         # Check for outdated packages
-npm update           # Update to latest versions
-npm audit            # Check for vulnerabilities
-npm audit fix        # Auto-fix vulnerabilities
+npm outdated
+npm update
+npm audit
+npm audit fix
+npm test
 ```
-
-Always run tests after updating dependencies.
 
 ## CI/CD
 
-GitHub Actions workflow runs on every push and PR:
+GitHub Actions run on every push and PR:
 
-1. Install dependencies
-2. Run linting
-3. Run tests with coverage
-4. Check coverage thresholds (90%)
-5. Build npm package (on main branch)
+1. Install deps
+2. Lint
+3. Build
+4. Full test suite + coverage
+5. Enforce 90% / 85% thresholds
 
-Workflow file: `.github/workflows/ci.yml`
+The workflow file is `.github/workflows/ci.yml`.
+
+Dependabot opens PRs for npm bumps; the CDD loops do not
+auto-review them — humans handle routine bumps.
 
 ## Troubleshooting
 
 ### Tests fail with "template not found"
 
-Ensure `templates/` directory exists and contains at least one `.zip` file.
+`templates/dist/` hasn't been built. Run `npm run build:templates`
+or any script that depends on `pretest`.
 
-### Pre-push hook blocks with coverage error
+### Pre-push hook fails coverage
 
-Run `npm run test:coverage` locally to see full coverage report. Coverage threshold is 90% overall and 85% per file on branches.
+Run `npm run test:coverage` locally to see per-file output. The
+threshold is 90% overall and 85% per file on branches.
 
-### Port 3000 already in use
+### Port 3000 in use
 
-Change port via environment:
 ```bash
 PORT=3001 npm run dev
+# or
+lsof -i :3000 && kill -9 <PID>
 ```
 
-Or kill the process holding port 3000:
-```bash
-lsof -i :3000
-kill -9 <PID>
-```
+### Deploy fails with `UIBundle Metadata API is not enabled`
+
+The target org is missing **Agentforce Vibe for Multi-Framework
+(Beta)**. Enable it in Setup → Apps → "React Development with
+Agentforce Vibes and Salesforce Multi-Framework (Beta)".
+
+### `orgAlias '...' does not resolve to a Salesforce username`
+
+You haven't logged into that alias on this host. Run
+`sf org login web --alias <alias>` and retry. See `docs/api.md`'s
+Zero-auth resolution section for the full precedence chain.
 
 ### Node version mismatch
 
-Ensure Node.js ≥ 20:
 ```bash
-node --version
-nvm use 20  # If using nvm
+node --version   # must be ≥ 20
+nvm use 20       # or install a 20.x line
 ```
-
-## Release Process
-
-1. Ensure all tests pass and coverage is sufficient
-2. Update version in `package.json`
-3. Create a git tag: `git tag v1.0.0`
-4. Push tag: `git push origin v1.0.0`
-5. GitHub Actions builds and publishes npm package
-
-See CI/CD workflow for details.
