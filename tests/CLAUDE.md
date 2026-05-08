@@ -31,17 +31,8 @@ npm run test:coverage    # all tests + coverage report
 
 ## Picking an HTTP test entry point
 
-- **`app.inject()` is the default.** It bypasses the network stack and
-  drives the route table directly — fastest, no port allocation, no
-  socket cleanup. Use it for everything that doesn't need a real
-  socket: JSON request/response, status codes, schema validation,
-  headers, error problem+json bodies.
-- **`supertest` is required when the test needs a real socket.** SSE
-  / streaming routes go through `reply.raw` (or `@fastify/sse`'s
-  underlying raw stream) and `app.inject()` does not surface the
-  streamed chunks — assertions on `event:` / `data:` lines only work
-  through a real HTTP request. Same applies to anything that calls
-  `reply.hijack()`. Pattern:
+- **`app.inject()` is the default.** It bypasses the network stack and drives the route table directly — fastest, no port allocation, no socket cleanup. Use it for everything that doesn't need a real socket: JSON request/response, status codes, schema validation, headers, error problem+json bodies.
+- **`supertest` is required when the test needs a real socket.** SSE / streaming routes go through `reply.raw` (or `@fastify/sse`'s underlying raw stream) and `app.inject()` does not surface the streamed chunks — assertions on `event:` / `data:` lines only work through a real HTTP request. Same applies to anything that calls `reply.hijack()`. Pattern:
 
   ```ts
   const app = createApp();
@@ -53,5 +44,4 @@ npm run test:coverage    # all tests + coverage report
   await app.close();           // teardown — release the port
   ```
 
-  See `tests/integration/deploy.routes.test.ts` and
-  `tests/integration/fs-events.routes.test.ts` for live examples.
+  See `tests/integration/deploy.routes.test.ts` and `tests/integration/fs-events.routes.test.ts` for live examples.
