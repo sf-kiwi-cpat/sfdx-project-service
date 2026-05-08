@@ -91,6 +91,11 @@ describe('tier-1: every template is deployable (structurally)', async () => {
     let projectId: string;
     let projectDir: string;
 
+    // 30s ceiling accommodates the 40 MB data-curator template — extract-zip
+    // (yauzl-backed, async) takes ~5s wall-clock to unpack it, which blew
+    // through vitest's default 5s timeout. The extraction is now off the
+    // event loop (which is the point of the swap from adm-zip), so a higher
+    // wall-clock budget here is the correct trade-off.
     it('creates a project via POST /v1/projects', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
@@ -99,7 +104,7 @@ describe('tier-1: every template is deployable (structurally)', async () => {
       projectId = res.body.id as string;
       projectDir = path.join(tmpRoot, projectId);
       expect(projectId).toBeDefined();
-    });
+    }, 30_000);
 
     it('sfdx-project.json pins API version >= 66.0', async () => {
       const raw = await fs.readFile(path.join(projectDir, 'sfdx-project.json'), 'utf-8');
