@@ -37,11 +37,15 @@ function isSalesforceHost() {
   }
 
   const hostname = window.location.hostname;
-  return hostname.includes('force.com') || hostname.includes('salesforce.com');
+  return hostname !== 'localhost' && hostname !== '127.0.0.1';
 }
 
 function getAgentApiBase() {
-  return isSalesforceHost() ? '/services/apexrest/data-curator-agent/v1' : '/api/agent';
+  const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '');
+  if (isSalesforceHost()) {
+    return `${base}/services/apexrest/data-curator-agent/v1`;
+  }
+  return `${base}/api/agent`;
 }
 
 function getAgentUrl(path: string) {

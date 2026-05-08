@@ -92,11 +92,23 @@ function isSalesforceHost() {
   }
 
   const hostname = window.location.hostname;
-  return hostname.includes('force.com') || hostname.includes('salesforce.com');
+  // localhost is the only environment where there's no Salesforce proxy
+  // intercepting /services/* calls (npm-run-dev outside of preview-service).
+  // Every other host — real org, code-builder, App Studio preview-service —
+  // forwards via the @salesforce/vite-plugin-ui-bundle proxy or by being
+  // served by Lightning itself, so /services/apexrest paths work directly.
+  return hostname !== 'localhost' && hostname !== '127.0.0.1';
 }
 
 function getGovernanceApiBase() {
-  return isSalesforceHost() ? '/services/apexrest/data-curator/v1' : '/api/governance';
+  // Anchor against Vite's BASE_URL so the request lands inside the
+  // preview's `/preview/<id>/` route — the only path nginx forwards to
+  // preview-service, where the ui-bundle proxy can intercept.
+  const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '');
+  if (isSalesforceHost()) {
+    return `${base}/services/apexrest/data-curator/v1`;
+  }
+  return `${base}/api/governance`;
 }
 
 async function getDataSdk() {
