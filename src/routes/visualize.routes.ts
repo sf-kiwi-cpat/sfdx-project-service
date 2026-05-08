@@ -22,6 +22,7 @@ import { Type } from '@sinclair/typebox';
 import { getProjectDir } from '../domain/projects.js';
 import {
   ProjectVisualizationEngine,
+  getLightModeOverlayCssPath,
   getPlatformCssPath,
   readPluginIndexHtml,
   resolvePluginAssetPath,
@@ -321,14 +322,18 @@ export async function visualizeRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         summary: 'Serve the design-system CSS referenced by plugin HTML',
         description:
-          "Returns the core-sdk's shipped design-system stylesheet, served as " +
+          "Returns the core-sdk's shipped design-system stylesheet (served as " +
           '`platform.css` to match the `@dist/design-system/platform.css` ' +
-          'placeholder the plugins emit.',
+          'placeholder the plugins emit) followed by a service-bundled ' +
+          'light-mode overlay so the canvas paints light by default outside ' +
+          'VS Code. The overlay supplies `--mv-*` semantic-token values plus ' +
+          'a small `--vscode-*` safety net for SDK base styles that read ' +
+          '`--vscode-*` directly.',
         tags: ['Projects'],
         params: ProjectParams,
         response: {
           200: {
-            description: 'The design-system CSS.',
+            description: 'The design-system CSS with light-mode overlay.',
             content: {
               'text/css': { schema: { type: 'string' } },
             },
@@ -340,7 +345,13 @@ export async function visualizeRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       await getProjectDir(id);
-      const css = await fs.readFile(getPlatformCssPath(), 'utf-8');
+      const [baseCss, overlayCss] = await Promise.all([
+        fs.readFile(getPlatformCssPath(), 'utf-8'),
+        fs.readFile(getLightModeOverlayCssPath(), 'utf-8'),
+      ]);
+      // Light-mode overlay must come AFTER the SDK base so the cascade
+      // applies its values as overrides — see src/visualizer/light-mode-overlay.css.
+      const css = `${baseCss}\n/* --- light-mode overlay --- */\n${overlayCss}`;
       return reply
         .type('text/css; charset=utf-8')
         .header('cache-control', 'public, max-age=300')

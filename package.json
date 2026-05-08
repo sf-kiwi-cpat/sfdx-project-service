@@ -13,8 +13,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && npm run build:templates",
+    "build": "tsc && npm run build:templates && npm run build:assets",
     "build:templates": "node scripts/zip-templates.js",
+    "build:assets": "node scripts/copy-visualizer-assets.js",
     "pretest": "npm run build:templates",
     "prepack": "npm run build",
     "start": "node dist/index.js",

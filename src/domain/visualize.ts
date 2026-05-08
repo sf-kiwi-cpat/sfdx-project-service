@@ -429,11 +429,22 @@ export function injectBootstrap(html: string): string {
 }
 
 /**
- * Rewrite `@dist/...` placeholders in plugin HTML to this project's platform
- * route. Only use within a request where the project id is known.
+ * Rewrite `@dist/...` placeholders in plugin HTML to a path RELATIVE to the
+ * iframe URL (`/v1/projects/:id/visualize/ui/:pluginId/`).
+ *
+ * Relative form (`../../platform/...`) is the durable shape: it resolves
+ * correctly when the service is mounted at the root of its origin AND when
+ * it sits behind a reverse proxy with a path prefix. An absolute form
+ * (`/v1/projects/.../platform/...`) would bypass the prefix and 404 at the
+ * proxy. From the iframe URL, `../..` walks up `:pluginId/` and `ui/` to
+ * land at `/visualize/`, where `/platform/...` then resolves.
+ *
+ * `_projectId` is retained in the signature so the routes layer can pass
+ * the request's project id without restructuring; the relative form
+ * doesn't need it for path construction.
  */
-export function resolveDistPlaceholders(html: string, projectId: string): string {
-  return html.replace(/@dist\//g, `/v1/projects/${projectId}/visualize/platform/`);
+export function resolveDistPlaceholders(html: string, _projectId: string): string {
+  return html.replace(/@dist\//g, `../../platform/`);
 }
 
 /**
@@ -489,6 +500,17 @@ export function resolvePluginAssetPath(
 /** Absolute path to the core-sdk design-system CSS served as platform.css. */
 export function getPlatformCssPath(): string {
   return path.join(resolveCoreSdkDesignSystemDir(), 'vscode-design-system.css');
+}
+
+/**
+ * Absolute path to the service-bundled light-mode CSS overlay appended after
+ * the SDK base CSS at the platform.css route. Resolved relative to this
+ * module's compiled location so it works under both `tsx` (src/) and
+ * `node dist/` (dist/) — see scripts/copy-visualizer-assets.js for the
+ * dist-side copy.
+ */
+export function getLightModeOverlayCssPath(): string {
+  return path.resolve(import.meta.dirname, '..', 'visualizer', 'light-mode-overlay.css');
 }
 
 export { ProjectVisualizationEngine };

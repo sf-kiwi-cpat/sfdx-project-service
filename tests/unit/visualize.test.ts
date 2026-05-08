@@ -32,19 +32,22 @@ import {
 import { FileNotFoundError, NotAFileError, PathTraversalError } from '../../src/errors.js';
 
 describe('resolveDistPlaceholders', () => {
-  it('rewrites @dist/ to the project-scoped platform route', () => {
+  it('rewrites @dist/ to a path relative to the iframe URL', () => {
     const html = '<link href="@dist/design-system/platform.css">';
     const out = resolveDistPlaceholders(html, 'proj-123');
-    expect(out).toBe(
-      '<link href="/v1/projects/proj-123/visualize/platform/design-system/platform.css">'
-    );
+    expect(out).toBe('<link href="../../platform/design-system/platform.css">');
   });
 
   it('rewrites every occurrence', () => {
     const html = '<a>@dist/a.js</a><b>@dist/b.css</b>';
     const out = resolveDistPlaceholders(html, 'p');
     expect(out).not.toContain('@dist/');
-    expect(out.match(/\/v1\/projects\/p\/visualize\/platform\//g)).toHaveLength(2);
+    expect(out.match(/\.\.\/\.\.\/platform\//g)).toHaveLength(2);
+  });
+
+  it('produces the same output regardless of project id (relative path is project-agnostic)', () => {
+    const html = '<link href="@dist/design-system/platform.css">';
+    expect(resolveDistPlaceholders(html, 'proj-A')).toBe(resolveDistPlaceholders(html, 'proj-B'));
   });
 
   it('is a no-op when the placeholder is absent', () => {
@@ -248,7 +251,7 @@ describe('readPluginIndexHtml', () => {
     const html = await readPluginIndexHtml(engine, 'schema', 'pid');
     expect(html).toContain('<html');
     expect(html).not.toContain('@dist/');
-    expect(html).toContain('/v1/projects/pid/visualize/platform/');
+    expect(html).toContain('../../platform/');
     expect(html).toContain('__ExtensionHostPostMessage');
   });
 });
