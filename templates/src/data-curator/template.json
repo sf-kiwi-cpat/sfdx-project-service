@@ -6,11 +6,11 @@
   "initialMessages": [
     {
       "role": "user",
-      "content": "I want to build a data curation app on Salesforce backed by Agentforce. It should let admins review and govern custom metadata — objects, fields, and flows — with fields for curator, review status (Pending/Approved/Rejected), last curated date, and notes. I need an agent surface that can triage proposed changes, a dashboard for items awaiting review and stale entries (not curated in 60+ days), and Flows that capture curator decisions as an audit trail."
+      "content": "Help me build a metadata governance app for Salesforce admins. I want a dashboard that shows org health at a glance — ownership coverage, stale assets, duplicates — plus a searchable inventory of custom objects, flows, and reports with owner, status, and risk. Admins should be able to assign owners, create remediation tasks, and run scans, and an Agentforce agent should be able to do all of that on their behalf via natural language."
     },
     {
       "role": "assistant",
-      "content": "I'll build that for you. The project has a React frontend, Salesforce metadata scaffolding, and an Agentforce authoring bundle ready to go. I'll start with the curation data model and review queue, then wire up the agent actions and audit Flows. Here goes!"
+      "content": "Great, I've scaffolded the Data Curator project. You've got a React governance workspace (dashboard, asset explorer, task queue), four custom objects (Metadata_Asset__c, Governance_Task__c, Scan_Run__c, Governance_Event__c) with permission sets, a set of Agentforce actions for assigning owners, generating cleanup briefs, and running stale-metadata reviews, and an audit Flow that logs every change. Open the Project Brief tab for the full spec — let me know what you want to refine first."
     }
   ]
 }
