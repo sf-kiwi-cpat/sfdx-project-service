@@ -3,9 +3,9 @@
 
 # Metadata Visualization Endpoints Contract
 
-Phase 1 of [W-21919006](https://gus.lightning.force.com/lightning/r/ADM_Work__c/a07EE00002XYZMXYA5/view). Exposes the Salesforce Metadata Visualizer framework to App Studio by hosting it inside `sfdx-project-service`.
+Exposes the Salesforce Metadata Visualizer framework as a set of HTTP endpoints under `/v1/projects/:id/visualize/`, so a browser host (an LWC, a demo page, etc.) can iframe a plugin's prebuilt React UI and round-trip parsed metadata through the host page.
 
-The App Studio LWC iframes a plugin's React UI via `/ui/:pluginId/`, relays `REQUEST_PLUGIN_DATA` messages from the iframe to `POST /visualize`, and posts `PLUGIN_DATA_RESPONSE` back. The plugin's React app uses the framework's standard `HostCommunicationUtils.getPluginData()` and is not aware of any particular platform.
+The host iframes a plugin's React UI via `/ui/:pluginId/`, relays `REQUEST_PLUGIN_DATA` messages from the iframe to `POST /visualize`, and posts `PLUGIN_DATA_RESPONSE` back. The plugin's React app uses the framework's standard `HostCommunicationUtils.getPluginData()` and is not aware of any particular host.
 
 The `schema` plugin (ERD) is the demo target. The `flexipage` plugin ships in the same npm package and is expected to register, but is not a first-class demo artifact.
 
@@ -56,7 +56,7 @@ Serve the plugin's prebuilt React `index.html`, with server-side adaptations req
 
 ### 200 — Success
 - Serves the plugin React `index.html` as `text/html`.
-- Rewrites `@dist/` placeholders in the HTML to this project's `/visualize/platform/` route. No raw `@dist/` references escape to the browser.
+- Rewrites `@dist/` placeholders in the HTML to a path relative to the iframe URL (e.g. `../../platform/design-system/platform.css` from `/v1/projects/:id/visualize/ui/:pluginId/`). The relative form resolves correctly when the service is mounted behind a reverse proxy with a path prefix; an absolute form would bypass the prefix and 404 at the proxy. No raw `@dist/` references escape to the browser.
 - Injects a `<script>` that defines `window.__ExtensionHostPostMessage` to forward messages to `window.parent` — enables the plugin's built-in host-communication utils to round-trip data through the embedding page.
 
 ### 404 — Not Found
@@ -78,11 +78,18 @@ Serve the static JS/CSS bundle for a plugin's React app.
 
 ## GET `/v1/projects/:id/visualize/platform/design-system/platform.css`
 
-Serve the core-sdk's design-system CSS. Plugins reference this via the `@dist/design-system/platform.css` placeholder; the `/ui/:pluginId/` route rewrites that placeholder to this URL.
+Serve the design-system CSS referenced by plugin HTML. Plugins reference this via the `@dist/design-system/platform.css` placeholder; the `/ui/:pluginId/` route rewrites that placeholder to a relative path that resolves to this URL.
+
+The response is the SDK's shipped `vscode-design-system.css` followed by a service-bundled light-mode overlay. The overlay is the platform host's reasonable default for "no consumer-supplied CSS" — without it, the SDK falls through to dark VS Code defaults that clash with light app shells outside VS Code. The contract pins the **`--mv-*` semantic tokens** (the documented contract surface plugin authors style against, per the SDK's design-system README) as the durable layer. A separate implementation-side `--vscode-*` safety net covers the SDK base styles (body, scrollbar, anchors, focus) that read `--vscode-*` directly outside the `--mv-*` indirection layer; that layer is implementation detail and intentionally not part of this contract.
+
+Consumer-specific styling (e.g. App Studio SLDS values) is explicitly **out of scope** of this contract. Project Service stays consumer-agnostic; consumer-specific overlays are a future concern.
 
 ### 200 — Success
-- Serves the core-sdk design-system CSS as `text/css`.
+- Serves the response as `text/css`.
 - Sets `Cache-Control: public, max-age=…` so the browser can reuse the asset.
+- Appends a light-mode design-system overlay after the SDK base CSS so the canvas paints light by default. Verified by:
+  - The response defines `--mv-canvas-bg: #ffffff` (the Canvas/Shell semantic token resolved to a light value), proving the overlay is present.
+  - The light-mode `:root` block appears AFTER the SDK base content, anchored on `::-webkit-scrollbar` (a SDK-base-only structural selector). Cascade ordering proves the overlay overrides — and is not overridden by — the SDK base.
 
 ### 404 — Not Found
 - Returns 404 for a nonexistent project.
@@ -112,4 +119,4 @@ All errors return `application/problem+json` with RFC 9457 structure:
 
 ---
 
-*8 top-level describe blocks, 28 tests*
+*8 top-level describe blocks, 29 tests*

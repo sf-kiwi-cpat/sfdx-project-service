@@ -16,10 +16,11 @@
  */
 
 /**
- * SPEC TESTS — Human-guarded contract (W-21919006, issue #216)
+ * SPEC TESTS — Human-guarded contract.
  *
  * These tests define the contract for the metadata visualization endpoints
- * that expose the Salesforce Metadata Visualizer framework to App Studio:
+ * that expose the Salesforce Metadata Visualizer framework as HTTP routes
+ * a browser host (LWC, demo page, etc.) can consume:
  *
  *   - GET  /v1/projects/:id/visualize/plugins
  *       List registered visualizer plugins (id, name, filePatterns, priority).
@@ -37,29 +38,35 @@
  *   - GET  /v1/projects/:id/visualize/ui/:pluginId/
  *       Returns the plugin's prebuilt React index.html, with two adaptations
  *       applied server-side:
- *         (a) `@dist/` placeholders rewritten to this project's
- *             `…/visualize/platform/` route.
+ *         (a) `@dist/` placeholders rewritten to a path RELATIVE to the
+ *             iframe URL (e.g. `../../platform/design-system/platform.css`).
+ *             The relative form survives behind a reverse proxy with a path
+ *             prefix; an absolute form would bypass the prefix and 404.
  *         (b) A <script> injected that defines
  *             `window.__ExtensionHostPostMessage = msg => parent.postMessage(msg, '*')`.
  *             The plugin's React app calls __ExtensionHostPostMessage internally;
- *             our parent page (an App Studio LWC, or /demo) relays those
- *             messages to POST /visualize and posts the result back.
+ *             the parent host page relays those messages to POST /visualize
+ *             and posts the result back.
  *
  *   - GET  /v1/projects/:id/visualize/ui/:pluginId/assets/*
  *       Static assets for the plugin's React bundle (hashed JS/CSS).
  *
  *   - GET  /v1/projects/:id/visualize/platform/design-system/platform.css
- *       Design-system CSS referenced by the plugin HTML. Served from the
- *       core-sdk's shipped `vscode-design-system.css`.
+ *       Design-system CSS referenced by plugin HTML. Concatenates the SDK's
+ *       shipped `vscode-design-system.css` with a service-bundled light-mode
+ *       overlay so the canvas paints light by default outside VS Code. The
+ *       overlay pins `--mv-canvas-bg` (the documented Canvas/Shell semantic
+ *       token) to a light value; consumer-specific styling is explicitly
+ *       out of scope of this contract.
  *
- * CORS: App Studio LWC runs on the Lightning org origin while this service
+ * CORS: the LWC consumer runs on the Lightning org origin while this service
  * runs on localhost. Cross-origin fetches MUST work — verified in the CORS
  * block below.
  *
- * The `schema` plugin is the demo target for W-21919006. The `flexipage`
- * plugin is incidental — it ships in @salesforce/metadata-plugins and is
- * expected to register, but is not a first-class demo artifact. Tests that
- * exercise parsing focus on schema.
+ * The `schema` plugin (ERD) is the primary target. The `flexipage` plugin
+ * is incidental — it ships in @salesforce/metadata-plugins and is expected
+ * to register, but is not a first-class demo artifact. Tests that exercise
+ * parsing focus on schema.
  *
  * Path-traversal and project-boundary guards match the existing file-read
  * conventions in this service (see spec/file-read).
@@ -373,18 +380,21 @@ describe('Metadata visualization endpoints', () => {
         expect(res.text).toContain('<div id="root"');
       });
 
-      it("rewrites @dist/ placeholders to this project's platform route", async () => {
+      it('rewrites @dist/ placeholders to a relative path against the iframe URL', async () => {
         const res = await request(app.server)
           .get(`/v1/projects/${projectId}/visualize/ui/schema/`)
           .expect(200);
 
         // The plugin emits `<link href="@dist/design-system/platform.css">`
-        // in its index.html. That placeholder must be resolved — no raw
-        // `@dist/` references may escape to the browser.
+        // in its index.html. That placeholder must be resolved to a relative
+        // path against the iframe URL (`/v1/projects/:id/visualize/ui/:pluginId/`),
+        // not an absolute path on this service's origin — the relative form
+        // resolves correctly when the service is mounted behind a reverse
+        // proxy with a path prefix; an absolute form bypasses the prefix
+        // and 404s at the proxy. No raw `@dist/` references may escape to
+        // the browser.
         expect(res.text).not.toContain('@dist/');
-        expect(res.text).toContain(
-          `/v1/projects/${projectId}/visualize/platform/design-system/platform.css`
-        );
+        expect(res.text).toContain('../../platform/design-system/platform.css');
       });
 
       it('injects the host-communication bootstrap script', async () => {
@@ -481,6 +491,43 @@ describe('Metadata visualization endpoints', () => {
           .expect(200);
 
         expect(res.headers['cache-control']).toMatch(/max-age=\d+/);
+      });
+
+      // The SDK's stylesheet (`vscode-design-system.css`) reads `--vscode-*`
+      // and `--mv-*` variables that are unset outside VS Code, so the canvas
+      // falls through to dark defaults. The platform host (this service)
+      // appends a light-mode overlay after the SDK base CSS so the canvas
+      // paints light by default. The overlay is the host's reasonable
+      // default; consumer-specific styling (e.g. App Studio SLDS values)
+      // is explicitly out of scope of this contract.
+      //
+      // The contract pins the durable layer — `--mv-*` semantic tokens —
+      // because that is the documented contract surface plugin authors
+      // style against (per the SDK's design-system README). A separate
+      // implementation-side `--vscode-*` safety net covers the SDK's
+      // base-style direct uses (body, scrollbar, anchors, focus); that
+      // layer is implementation detail and intentionally not pinned here.
+      it('appends a light-mode design-system overlay after the SDK base CSS so the canvas paints light by default', async () => {
+        const res = await request(app.server)
+          .get(`/v1/projects/${projectId}/visualize/platform/design-system/platform.css`)
+          .expect(200);
+
+        // Direction: the canvas-background semantic token resolves to a
+        // light value. `--mv-canvas-bg` is the Canvas/Shell pillar token
+        // for the visualization workspace background. The SDK defines it
+        // with a dark fallback; the overlay redefines it to white, so a
+        // match against the light hex value proves the overlay is present.
+        expect(res.text).toMatch(/--mv-canvas-bg:\s*#ffffff/);
+
+        // Cascade ordering: the overlay must appear AFTER the SDK base
+        // content so its values override (not get overridden). Anchor on
+        // a SDK-base-only structural selector — `::-webkit-scrollbar`
+        // is defined exclusively in the SDK's reset/base block and never
+        // in the overlay vocabulary.
+        const sdkBaseAnchor = res.text.indexOf('::-webkit-scrollbar');
+        const overlayMatch = res.text.search(/--mv-canvas-bg:\s*#ffffff/);
+        expect(sdkBaseAnchor).toBeGreaterThan(-1);
+        expect(overlayMatch).toBeGreaterThan(sdkBaseAnchor);
       });
     });
 
