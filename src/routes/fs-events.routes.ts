@@ -20,8 +20,11 @@ import { Type } from '@sinclair/typebox';
 import { problemDetail, PROBLEM_JSON } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
 import { watcherManager, type FileEvent } from '../domain/watcher.js';
+import { problemJsonResponse } from '../errors.js';
 
-const ProjectParams = Type.Object({ id: Type.String() });
+const ProjectParams = Type.Object({
+  id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+});
 
 /** Map from the internal `FileEvent.type` to the SSE `event:` name. */
 function sseEventName(type: FileEvent['type']): string {
@@ -40,7 +43,35 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
     '/projects/:id/fs/events',
     {
       schema: {
+        summary: 'Stream project filesystem change events',
+        description:
+          'Subscribes to add, change, and unlink events for the project tree ' +
+          'over Server-Sent Events. Emits a `connected` event on subscription, ' +
+          'then `file-added`, `file-changed`, and `file-removed` events as ' +
+          'chokidar reports them. Heartbeat comments (`:heartbeat`) are sent ' +
+          'every 15s to keep proxies from closing idle connections.',
+        tags: ['Filesystem events'],
         params: ProjectParams,
+        response: {
+          200: {
+            description: 'Server-Sent Events stream of filesystem change events.',
+            content: {
+              'text/event-stream': {
+                schema: {
+                  type: 'string',
+                  description:
+                    'Server-Sent Events stream. Event types: `connected`, ' +
+                    '`file-added`, `file-changed`, `file-removed`. Each `data:` ' +
+                    'payload is JSON; heartbeat lines are SSE comments.',
+                },
+              },
+            },
+          },
+          400: problemJsonResponse(
+            'The request did not include the `Accept: text/event-stream` header required for SSE.'
+          ),
+          404: problemJsonResponse('No project exists with the supplied id.'),
+        },
       },
       sse: true,
       // Resource-existence check runs in `preHandler` so it happens *before*

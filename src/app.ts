@@ -85,22 +85,95 @@ export function createApp() {
       info: {
         title: 'SFDX Project Service',
         version: pkg.version,
-        description: 'REST API wrapping an SFDX project for remote IDE-like operations',
+        description:
+          'REST API wrapping an SFDX project for remote IDE-like operations. ' +
+          'Provides endpoints for scaffolding projects from templates, reading ' +
+          'project files and directory trees, deploying metadata to a Salesforce ' +
+          'org, and subscribing to filesystem change events over Server-Sent ' +
+          'Events. All errors are returned as RFC 9457 application/problem+json ' +
+          'responses.',
       },
+      tags: [
+        {
+          name: 'Templates',
+          description: 'Discover the catalog of SFDX project templates available for scaffolding.',
+        },
+        {
+          name: 'Projects',
+          description: 'Create, list, rename, and introspect SFDX projects managed by the service.',
+        },
+        {
+          name: 'Deployments',
+          description:
+            'Initiate asynchronous metadata deployments to a Salesforce org and ' +
+            'observe their progress over Server-Sent Events.',
+        },
+        {
+          name: 'Filesystem events',
+          description:
+            'Subscribe to real-time add, change, and unlink events for a project ' +
+            'tree via Server-Sent Events. Initial chokidar scan completes before ' +
+            'the first event so writes immediately after `connected` are reported ' +
+            'correctly.',
+        },
+      ],
       // When set (e.g. ROUTING_PREFIX=/project-service), swagger-ui uses this as the
       // base URL for "Try it out" requests so they route correctly through the proxy.
       ...(process.env.ROUTING_PREFIX ? { servers: [{ url: process.env.ROUTING_PREFIX }] } : {}),
     },
   });
 
+  // Register the RFC 9457 Problem schema once. Routes reference it via
+  // `$ref: 'Problem#'` in their response schemas; fastify's response serializer
+  // resolves the ref at validate-time, and @fastify/swagger lifts the schema
+  // into `components.schemas.Problem` in the emitted OpenAPI doc.
+  app.addSchema({
+    $id: 'Problem',
+    type: 'object',
+    description:
+      'RFC 9457 Problem Details. Every error response returned by this service ' +
+      'conforms to this shape and is served as `application/problem+json`.',
+    required: ['status', 'title', 'detail'],
+    additionalProperties: true,
+    properties: {
+      status: {
+        type: 'integer',
+        description: 'HTTP status code mirror, included for client convenience.',
+      },
+      title: {
+        type: 'string',
+        description: 'Short, human-readable summary of the problem type.',
+      },
+      detail: {
+        type: 'string',
+        description: 'Human-readable explanation specific to this occurrence.',
+      },
+      type: {
+        type: 'string',
+        description:
+          'Optional URI identifying the problem type. Defaults to `about:blank` per RFC 9457.',
+      },
+      instance: {
+        type: 'string',
+        description: 'Optional URI identifying the specific occurrence of the problem.',
+      },
+    },
+  });
+
   app.register(fastifySwaggerUi, { routePrefix: '/docs' });
 
-  app.get('/openapi.json', async (_request, reply) => {
+  // The OpenAPI JSON endpoint and Swagger UI routes aren't themselves part of
+  // the documented API contract (they are the documentation). We hide them
+  // from the emitted OpenAPI document so the "every operation" invariants in
+  // the contract apply only to real API routes.
+  app.get('/openapi.json', { schema: { hide: true } }, async (_request, reply) => {
     return reply.send(app.swagger());
   });
 
-  // Health check — root-level liveness probe (not behind /v1 prefix)
-  app.get('/health', async (_request, reply) => {
+  // Health check — root-level liveness probe (not behind /v1 prefix). Hidden
+  // from the OpenAPI doc since it is an ops surface, not a consumer surface;
+  // if it becomes public, document it explicitly.
+  app.get('/health', { schema: { hide: true } }, async (_request, reply) => {
     return reply.send({ status: 'ok' });
   });
 
