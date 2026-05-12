@@ -19,8 +19,14 @@ import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { execSync } from 'child_process';
 
-// Determine if we're on main branch
-const isMainBranch = (() => {
+// In CI, `git rev-parse --abbrev-ref HEAD` returns `HEAD` (detached) or
+// a PR-merge ref, so prefer GitHub Actions env vars when present.
+const isMainBound = (() => {
+  if (process.env.CI) {
+    if (process.env.GITHUB_BASE_REF === 'main') return true;
+    if (process.env.GITHUB_REF === 'refs/heads/main') return true;
+    return false;
+  }
   try {
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
     return branch === 'main';
@@ -29,8 +35,7 @@ const isMainBranch = (() => {
   }
 })();
 
-// Use different thresholds for main vs branches
-const thresholds = isMainBranch
+const thresholds = isMainBound
   ? { lines: 90, branches: 90, functions: 90, statements: 90 }
   : { lines: 85, branches: 85, functions: 85, statements: 85 };
 

@@ -344,8 +344,6 @@ describe('tier-3: live deploy of every template against the default org', async 
         result.error = err instanceof Error ? err.message : String(err);
         throw err;
       }
-    }, // Vitest per-test timeout. 300s leaves budget for the service
-    // to start the SDR poll before the SSE wait's inner timeout.
-    360_000);
+    }, 360_000); // to start the SDR poll before the SSE wait's inner timeout. // Vitest per-test timeout. 300s leaves budget for the service
   });
 });

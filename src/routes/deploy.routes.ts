@@ -17,7 +17,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { problemDetail, PROBLEM_JSON } from '../errors.js';
+import { problemDetail, problemJsonResponse, PROBLEM_JSON } from '../errors.js';
 import { deployMetadataAsync, buildConnectionFromAuth } from '../domain/deploy.js';
 import { DeploymentError, DeploymentNotFoundError } from '../errors.js';
 import { getProjectDir } from '../domain/projects.js';
@@ -32,8 +32,16 @@ import {
   getDeploymentWarningEvents,
 } from '../deployments.js';
 
-const ProjectParams = Type.Object({ id: Type.String() });
-const DeploymentParams = Type.Object({ id: Type.String(), deploymentId: Type.String() });
+const ProjectParams = Type.Object({
+  id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+});
+const DeploymentParams = Type.Object({
+  id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+  deploymentId: Type.String({
+    description: 'Deployment identifier returned by `POST /v1/projects/{id}/deployments`.',
+  }),
+});
+
 const DeploymentBody = Type.Object({
   // `minLength: 1` rejects explicit empty-string aliases with a 400 at
   // the schema layer. Without it, `resolveDeployAuth` would silently
@@ -41,7 +49,14 @@ const DeploymentBody = Type.Object({
   // /v1/projects`, where an empty `orgAlias` throws
   // `OrgAliasEmptyError` (400). Mismatched behavior between the two
   // endpoints is a latent footgun for callers.
-  orgAlias: Type.Optional(Type.String({ minLength: 1 })),
+  orgAlias: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        'Optional Salesforce CLI org alias to deploy against. When omitted, ' +
+        'auth resolves from the project `target-org` or the global default org.',
+    })
+  ),
 });
 
 export async function deployRoutes(app: FastifyInstance): Promise<void> {
@@ -49,8 +64,40 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     '/projects/:id/deployments',
     {
       schema: {
+        summary: 'Start an asynchronous metadata deployment',
+        description:
+          'Kicks off a metadata deployment to the authenticated Salesforce org ' +
+          'and returns a deployment id to use with the SSE stream at ' +
+          '`GET /v1/projects/{id}/deployments/{deploymentId}/events`. Auth is ' +
+          'resolved server-side in priority order: (1) body `orgAlias`, ' +
+          '(2) project `target-org`, (3) global default org. If none yield ' +
+          'credentials, the request fails with 400.',
+        tags: ['Deployments'],
         params: ProjectParams,
         body: DeploymentBody,
+        response: {
+          202: {
+            description:
+              'Deployment accepted. The returned `deploymentId` can be used to stream progress events.',
+            ...Type.Object({
+              deploymentId: Type.String({
+                description: 'Unique identifier for the in-flight deployment.',
+              }),
+              status: Type.String({
+                description: "Initial deployment status — always `'Queued'` on acceptance.",
+              }),
+            }),
+          },
+          400: problemJsonResponse(
+            'No authentication is available — no `orgAlias` supplied, no project ' +
+              'target-org set, and no global default org configured; or the supplied ' +
+              '`orgAlias` does not resolve to a Salesforce username.'
+          ),
+          404: problemJsonResponse('No project exists with the supplied id.'),
+          502: problemJsonResponse(
+            'The Salesforce org rejected the connection or the deployment failed to start.'
+          ),
+        },
       },
     },
     async (request, reply) => {
@@ -62,8 +109,6 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
       // Zero-auth contract: auth is resolved server-side in the priority
       // order body.orgAlias → project target-org → global default.
-      // Caller-supplied Authorization / X-Salesforce-Instance-Url headers
-      // are intentionally ignored — they are not part of the contract.
       const auth = await resolveDeployAuth(projectDir, body.orgAlias);
 
       if (auth.type === 'missing') {
@@ -121,9 +166,37 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     '/projects/:id/deployments/:deploymentId/events',
     {
       schema: {
+        summary: 'Stream deployment progress as Server-Sent Events',
+        description:
+          'Subscribes to the deployment identified by `deploymentId`, emitting ' +
+          'SSE `start`, `progress`, and `complete` events until the deployment ' +
+          'reaches a terminal state and the stream closes.',
+        tags: ['Deployments'],
         params: DeploymentParams,
+        response: {
+          200: {
+            description: 'Server-Sent Events stream of deployment progress.',
+            content: {
+              'text/event-stream': {
+                schema: {
+                  type: 'string',
+                  description:
+                    'Server-Sent Events stream. Event types: `start`, `progress`, `complete`. ' +
+                    'Each `data:` payload is a JSON-encoded deployment event.',
+                },
+              },
+            },
+          },
+          400: problemJsonResponse(
+            'The request did not include the `Accept: text/event-stream` header required for SSE.'
+          ),
+          404: problemJsonResponse(
+            'Either the project or the supplied deployment id does not exist.'
+          ),
+        },
       },
       sse: true,
+      // SSE ordering rule: validate before the stream is committed.
       // Resource-existence checks run in `preHandler` so they happen *before*
       // `@fastify/sse`'s route wrapper takes over. When the wrapper sees
       // `Accept: text/event-stream` it commits 200 text/event-stream headers
@@ -132,6 +205,9 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       // the browser just sees an empty 200 stream. See issue #206. Also
       // satisfies the contract-pinned ordering: missing-project /
       // missing-deployment → 404 takes precedence over missing-Accept → 400.
+      // (If this route ever switches to manual streaming via reply.hijack() +
+      // reply.raw, the same rule applies: validate first, hijack second.
+      // See src/CLAUDE.md "Fastify 5 gotchas".)
       preHandler: async (request) => {
         const { id, deploymentId } = request.params as { id: string; deploymentId: string };
         await getProjectDir(id);

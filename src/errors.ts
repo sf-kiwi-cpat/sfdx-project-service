@@ -21,6 +21,11 @@ import {
   OrgAliasNotFoundError,
   OrgAliasEmptyError,
 } from './domain/projects.js';
+import {
+  PluginNotFoundError,
+  UnsupportedFileTypeError,
+  VisualizationFailedError,
+} from './domain/visualize.js';
 
 /** Thrown when a Salesforce deployment fails. */
 export class DeploymentError extends Error {
@@ -63,6 +68,22 @@ export function problemDetail(status: number, title: string, detail: string): Pr
 }
 
 export const PROBLEM_JSON = 'application/problem+json';
+
+/**
+ * Shared OpenAPI fragment for responses served as `application/problem+json`.
+ *
+ * Used in route schema definitions to declare a 4xx/5xx response body that
+ * references the reusable `Problem` component schema. Keeping this helper
+ * centralized avoids drift across route files if the problem shape changes.
+ */
+export const problemJsonResponse = (description: string): Record<string, unknown> => ({
+  description,
+  content: {
+    [PROBLEM_JSON]: {
+      schema: { $ref: 'Problem#' },
+    },
+  },
+});
 
 /** Maximum allowed path length (characters). Paths longer than this are rejected before fs calls. */
 export const MAX_PATH_LENGTH = 1024;
@@ -146,6 +167,15 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof DeploymentNotFoundError) {
     return problemDetail(404, 'Deployment Not Found', err.message);
+  }
+  if (err instanceof PluginNotFoundError) {
+    return problemDetail(404, 'Plugin Not Found', err.message);
+  }
+  if (err instanceof UnsupportedFileTypeError) {
+    return problemDetail(415, 'Unsupported Media Type', err.message);
+  }
+  if (err instanceof VisualizationFailedError) {
+    return problemDetail(500, 'Visualization Failed', err.message);
   }
 
   // Fastify validation errors (e.g. missing required querystring params)
