@@ -13,9 +13,9 @@ them for edge cases and isolated logic.
 
 ## Coverage
 
-Thresholds are in `vitest.config.ts`:
-- **90%** on main (statements, functions, lines)
-- **85%** on branches
+Thresholds are in `vitest.config.ts`, split by git branch:
+- **90%** on `main` (lines, branches, functions, statements)
+- **85%** on feature branches (lines, branches, functions, statements)
 
 Coverage must run against the **full test suite** (not unit-only):
 ```bash
