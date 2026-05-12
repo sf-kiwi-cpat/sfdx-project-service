@@ -72,10 +72,27 @@ for (const name of templates) {
     continue;
   }
 
-  // Install deps in content/ if needed
+  // Install deps at the project root if a root package.json exists.
+  // Legacy templates keep React deps at project root; bundle-layout templates
+  // have moved deps under force-app/.../uiBundles/<name>/ so the root
+  // package.json may not exist.
   if (existsSync(join(contentDir, 'package.json'))) {
-    console.error(`  ${name}: installing dependencies…`);
+    console.error(`  ${name}: installing dependencies (root)…`);
     execSync('npm install --ignore-scripts', { cwd: contentDir, stdio: 'pipe' });
+  }
+
+  // For bundle-layout templates, also install deps inside the bundle dir so
+  // the preview-service's Vite server (rooted there) can resolve
+  // @vitejs/plugin-react, @salesforce/vite-plugin-ui-bundle, etc. at runtime.
+  const bundleRoot = join(contentDir, 'force-app', 'main', 'default', 'uiBundles');
+  if (existsSync(bundleRoot)) {
+    for (const bundleName of readdirSync(bundleRoot)) {
+      const bundleDir = join(bundleRoot, bundleName);
+      if (!statSync(bundleDir).isDirectory()) continue;
+      if (!existsSync(join(bundleDir, 'package.json'))) continue;
+      console.error(`  ${name}: installing dependencies (uiBundles/${bundleName})…`);
+      execSync('npm install --ignore-scripts', { cwd: bundleDir, stdio: 'pipe' });
+    }
   }
 
   // Zip content/ directory

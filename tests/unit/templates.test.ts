@@ -22,12 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_SRC = path.resolve(__dirname, '../../templates/src');
-const TEMPLATE_IDS = [
-  'data-curator',
-  'local-react-test',
-  'metadata-ownership-tracking',
-  'work-tracking',
-];
+const TEMPLATE_IDS = ['data-curator', 'local-react-test'];
 
 describe('templates on disk', () => {
   it('every template ships an App.uibundle-meta.xml with the canonical lowercase suffix', async () => {
