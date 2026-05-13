@@ -1,13 +1,15 @@
-name: ci
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ci:
+  lint:
     runs-on: ubuntu-latest
     env:
       HUSKY: '0'
@@ -24,14 +26,80 @@ jobs:
 
       - run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - run: npm run lint
 
-      - name: Build
-        run: npm run build
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Unit tests
-        run: npm run test:unit
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
 
-      - name: Integration & spec tests
-        run: npm run test:integration && npm run test:spec
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run build
+
+  unit:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:unit
+
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:integration
+
+  spec:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:spec
