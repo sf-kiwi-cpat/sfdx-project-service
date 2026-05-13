@@ -19,6 +19,8 @@
     "pretest": "npm run build:templates",
     "pretest:integration": "npm run build:templates",
     "pretest:spec": "npm run build:templates",
+    "pretest:coverage": "npm run build:templates",
+    "pretest:quality": "npm run build:templates",
     "prepack": "npm run build",
     "start": "node dist/index.js",
     "dev": "npm run build:templates && tsx watch src/index.ts",
@@ -32,7 +34,7 @@
     "lint:fix": "eslint . --fix",
     "lint:deps": "knip",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test:quality": "vitest run tests/",
+    "test:quality": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "prepare": "husky"
   },

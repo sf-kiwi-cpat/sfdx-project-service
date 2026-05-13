@@ -127,6 +127,33 @@ jobs:
         if: always()
         run: node scripts/test-timing-report.js --input=test-results.json --tier=spec
 
+  # Hard gate on the coverage thresholds defined in vitest.config.ts.
+  # Runs the full suite (not a per-stage slice) because v8 coverage on a
+  # partial slice would fail spuriously — e.g. anything only exercised
+  # by integration tests would look uncovered to the unit slice. The
+  # parallel test jobs above keep the per-stage signal fast; this job
+  # exists solely to enforce the threshold on the merged execution. See
+  # issue #240 for the design rationale and the option-A vs option-B
+  # tradeoff.
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:coverage
+
   knip:
     runs-on: ubuntu-latest
     env:

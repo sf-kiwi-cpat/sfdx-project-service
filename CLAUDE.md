@@ -45,7 +45,7 @@ surface to the user** rather than shipping the change — a green
 ## Git Hooks (husky)
 
 - **pre-commit**: lint-staged (prettier + eslint --fix on staged .ts) + unit tests
-- **pre-push**: build + all tests with coverage (thresholds in `tests/CLAUDE.md`)
+- **pre-push**: build + `npm run test:quality` (full suite via `vitest run --coverage`); fails the push if the branch-aware coverage threshold in `tests/CLAUDE.md` is not met. CI enforces the same gate via the `coverage` job in `.github/workflows/ci.yml`.
 
 Hooks run automatically after `npm install` (via `prepare` script).
 Do not skip hooks with `--no-verify`.
