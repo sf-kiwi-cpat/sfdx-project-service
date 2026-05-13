@@ -92,17 +92,13 @@ describe('test-timing-report.js', () => {
 
   it('drops rows whose duration coerces to a non-finite Number (defends against shape drift)', () => {
     // The script does `Number(test.duration)` then `Number.isFinite(...)`.
-    // That means:
-    //   - undefined → NaN  → dropped
-    //   - 'NaN'     → NaN  → dropped
-    //   - 'abc'     → NaN  → dropped
-    //   - null      → 0    → KEPT as a 0ms row (Number(null) === 0)
-    //   - true/false → 1/0 → kept (would be a shape change worth catching)
+    // The realistic shape-drift failure modes are string-NaN, missing
+    // duration, and garbage strings — all coerce to NaN and get dropped.
     // The contract this test is locking in is the *non-finite* filter
-    // specifically — string-NaN and undefined are the realistic shape-drift
-    // failure modes. A future refactor that swaps the guard for one that
-    // also filters nullish values would break this test, prompting the
-    // author to update both the script and the assertion in the same commit.
+    // specifically. A future refactor that swaps the guard for one that
+    // also filters nullish values would break this test plus the
+    // companion `Number(null) === 0` case below, prompting the author to
+    // update both the script and the assertions in the same commit.
     const fixture = {
       testResults: [
         {
@@ -125,6 +121,41 @@ describe('test-timing-report.js', () => {
     expect(result.stdout).not.toContain('undefined dur');
     expect(result.stdout).not.toContain('garbage str');
     expect(result.stdout).toContain('showing 1 of 1 executed tests');
+  });
+
+  it('documents Number(null) === 0 falling through Number.isFinite guard', () => {
+    // `Number(null)` is `0`, which IS finite — so a `passed` test with
+    // `duration: null` slips through the script's `Number.isFinite(...)`
+    // guard and renders as a 0ms row at the bottom of the top-N list.
+    // This is a minor cosmetic glitch, not a correctness break, and
+    // it's the kind of thing worth documenting in its own named case so
+    // the test report output reads as "documented bug behaviour, not
+    // desired behaviour." The next person who tightens the guard (e.g.
+    // `Number.isFinite(d) && d > 0`, or a nullish-coalesce guard) will
+    // see this case fail and update both the script and this assertion
+    // in the same commit.
+    const fixture = {
+      testResults: [
+        {
+          name: path.join(workDir, 'tests/unit/example.test.ts'),
+          assertionResults: [
+            { fullName: 'real row', duration: 42, status: 'passed' },
+            { fullName: 'null dur', duration: null, status: 'passed' },
+          ],
+        },
+      ],
+    };
+
+    const result = runReport(JSON.stringify(fixture));
+
+    expect(result.status).toBe(0);
+    // Both rows kept — the null-duration row coerces to 0ms and survives
+    // the finite-number filter.
+    expect(result.stdout).toContain('real row');
+    expect(result.stdout).toContain('null dur');
+    expect(result.stdout).toContain('showing 2 of 2 executed tests');
+    // The null-duration row should render as 0ms.
+    expect(result.stdout).toMatch(/0ms\s+null dur/);
   });
 
   it('prints the empty-results banner when no executed tests have timing data', () => {
