@@ -69,7 +69,17 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run test:unit
+      # The default reporter keeps the human-readable output we want in
+      # the workflow log; the json reporter writes test-results.json,
+      # which scripts/test-timing-report.js consumes in the next step.
+      # See GitHub #248 (part 1: report only, no budget gate yet).
+      - run: npm run test:unit -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      # `if: always()` so timing data still surfaces when tests fail —
+      # a slow-and-failing test should be visible on both axes.
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=unit
 
   integration:
     runs-on: ubuntu-latest
@@ -88,7 +98,11 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run test:integration
+      - run: npm run test:integration -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=integration
 
   spec:
     runs-on: ubuntu-latest
@@ -107,7 +121,11 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run test:spec
+      - run: npm run test:spec -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=spec
 
   knip:
     runs-on: ubuntu-latest
