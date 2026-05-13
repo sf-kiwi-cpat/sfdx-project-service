@@ -276,17 +276,10 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   const projectDir = path.join(getProjectsRoot(), projectId);
   await fs.mkdir(projectDir, { recursive: true });
 
-  // Extract template into project directory.
-  // extract-zip is async (yauzl-backed) and does not block the event loop —
-  // critical because templates have grown to ~40 MB (data-curator) and a
-  // synchronous extraction stalls all in-flight requests for the duration.
-  //
-  // File modes come from the zip entries themselves: our build path
-  // (`zip -r -X` in scripts/zip-templates.js) writes Unix mode bits into
-  // every entry's external file attributes (files 0o644, dirs 0o755), and
-  // extract-zip honors those embedded modes. extract-zip's defaultFileMode
-  // / defaultDirMode options only kick in when an entry's mode is 0, which
-  // never happens for our archives, so we don't pass them.
+  // extract-zip is async (yauzl-backed) so a ~40 MB template extraction
+  // does not stall the event loop. Entry modes are honored from the zip
+  // itself — the build path in scripts/zip-templates.js embeds Unix mode
+  // bits, so we don't need defaultFileMode / defaultDirMode.
   try {
     // extract-zip's `dir` option requires an absolute path.
     await extract(templatePath, { dir: path.resolve(projectDir) });

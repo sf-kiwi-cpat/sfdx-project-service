@@ -28,6 +28,18 @@ const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
 const distDir = join(root, 'templates', 'dist');
 
+// Fail early with a clear message if the system `zip` CLI is missing —
+// otherwise execFileSync below would surface a bare ENOENT.
+try {
+  execFileSync('zip', ['-v'], { stdio: 'ignore' });
+} catch {
+  console.error(
+    'error: the `zip` CLI is required to build templates but was not found on PATH.\n' +
+      '  install via: apt-get install zip / brew install zip / choco install zip'
+  );
+  process.exit(1);
+}
+
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
 
