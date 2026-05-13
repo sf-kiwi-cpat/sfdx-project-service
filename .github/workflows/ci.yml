@@ -26,8 +26,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -45,8 +49,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -64,8 +72,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -93,8 +105,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -116,8 +132,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -147,8 +167,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
@@ -166,8 +190,12 @@ jobs:
           node-version-file: package.json
           cache: npm
 
-      - name: Rewrite Nexus URLs in all lockfiles
-        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
 
       - run: npm ci
 
