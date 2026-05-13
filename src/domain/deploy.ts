@@ -227,10 +227,11 @@ async function runStagedDeploy(
   deploymentId: string,
   projectDir: string,
   stages: DeployStage[],
-  connection: Connection
+  connection: Connection,
+  orgUsername: string
 ): Promise<void> {
   if (await hasReactFiles(projectDir)) {
-    await runViteBuild(projectDir);
+    await runViteBuild(projectDir, orgUsername);
   }
 
   const stageSummaries: DeploymentStageSummary[] = [];
@@ -371,14 +372,14 @@ export async function deployMetadataAsync(
     // `deployStages`, dispatch each manifest deploy in sequence.
     const stages = await readDeployStages(projectDir);
     if (stages) {
-      await runStagedDeploy(deploymentId, projectDir, stages, connection);
+      await runStagedDeploy(deploymentId, projectDir, stages, connection, auth.username);
       return;
     }
 
     // Legacy single-pass deploy: build React project if present, then
     // run one ComponentSet.fromSource() deploy over `force-app`.
     if (await hasReactFiles(projectDir)) {
-      await runViteBuild(projectDir);
+      await runViteBuild(projectDir, auth.username);
     }
 
     const components = await buildComponentSet(projectDir);

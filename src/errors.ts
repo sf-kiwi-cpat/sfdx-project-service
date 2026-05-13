@@ -21,6 +21,11 @@ import {
   OrgAliasNotFoundError,
   OrgAliasEmptyError,
 } from './domain/projects.js';
+import {
+  PluginNotFoundError,
+  UnsupportedFileTypeError,
+  VisualizationFailedError,
+} from './domain/visualize.js';
 
 /** Thrown when a Salesforce deployment fails. */
 export class DeploymentError extends Error {
@@ -162,6 +167,15 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (err instanceof DeploymentNotFoundError) {
     return problemDetail(404, 'Deployment Not Found', err.message);
+  }
+  if (err instanceof PluginNotFoundError) {
+    return problemDetail(404, 'Plugin Not Found', err.message);
+  }
+  if (err instanceof UnsupportedFileTypeError) {
+    return problemDetail(415, 'Unsupported Media Type', err.message);
+  }
+  if (err instanceof VisualizationFailedError) {
+    return problemDetail(500, 'Visualization Failed', err.message);
   }
 
   // Fastify validation errors (e.g. missing required querystring params)

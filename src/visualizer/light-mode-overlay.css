@@ -1,0 +1,128 @@
+/*
+ * Light-mode platform-CSS overlay served after the SDK base CSS.
+ *
+ * The Metadata Visualizer SDK's stylesheet
+ * (@salesforce/metadata-core-sdk/dist/sdk/design-system/vscode-design-system.css)
+ * defines `--mv-*` semantic tokens (the documented contract surface plugin
+ * authors style against) in terms of `--vscode-*` source variables. Outside
+ * VS Code those source variables are unset and the canvas falls through to
+ * dark defaults. This overlay supplies light-mode values so the canvas paints
+ * light by default.
+ *
+ * Two :root blocks:
+ *   1. --mv-* overrides — the durable contract layer. If the SDK ever ships
+ *      a non-VS Code variant that defines --mv-* directly (without
+ *      --vscode-* indirection), these overrides keep working.
+ *   2. --vscode-* safety net — covers the small set of variables the SDK's
+ *      base styles (body, scrollbar, anchor, focus) read DIRECTLY without
+ *      going through --mv-*. Without these, body background/foreground,
+ *      scrollbar colors, and link colors fall through to dark defaults
+ *      regardless of --mv-* coverage.
+ *
+ * Light values are kept aligned with VS Code "Light Modern" / "Light+" so
+ * the result is recognizable to anyone familiar with light-theme VS Code,
+ * but this is the platform host's neutral default — consumer-specific
+ * styling (e.g. App Studio SLDS values) is a separate concern that picks
+ * up the architectural question of how a consumer supplies its CSS to a
+ * consumer-agnostic service.
+ */
+
+:root {
+  /* ===== 1. CANVAS & SHELL ===== */
+  --mv-canvas-bg: #ffffff;
+  --mv-canvas-grid: #e5e5e5;
+  --mv-minimap-bg: #f8f8f8;
+
+  --mv-panel-bg: #f8f8f8;
+  --mv-panel-border: #e5e5e5;
+  --mv-panel-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  /* ===== 2. CORE ENTITIES (Node Contract) ===== */
+  --mv-node-bg: #ffffff;
+  --mv-node-border: #e5e5e5;
+  --mv-node-border-focus: #005fb8;
+
+  --mv-node-bg-hover: #f2f2f2;
+  --mv-node-bg-selected: #e8e8e8;
+  --mv-node-fg: #3b3b3b;
+  --mv-node-fg-secondary: #616161;
+  --mv-node-fg-selected: #000000;
+
+  --mv-edge-neutral: #8c8c8c;
+  --mv-edge-active: #005fb8;
+
+  /* ===== 3A. FUNCTIONAL ACCENTS (Four Pillars) ===== */
+  --mv-accent-data: #8250df;
+  --mv-accent-logic: #005fb8;
+  --mv-accent-ui: #b58900;
+  --mv-accent-system: #d18616;
+
+  /* ===== 3B. STATE INDICATORS ===== */
+  --mv-status-positive: #1a7f37;
+  --mv-status-negative: #cf222e;
+  --mv-status-warning: #d18616;
+  --mv-status-info: #005fb8;
+  --mv-status-neutral: #8c8c8c;
+
+  /* ===== 4. INTERNAL COMPONENT TOKENS ===== */
+  --mv-marker-primary: #3b3b3b;
+  --mv-marker-muted: #8c8c8c;
+  --mv-separator: #e5e5e5;
+  --mv-region-zone: rgba(0, 95, 184, 0.08);
+
+  /* ===== 5. ACCESSIBILITY (High Contrast) ===== */
+  /* Inherits from VS Code's contrastBorder when set; otherwise transparent. */
+  --mv-hc-border: transparent;
+  --mv-hc-selection: #005fb8;
+
+  /* ===== GENERAL PURPOSE TOKENS ===== */
+  --mv-bg-primary: #ffffff;
+  --mv-bg-secondary: #f8f8f8;
+  --mv-bg-elevated: #ffffff;
+  --mv-bg-surface: #ffffff;
+  --mv-bg-surface-hover: #f2f2f2;
+  --mv-bg-input: #ffffff;
+  --mv-bg-badge: #cccccc;
+  --mv-fg-badge: #3b3b3b;
+
+  --mv-text-primary: #3b3b3b;
+  --mv-text-secondary: #616161;
+  --mv-text-muted: #8c8c8c;
+  --mv-text-inverse: #ffffff;
+
+  --mv-interactive-primary: #005fb8;
+  --mv-interactive-primary-hover: #0258a8;
+  --mv-interactive-secondary: #5b5b5b;
+  --mv-interactive-focus: #005fb8;
+  --mv-interactive-focus-border: #005fb8;
+  --mv-button-primary-bg: #005fb8;
+  --mv-button-primary-fg: #ffffff;
+  --mv-button-secondary-bg: #e5e5e5;
+  --mv-button-secondary-fg: #3b3b3b;
+
+  --mv-border-default: #e5e5e5;
+  --mv-border-primary: #e5e5e5;
+  --mv-border-hover: #d4d4d4;
+  --mv-border-input: #cecece;
+  --mv-border-focus: #005fb8;
+  --mv-border-dropdown: #cecece;
+
+  --mv-status-error: #cf222e;
+  --mv-status-success: #1a7f37;
+}
+
+/*
+ * Safety net: the SDK's base styles read these --vscode-* variables
+ * directly (body, scrollbar, anchor, focus), outside the --mv-* indirection.
+ * Without these overrides, the body would still paint dark even with
+ * --mv-* coverage in place.
+ */
+:root {
+  --vscode-foreground: #3b3b3b;
+  --vscode-editor-background: #ffffff;
+  --vscode-textLink-foreground: #005fb8;
+  --vscode-textLink-activeForeground: #0258a8;
+  --vscode-focusBorder: #005fb8;
+  --vscode-scrollbarSlider-background: rgba(100, 100, 100, 0.4);
+  --vscode-scrollbarSlider-hoverBackground: rgba(100, 100, 100, 0.55);
+}

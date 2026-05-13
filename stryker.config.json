@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing config. Source of truth: GitHub #241. Mutates src/**/*.ts and runs tests/unit/**/*.test.ts only — see issue body for why we do not run integration or spec tests under Stryker (fileParallelism: false × Stryker concurrency races, plus mutation testing is a unit-test-shaped signal). Pinned to the 9.6.x line: vitest-runner@9.6.1 declares peer @stryker-mutator/core@9.6.1 and vitest >=2.0.0, which covers this repo's vitest@^4.0.0. We point Stryker at vitest.stryker.config.ts (a unit-only fork of vitest.config.ts) rather than the base config — Stryker's `vitest.dir` option filters against the resolved include pattern (which in the base config also picks up spec/) and `vitest.related` doesn't resolve our `../../src/foo.js` imports cleanly. See vitest.stryker.config.ts header for the full reasoning.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts"
+  },
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "mutate": [
+    "src/**/*.ts",
+    "!src/index.ts",
+    "!src/**/*.test.ts"
+  ],
+  "reporters": ["progress", "clear-text", "html", "json"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "concurrency_comment": "Default Stryker concurrency is fine for tests/unit/** — none of the unit tests share global state the way spec/npm-package and spec/fs-events do. If integration or spec tests are ever added to the runner scope, drop this to 1 (see issue #241 tradeoffs).",
+  "timeoutMS": 60000,
+  "thresholds_comment": "Advisory only for the first month, per the issue. Setting `break: 0` so Stryker never exits non-zero from a low score — the workflow keys issue-filing on survivor presence (via the script's exit code), not Stryker's score gate. Once we have a baseline number we can revisit.",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 0
+  }
+}

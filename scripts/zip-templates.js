@@ -22,12 +22,23 @@ import {
   readFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import AdmZip from 'adm-zip';
+import { execFileSync, execSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
 const distDir = join(root, 'templates', 'dist');
+
+// Fail early with a clear message if the system `zip` CLI is missing —
+// otherwise execFileSync below would surface a bare ENOENT.
+try {
+  execFileSync('zip', ['-v'], { stdio: 'ignore' });
+} catch {
+  console.error(
+    'error: the `zip` CLI is required to build templates but was not found on PATH.\n' +
+      '  install via: apt-get install zip / brew install zip / choco install zip'
+  );
+  process.exit(1);
+}
 
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
@@ -72,17 +83,38 @@ for (const name of templates) {
     continue;
   }
 
-  // Install deps in content/ if needed
+  // Install deps at the project root if a root package.json exists.
+  // Legacy templates keep React deps at project root; bundle-layout templates
+  // have moved deps under force-app/.../uiBundles/<name>/ so the root
+  // package.json may not exist.
   if (existsSync(join(contentDir, 'package.json'))) {
-    console.error(`  ${name}: installing dependencies…`);
+    console.error(`  ${name}: installing dependencies (root)…`);
     execSync('npm install --ignore-scripts', { cwd: contentDir, stdio: 'pipe' });
   }
 
-  // Zip content/ directory
-  const zip = new AdmZip();
-  zip.addLocalFolder(contentDir);
+  // For bundle-layout templates, also install deps inside the bundle dir so
+  // the preview-service's Vite server (rooted there) can resolve
+  // @vitejs/plugin-react, @salesforce/vite-plugin-ui-bundle, etc. at runtime.
+  const bundleRoot = join(contentDir, 'force-app', 'main', 'default', 'uiBundles');
+  if (existsSync(bundleRoot)) {
+    for (const bundleName of readdirSync(bundleRoot)) {
+      const bundleDir = join(bundleRoot, bundleName);
+      if (!statSync(bundleDir).isDirectory()) continue;
+      if (!existsSync(join(bundleDir, 'package.json'))) continue;
+      console.error(`  ${name}: installing dependencies (uiBundles/${bundleName})…`);
+      execSync('npm install --ignore-scripts', { cwd: bundleDir, stdio: 'pipe' });
+    }
+  }
+
+  // Zip content/ directory using the system `zip` CLI — keeps adm-zip out
+  // of package.json (production uses extract-zip; we don't want both).
+  // `-r` recurses, `-q` quiets per-file output, `-X` strips extra file
+  // attributes for reproducibility.
   const zipPath = join(outDir, 'content.zip');
-  zip.writeZip(zipPath);
+  // Remove any pre-existing output so `zip` writes a fresh archive instead
+  // of appending. (rmSync above clears distDir, but be explicit.)
+  rmSync(zipPath, { force: true });
+  execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: contentDir, stdio: 'pipe' });
   console.error(`  ${name} → ${outDir}/`);
 }
 

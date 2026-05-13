@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import AdmZip from 'adm-zip';
+import { execFileSync } from 'node:child_process';
 import {
   createBlankProject,
   createProject,
@@ -30,6 +30,33 @@ import {
   TemplateNotFoundError,
   ProjectNotFoundError,
 } from '../../src/domain/projects.js';
+
+/**
+ * Build a zip containing the given files at the given output path.
+ * Stages files in a temp dir and shells out to the `zip` CLI — keeps the
+ * test toolchain free of any zip-creation library, matching the build
+ * script's approach (see scripts/zip-templates.js).
+ */
+async function buildZip(
+  outputPath: string,
+  files: Array<{ name: string; content: Buffer | string }>
+): Promise<void> {
+  const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'zip-staging-'));
+  try {
+    for (const file of files) {
+      const filePath = path.join(stagingDir, file.name);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, file.content);
+    }
+    await fs.rm(outputPath, { force: true });
+    execFileSync('zip', ['-r', '-q', '-X', outputPath, '.'], {
+      cwd: stagingDir,
+      stdio: 'pipe',
+    });
+  } finally {
+    await fs.rm(stagingDir, { recursive: true, force: true });
+  }
+}
 
 describe('createProject', () => {
   let tmpDir: string;
@@ -151,9 +178,9 @@ describe('createProject', () => {
     const templateDir = path.join(templatesDir, templateId);
     await fs.mkdir(templateDir, { recursive: true });
 
-    const zip = new AdmZip();
-    zip.addFile('README.md', Buffer.from('# Test'));
-    zip.writeZip(path.join(templateDir, 'content.zip'));
+    await buildZip(path.join(templateDir, 'content.zip'), [
+      { name: 'README.md', content: Buffer.from('# Test') },
+    ]);
 
     await fs.writeFile(path.join(templateDir, 'template.json'), JSON.stringify(templateJson));
   }
@@ -216,9 +243,9 @@ describe('createProject', () => {
     it('still creates the project when template.json is missing', async () => {
       const templateDir = path.join(templatesDir, 'zip-only');
       await fs.mkdir(templateDir, { recursive: true });
-      const zip = new AdmZip();
-      zip.addFile('README.md', Buffer.from('# Test'));
-      zip.writeZip(path.join(templateDir, 'content.zip'));
+      await buildZip(path.join(templateDir, 'content.zip'), [
+        { name: 'README.md', content: Buffer.from('# Test') },
+      ]);
 
       const result = await createProject('zip-only');
 

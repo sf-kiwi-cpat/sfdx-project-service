@@ -18,7 +18,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import AdmZip from 'adm-zip';
+import extract from 'extract-zip';
 import { TemplateService, TemplateType } from '@salesforce/templates';
 import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
@@ -276,10 +276,13 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   const projectDir = path.join(getProjectsRoot(), projectId);
   await fs.mkdir(projectDir, { recursive: true });
 
-  // Extract template into project directory
+  // extract-zip is async (yauzl-backed) so a ~40 MB template extraction
+  // does not stall the event loop. Entry modes are honored from the zip
+  // itself — the build path in scripts/zip-templates.js embeds Unix mode
+  // bits, so we don't need defaultFileMode / defaultDirMode.
   try {
-    const zip = new AdmZip(templatePath);
-    zip.extractAllTo(projectDir, true);
+    // extract-zip's `dir` option requires an absolute path.
+    await extract(templatePath, { dir: path.resolve(projectDir) });
   } catch (err) {
     await fs.rm(projectDir, { recursive: true, force: true });
     throw err;

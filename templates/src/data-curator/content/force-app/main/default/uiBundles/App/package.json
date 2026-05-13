@@ -1,0 +1,25 @@
+{
+  "name": "data-curator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "UI bundle for the Data Curator template. React + @salesforce/vite-plugin-ui-bundle. The demo express server (server/index.mjs at the project root) is not run inside the vaas-user-workspace container; the React app talks to Salesforce directly via /services/* (proxied by the plugin's middleware).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@salesforce/sdk-data": "^1.84.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@salesforce/vite-plugin-ui-bundle": "^1.135.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^7.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/index.ts", "tests/**/*.test.ts", "spec/**/*.spec.ts"],
+  "project": ["src/**/*.ts", "tests/**/*.ts", "spec/**/*.ts"],
+  "ignore": ["templates/**", "tests/live/**"],
+  "ignoreDependencies": ["@salesforce/metadata-plugins"],
+  "rules": {
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "binaries": "off",
+    "exports": "off",
+    "types": "off",
+    "duplicates": "off"
+  }
+}
