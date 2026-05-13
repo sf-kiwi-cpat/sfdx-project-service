@@ -196,6 +196,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
         },
       },
       sse: true,
+      // SSE ordering rule: validate before the stream is committed.
       // Resource-existence checks run in `preHandler` so they happen *before*
       // `@fastify/sse`'s route wrapper takes over. When the wrapper sees
       // `Accept: text/event-stream` it commits 200 text/event-stream headers
@@ -204,6 +205,9 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       // the browser just sees an empty 200 stream. See issue #206. Also
       // satisfies the contract-pinned ordering: missing-project /
       // missing-deployment → 404 takes precedence over missing-Accept → 400.
+      // (If this route ever switches to manual streaming via reply.hijack() +
+      // reply.raw, the same rule applies: validate first, hijack second.
+      // See src/CLAUDE.md "Fastify 5 gotchas".)
       preHandler: async (request) => {
         const { id, deploymentId } = request.params as { id: string; deploymentId: string };
         await getProjectDir(id);

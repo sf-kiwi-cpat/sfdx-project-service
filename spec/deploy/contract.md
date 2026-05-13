@@ -191,9 +191,8 @@ the script is not modified by this PR. A follow-up PR that touches
 `scripts/zip-templates.js` should add a real test covering this.
 
 **Backwards compatibility:** templates without `deployStages` (including
-`metadata-ownership-tracking`, `work-tracking`, `local-react-test`) use the
-single-pass `ComponentSet.fromSource(force-app)` behavior. Nothing about
-those templates changes.
+`local-react-test`) use the single-pass `ComponentSet.fromSource(force-app)`
+behavior. Nothing about those templates changes.
 
 ---
 

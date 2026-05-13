@@ -83,18 +83,33 @@ for (const name of templates) {
     continue;
   }
 
-  // Install deps in content/ if needed
+  // Install deps at the project root if a root package.json exists.
+  // Legacy templates keep React deps at project root; bundle-layout templates
+  // have moved deps under force-app/.../uiBundles/<name>/ so the root
+  // package.json may not exist.
   if (existsSync(join(contentDir, 'package.json'))) {
-    console.error(`  ${name}: installing dependencies…`);
+    console.error(`  ${name}: installing dependencies (root)…`);
     execSync('npm install --ignore-scripts', { cwd: contentDir, stdio: 'pipe' });
   }
 
-  // Zip content/ directory using the `zip` CLI. We intentionally avoid an
-  // adm-zip dev dep here — the production code uses extract-zip (async,
-  // yauzl-backed) and we don't want adm-zip in package.json at all.
-  // `zip -r <out> .` from within contentDir produces relative entries that
-  // mirror what adm-zip's addLocalFolder did. -X strips extra file
-  // attributes for reproducibility; -q quiets per-file output.
+  // For bundle-layout templates, also install deps inside the bundle dir so
+  // the preview-service's Vite server (rooted there) can resolve
+  // @vitejs/plugin-react, @salesforce/vite-plugin-ui-bundle, etc. at runtime.
+  const bundleRoot = join(contentDir, 'force-app', 'main', 'default', 'uiBundles');
+  if (existsSync(bundleRoot)) {
+    for (const bundleName of readdirSync(bundleRoot)) {
+      const bundleDir = join(bundleRoot, bundleName);
+      if (!statSync(bundleDir).isDirectory()) continue;
+      if (!existsSync(join(bundleDir, 'package.json'))) continue;
+      console.error(`  ${name}: installing dependencies (uiBundles/${bundleName})…`);
+      execSync('npm install --ignore-scripts', { cwd: bundleDir, stdio: 'pipe' });
+    }
+  }
+
+  // Zip content/ directory using the system `zip` CLI — keeps adm-zip out
+  // of package.json (production uses extract-zip; we don't want both).
+  // `-r` recurses, `-q` quiets per-file output, `-X` strips extra file
+  // attributes for reproducibility.
   const zipPath = join(outDir, 'content.zip');
   // Remove any pre-existing output so `zip` writes a fresh archive instead
   // of appending. (rmSync above clears distDir, but be explicit.)
