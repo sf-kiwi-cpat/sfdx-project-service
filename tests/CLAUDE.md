@@ -22,6 +22,26 @@ Coverage must run against the **full test suite** (not unit-only):
 npm run test:coverage    # all tests + coverage report
 ```
 
+### Pragma justifications (CI-enforced)
+
+Every NEW `/* v8 ignore */` pragma added to `src/**/*.ts` in a PR diff must be paired with a same-line `// justification: <reason>` comment. The check is enforced by `scripts/check-pragma-justifications.js` running as a step in `.github/workflows/ci.yml` — failures are not soft warnings, they fail the build. Existing pragmas on `main` are not affected; only added lines in the PR diff are inspected.
+
+Acceptable:
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue; // justification: TypeScript narrows maybe to defined here
+```
+
+Rejected (no justification, or justification on a different line):
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue;
+/* v8 ignore next */
+const x = maybe ?? defaultValue; // justification: ...
+```
+
+The check is grep-based and only verifies that *something* follows `// justification:` — review handles the content. If a coverage failure tempts you to reach for a pragma to clear the gate, write the test instead, or remove the dead branch. Pragmas are reserved for type-narrowing branches the type system already excludes.
+
 ## Conventions
 
 - Vitest (`describe`, `it`, `expect`)
