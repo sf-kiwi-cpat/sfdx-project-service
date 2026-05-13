@@ -22,12 +22,23 @@ import {
   readFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import AdmZip from 'adm-zip';
+import { execFileSync, execSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
 const distDir = join(root, 'templates', 'dist');
+
+// Fail early with a clear message if the system `zip` CLI is missing —
+// otherwise execFileSync below would surface a bare ENOENT.
+try {
+  execFileSync('zip', ['-v'], { stdio: 'ignore' });
+} catch {
+  console.error(
+    'error: the `zip` CLI is required to build templates but was not found on PATH.\n' +
+      '  install via: apt-get install zip / brew install zip / choco install zip'
+  );
+  process.exit(1);
+}
 
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
@@ -95,11 +106,15 @@ for (const name of templates) {
     }
   }
 
-  // Zip content/ directory
-  const zip = new AdmZip();
-  zip.addLocalFolder(contentDir);
+  // Zip content/ directory using the system `zip` CLI — keeps adm-zip out
+  // of package.json (production uses extract-zip; we don't want both).
+  // `-r` recurses, `-q` quiets per-file output, `-X` strips extra file
+  // attributes for reproducibility.
   const zipPath = join(outDir, 'content.zip');
-  zip.writeZip(zipPath);
+  // Remove any pre-existing output so `zip` writes a fresh archive instead
+  // of appending. (rmSync above clears distDir, but be explicit.)
+  rmSync(zipPath, { force: true });
+  execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: contentDir, stdio: 'pipe' });
   console.error(`  ${name} → ${outDir}/`);
 }
 
