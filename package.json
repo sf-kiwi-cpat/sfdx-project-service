@@ -34,8 +34,8 @@
     "lint:fix": "eslint . --fix",
     "lint:deps": "knip",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test:quality": "vitest run --coverage",
-    "test:coverage": "vitest run --coverage",
+    "test:quality": "vitest run --coverage && node scripts/check-per-file-coverage.js",
+    "test:coverage": "vitest run --coverage && node scripts/check-per-file-coverage.js",
     "prepare": "husky"
   },
   "lint-staged": {
