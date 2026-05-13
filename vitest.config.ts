@@ -19,13 +19,19 @@ import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { execSync } from 'child_process';
 
+// "Main-bound" means the run is gating commits that have already landed
+// on `main` — i.e. a push to `main` itself. PRs *targeting* main are
+// still feature-branch runs and get the looser 85% bar; the 90% bar
+// applies once the merge is in and the push event fires on `main`.
+//
 // In CI, `git rev-parse --abbrev-ref HEAD` returns `HEAD` (detached) or
 // a PR-merge ref, so prefer GitHub Actions env vars when present.
+// `GITHUB_EVENT_NAME === 'push'` distinguishes a push-to-main run from a
+// `pull_request` run targeting main (where `GITHUB_REF` is `refs/pull/N/merge`
+// and `GITHUB_BASE_REF` is `main`).
 const isMainBound = (() => {
   if (process.env.CI) {
-    if (process.env.GITHUB_BASE_REF === 'main') return true;
-    if (process.env.GITHUB_REF === 'refs/heads/main') return true;
-    return false;
+    return process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main';
   }
   try {
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
