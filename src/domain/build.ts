@@ -198,7 +198,7 @@ async function doBuild(projectDir: string, orgAlias?: string): Promise<void> {
     const msg = err instanceof Error ? err.message : 'Build failed';
     throw new BuildError(msg);
   } finally {
-    /* v8 ignore next -- timer is always assigned before any await in the try block, so the falsy branch is unreachable; the guard is kept for future refactors that might short-circuit before the assignment */
+    /* v8 ignore next */ // justification: timer is always assigned before any await in the try block, so the falsy branch is unreachable; the guard is kept for future refactors that might short-circuit before the assignment
     if (timer) clearTimeout(timer);
   }
 
