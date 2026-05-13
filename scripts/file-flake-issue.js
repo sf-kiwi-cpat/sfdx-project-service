@@ -26,9 +26,10 @@
  * an authenticated runner to actually file an issue, so this is mainly
  * a sanity check before we shell out.
  *
- * Output:
- *   stdout — informational log lines (and the rendered body in dry-run)
- *   stderr — diagnostics on bad summary, missing gh, etc.
+ * Output streams (matches the convention in `flake-detect.js`):
+ *   stdout — payload only: the rendered issue body in DRY_RUN, and the
+ *            URL `gh issue create` prints on success
+ *   stderr — everything else: progress, status, and diagnostics
  *
  * Exit code:
  *   0 — issue filed/updated successfully, or DRY_RUN=true succeeded,
@@ -65,7 +66,7 @@ const infrastructureFailures = Number.isFinite(summary.infrastructureFailures)
   : 0;
 
 if (flakes.length === 0 && alwaysFailed.length === 0 && infrastructureFailures === 0) {
-  console.log('file-flake-issue: no flakes, no always-failed, no infra failures — nothing to file');
+  console.error('file-flake-issue: no flakes, no always-failed, no infra failures — nothing to file');
   process.exit(0);
 }
 
@@ -284,7 +285,7 @@ function ghWithStdinBody(args) {
 }
 
 if (existingNumber) {
-  console.log(`file-flake-issue: updating existing issue #${existingNumber}`);
+  console.error(`file-flake-issue: updating existing issue #${existingNumber}`);
   ghWithStdinBody([
     'issue',
     'edit',
@@ -294,9 +295,10 @@ if (existingNumber) {
     '--body-file',
     '-',
   ]);
-  console.log(`file-flake-issue: updated https://github.com/${repo}/issues/${existingNumber}`);
+  // Issue URL is the payload — emit on stdout so callers can capture it.
+  console.log(`https://github.com/${repo}/issues/${existingNumber}`);
 } else {
-  console.log('file-flake-issue: creating new issue');
+  console.error('file-flake-issue: creating new issue');
   const out = ghWithStdinBody([
     'issue',
     'create',
@@ -311,5 +313,6 @@ if (existingNumber) {
     '--label',
     'agent:code-quality',
   ]);
+  // `gh issue create` prints the new issue URL — pass it through on stdout.
   console.log(out.trim());
 }
