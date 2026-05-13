@@ -24,6 +24,8 @@ coverage/
 .vitest/
 .nyc_output/
 tests/live/.last-run.json
+reports/
+test-results.json
 
 # Environment
 .env

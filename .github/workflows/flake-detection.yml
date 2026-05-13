@@ -1,0 +1,120 @@
+name: flake-detection
+
+# Why this workflow exists: see GitHub #245.
+#
+# A scheduled, repeat-run flake detector. Runs the full vitest suite 20
+# times back-to-back against the same source tree; any test that
+# doesn't pass in every run is flagged as flaky. The job files (or
+# updates) one tracking issue per ISO week — report-only, no
+# auto-quarantine, no auto-skip. Humans decide whether to fix,
+# quarantine, or delete.
+#
+# Cadence: weekly is enough. N=20 covers a meaningful flake rate in one
+# shot, and flakiness rarely materializes within a single day's worth
+# of commits. Move to daily only if weekly is missing real flakes.
+
+on:
+  schedule:
+    # Monday 08:00 UTC — Sunday-night-into-Monday is the lowest-load
+    # GitHub Actions window for hosted runners, and the report lands
+    # in the team's inbox at the start of the work week.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Number of full-suite iterations to run.'
+        required: false
+        default: '20'
+
+# Per-PR cancellation isn't relevant — the only triggers are scheduled
+# and manual — but we still want at most one detector running at a time
+# on the same ref so two manual dispatches don't race each other and
+# stomp on the artifacts directory.
+concurrency:
+  group: flake-detection
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    # 60 minutes covers ~30 minutes of test runs plus checkout, npm ci,
+    # and template build, with comfortable headroom. The "20 runs ≠
+    # proof of stability" tradeoff in #245 means we'd rather time out
+    # cleanly than silently run partials.
+    timeout-minutes: 60
+    permissions:
+      # Required for `file-flake-issue.js` to create / update the
+      # tracking issue via `gh`. We don't need anything else.
+      issues: write
+      contents: read
+    env:
+      HUSKY: '0'
+      # Two-PR landing per the issue: Part 1 ships dry-run; Part 2
+      # flips this to false (or removes the env entirely) so the
+      # weekly schedule files real issues. The script honors DRY_RUN
+      # by printing the would-be body and exiting 0 — useful for
+      # eyeballing the output of the very first scheduled run before
+      # giving the workflow write access to the issue tracker.
+      DRY_RUN: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      # Same rule as ci.yml: lockfiles in this repo carry internal
+      # Salesforce Nexus URLs that don't resolve from GitHub-hosted
+      # runners. Skipping this breaks `npm ci`.
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      # Build templates once before the loop. The 20 vitest invocations
+      # below skip the `pretest: npm run build:templates` hook by
+      # invoking the vitest binary directly, so this step is what
+      # populates templates/dist/ for every iteration. Reordering or
+      # parallelizing later — without re-introducing the build inside
+      # each run — would land stale templates in the test runs.
+      - name: Build templates once
+        run: npm run build:templates
+
+      # Validate the runs input. We pipe through env so the user-
+      # supplied workflow_dispatch value never lands in a `run:` shell
+      # string — that's the GitHub Actions injection path. The script
+      # itself also rejects non-positive integers, so this is
+      # defense-in-depth.
+      - name: Run suite N times
+        env:
+          RUNS_INPUT: ${{ github.event.inputs.runs || '20' }}
+        run: |
+          if ! [[ "$RUNS_INPUT" =~ ^[0-9]+$ ]] || [ "$RUNS_INPUT" -lt 1 ]; then
+            echo "::error::runs input must be a positive integer, got '$RUNS_INPUT'"
+            exit 2
+          fi
+          node scripts/flake-detect.js --runs="$RUNS_INPUT"
+
+      # `if: always()` so per-run JSON is preserved even when the
+      # detect step succeeds (no flakes — useful as a baseline) or
+      # crashes mid-loop. 30-day retention matches the cadence: one
+      # weekly run × ~4 retained → roughly a month of history.
+      - name: Upload per-run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-logs
+          path: reports/flake/
+          retention-days: 30
+
+      # `if: failure()` keys on the previous step's exit code, so this
+      # only fires when flake-detect.js found flakes (or detected an
+      # infrastructure failure). DRY_RUN gates the actual issue
+      # creation inside the script — the step still runs and prints
+      # the would-be body, but doesn't call gh.
+      - name: File / update tracking issue
+        if: failure()
+        run: node scripts/file-flake-issue.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
