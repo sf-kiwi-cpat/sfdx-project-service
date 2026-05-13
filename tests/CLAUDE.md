@@ -14,13 +14,19 @@ them for edge cases and isolated logic.
 ## Coverage
 
 Thresholds are in `vitest.config.ts`, split by git branch:
-- **90%** on `main` (lines, branches, functions, statements)
-- **85%** on feature branches (lines, branches, functions, statements)
+- **90%** on the `main` branch (all metrics)
+- **85%** on feature branches (all metrics)
+
+"All metrics" means lines, branches, functions, and statements — every coverage metric must clear the threshold for the run to pass.
 
 Coverage must run against the **full test suite** (not unit-only):
 ```bash
 npm run test:coverage    # all tests + coverage report
 ```
+
+The threshold gate is enforced in two places:
+- **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any metric falls below the threshold for the target branch.
+- **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage`, so a local push that drops below 85% fails before it leaves the machine.
 
 ## Conventions
 
