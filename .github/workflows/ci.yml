@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
 
+# Group by ref so each PR (and `main`) gets its own concurrency lane;
+# cancel-in-progress only fires on `pull_request` events so superseded
+# PR pushes are cancelled while pushes to `main` always run to completion.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
