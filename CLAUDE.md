@@ -13,6 +13,7 @@ npm run test:integration   # integration tests only
 npm run test:coverage      # all tests + coverage report
 npm run test:deploy:live   # tier-3: deploy every template to a real org
 npm run lint  # eslint
+npm run lint:deps  # knip — verify dependencies-vs-devDependencies boundaries
 npm run dev   # dev server with watch mode
 ```
 
@@ -48,6 +49,10 @@ surface to the user** rather than shipping the change — a green
 
 Hooks run automatically after `npm install` (via `prepare` script).
 Do not skip hooks with `--no-verify`.
+
+## Dependency hygiene (knip)
+
+CI runs `knip` as a hard gate. Knip findings matter because they catch two failure modes invisible to lint and tests: (1) entries in `dependencies` only used from `tests/` ship dead code to every consumer of the published package, and (2) entries in `devDependencies` used from runtime `src/` work locally but fail in production where dev deps aren't installed. When knip flags an entry, decide: move to `dependencies`, move to `devDependencies`, remove entirely, or — if it's loaded dynamically (e.g. `require.resolve`) — add it to `ignoreDependencies` in `knip.json` with a comment explaining why static analysis can't see it. Run locally with `npm run lint:deps`.
 
 ## CDD — Contract-Driven Development
 
