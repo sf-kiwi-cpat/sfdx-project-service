@@ -125,9 +125,10 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
       // The `.catch` on `reply.sse.send` swallows the TOCTOU where the
       // connection closes between the chokidar event firing and the SSE
       // write reaching the socket. We previously also pre-checked
-      // `reply.sse.isConnected`, but in practice `onClose` (registered
-      // below) unsubscribes before any further events are dispatched,
-      // so the pre-check is unreachable; `.catch` is the genuine guard.
+      // `reply.sse.isConnected`, but the `.catch` covers the same case
+      // the pre-check did: a chokidar event whose handler runs against a
+      // closed stream rejects, the `.catch` swallows it, and no event is
+      // delivered. The pre-check was redundant.
       const unsubscribe = await watcherManager.subscribe(id, projectDir, (evt) => {
         reply.sse.send({ event: sseEventName(evt.type), data: evt }).catch(() => {
           /* client went away mid-send; plugin's own cleanup handles it */

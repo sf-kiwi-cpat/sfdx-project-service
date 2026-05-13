@@ -371,8 +371,6 @@ export class WatcherManager {
     const rel = path.relative(entry.projectDir, absPath);
     /* v8 ignore next -- enqueue is only called from the chokidar handler with paths under projectDir, so the upward-traversal guard is defensive */
     if (!rel || rel.startsWith('..')) return;
-    /* v8 ignore next -- chokidar's `ignored` filter already strips matching paths before they reach enqueue; this is a defensive belt-and-suspenders check */
-    if (shouldIgnorePath(rel)) return;
 
     // Guard against late-arriving FSEvents for the initial scan's files.
     // On macOS especially, chokidar fires `ready` before the kernel has
@@ -422,7 +420,7 @@ export class WatcherManager {
 
   private async flush(entry: PerProjectWatcher, relPath: string): Promise<void> {
     const pending = entry.pending.get(relPath);
-    /* v8 ignore next -- flush is only scheduled by enqueue, which always sets pending before scheduling; this guard catches a race where teardown clears pending between schedule and fire (timer is also cleared in that path, so the if-body should be unreachable) */
+    /* v8 ignore next -- defensive guard against the teardown-vs-fire race: if the timer fires while teardown is mid-flight (between `clearTimeout` on a prior tick and `pending.clear()` on the next), `pending` is missing here. Cheaper to keep the guard than to prove the race away. */
     if (!pending) return;
     entry.pending.delete(relPath);
 
