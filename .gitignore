@@ -26,6 +26,7 @@ coverage/
 tests/live/.last-run.json
 reports/
 test-results.json
+.stryker-tmp/
 
 # Environment
 .env
