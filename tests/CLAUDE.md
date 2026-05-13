@@ -36,6 +36,26 @@ The threshold gate is enforced in two places:
 - **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any aggregate metric or any per-file metric falls below the threshold for the target branch.
 - **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage` and the per-file check, so a local push that drops below either gate fails before it leaves the machine.
 
+### Pragma justifications (CI-enforced)
+
+Every NEW `/* v8 ignore */` pragma added to `src/**/*.ts` in a PR diff must be paired with a same-line `// justification: <reason>` comment. The check is enforced by `scripts/check-pragma-justifications.js` running as a step in the `lint` job in `.github/workflows/ci.yml` — failures are not soft warnings, they fail the build. Existing pragmas on `main` are not affected; only added lines in the PR diff are inspected.
+
+Acceptable:
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue; // justification: TypeScript narrows maybe to defined here
+```
+
+Rejected (no justification, or justification on a different line):
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue;
+/* v8 ignore next */
+const x = maybe ?? defaultValue; // justification: ...
+```
+
+The check is grep-based and only verifies that *something* follows `// justification:` — review handles the content. If a coverage failure tempts you to reach for a pragma to clear the gate, write the test instead, or remove the dead branch. Pragmas are reserved for type-narrowing branches the type system already excludes.
+
 ## Wall-clock visibility (top-20 slowest tests)
 
 Every CI run prints the 20 slowest tests for that tier (unit / integration / spec) to the workflow log via `scripts/test-timing-report.js`. The script consumes vitest's `--reporter=json --outputFile=test-results.json` output, which each test job emits. Useful when you want to know *which* test is dragging the suite down — the data is one click away in the most recent CI run.
