@@ -13,35 +13,62 @@ them for edge cases and isolated logic.
 
 ## Coverage
 
-Thresholds are in `vitest.config.ts`:
-- **90%** on main (all four metrics: statements, branches, functions, lines)
-- **85%** on feature branches (all four metrics)
+Coverage runs on two axes: an aggregate gate and a per-file floor.
+
+**Aggregate** — in `vitest.config.ts`, split by git branch:
+- **90%** on the `main` branch (all metrics)
+- **85%** on feature branches (all metrics)
+
+"All metrics" means lines, branches, functions, and statements — every coverage metric must clear the threshold for the run to pass.
+
+**Per-file floor** — in `scripts/check-per-file-coverage.js`, applied individually to each `src/**/*.ts` file: lines 75 / branches 60 / functions 45 / statements 75. Catches the failure mode where a new under-covered file hides in the average of well-covered files: a 30%-covered new route pulls the aggregate from 92% to 91% — still over the 90% gate. The aggregate misses it; the per-file floor catches it.
+
+The floor is set deliberately below today's worst-covered file (rather than at the team's aspirational target) so it fires on *new* under-covered files rather than retroactively failing current ones. The script reads vitest's `coverage-summary.json` (already emitted via the `json-summary` reporter) — it doesn't run tests itself, just walks the report. Raising the floor over time: rerun `npm run test:coverage`, take `min(observed per-file value)` per metric, subtract 5pp, round to the nearest 5%, and bump the constants in the script.
 
 Coverage must run against the **full test suite** (not unit-only):
 ```bash
-npm run test:coverage    # all tests + coverage report
+npm run test:coverage    # all tests + coverage + per-file floor check
 ```
+
+`test:coverage` and `test:quality` both chain `vitest run --coverage` with the per-file check via `&&`, so either gate failing fails the run.
+
+The threshold gate is enforced in two places:
+- **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any aggregate metric or any per-file metric falls below the threshold for the target branch.
+- **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage` and the per-file check, so a local push that drops below either gate fails before it leaves the machine.
 
 ### No pragma without justification
 
 **Don't add `/* v8 ignore next */` (or any v8-ignore variant) to clear a coverage gate without justification.** When a coverage failure is caused by a real, missing test, the right action is to write the test or remove the dead branch — not annotate around it. Pragmas are reserved for branches the type system already excludes (e.g., `?? defaultValue` where the left side is non-nullable per the function signature) or for genuinely unreachable defensive code that exists as a guard against an invariant violation that cannot occur in practice.
 
-Every pragma must be followed by a `--` justification suffix inside the same comment so reviewers can tell at a glance whether the exclusion is legitimate. The format is:
-
-```ts
-/* v8 ignore next -- <one-line reason> */
-```
-
-For example:
-
-```ts
-/* v8 ignore next -- timer is always assigned before any await in the try block, so the falsy branch is unreachable */
-if (timer) clearTimeout(timer);
-```
-
-The `--` separator is parsed by `ast-v8-to-istanbul`'s ignore regex as the boundary between the directive and the reason, so anything after `--` is free-form prose. A pragma without `--` followed by text is treated as undocumented and should be flagged in review.
-
 If you find yourself adding a pragma to make CI pass, **stop and reconsider whether the branch should be tested instead.** The 90% / 85% threshold is the deterministic forcing function that keeps coverage meaningful for autonomous AI implementers; pragmas without justification erode that signal silently. The threshold itself is held strict on purpose — see issue #238 for the framing — and the right escape hatches are (1) writing the missing test or (2) deleting genuinely-dead code, not annotating around the gap.
+
+### Pragma justifications (CI-enforced)
+
+Every NEW `/* v8 ignore */` pragma added to `src/**/*.ts` in a PR diff must be paired with a same-line `// justification: <reason>` comment. The check is enforced by `scripts/check-pragma-justifications.js` running as a step in the `lint` job in `.github/workflows/ci.yml` — failures are not soft warnings, they fail the build. Existing pragmas on `main` are not affected; only added lines in the PR diff are inspected.
+
+Acceptable:
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue; // justification: TypeScript narrows maybe to defined here
+```
+
+Rejected (no justification, or justification on a different line):
+
+```ts
+const x = maybe ?? /* v8 ignore next */ defaultValue;
+/* v8 ignore next */
+const x = maybe ?? defaultValue; // justification: ...
+```
+
+The check is grep-based and only verifies that *something* follows `// justification:` — review handles the content. If a coverage failure tempts you to reach for a pragma to clear the gate, write the test instead, or remove the dead branch. Pragmas are reserved for type-narrowing branches the type system already excludes.
+
+## Wall-clock visibility (top-20 slowest tests)
+
+Every CI run prints the 20 slowest tests for that tier (unit / integration / spec) to the workflow log via `scripts/test-timing-report.js`. The script consumes vitest's `--reporter=json --outputFile=test-results.json` output, which each test job emits. Useful when you want to know *which* test is dragging the suite down — the data is one click away in the most recent CI run.
+
+The report runs with `if: always()` so timing data still surfaces when the test step itself failed. A slow-and-failing test should be visible on both axes.
+
+This is part 1 of the wall-clock budget work (GitHub #248). The hard CI gate, the per-test ceiling, the allowlist, and the re-baselining procedure all land in part 2 — once enough CI runs have accumulated to set the budget from observed `ubuntu-latest` numbers rather than developer-local numbers.
 
 ## Conventions
 

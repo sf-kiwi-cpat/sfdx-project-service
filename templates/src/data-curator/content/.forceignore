@@ -18,6 +18,7 @@ force-app/main/default/uiBundles/App/playwright.config.ts
 force-app/main/default/uiBundles/App/tsconfig.json
 force-app/main/default/uiBundles/App/tsconfig.node.json
 force-app/main/default/uiBundles/App/tsconfig.tsbuildinfo
+force-app/main/default/uiBundles/App/ui-bundle.json
 force-app/main/default/uiBundles/App/vite-env.d.ts
 force-app/main/default/uiBundles/App/vite.config.ts
 force-app/main/default/uiBundles/App/vitest-env.d.ts

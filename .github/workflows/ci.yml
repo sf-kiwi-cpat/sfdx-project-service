@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -6,8 +6,54 @@ on:
   pull_request:
     branches: [main]
 
+# Group by ref so each PR (and `main`) gets its own concurrency lane;
+# cancel-in-progress only fires on `pull_request` events so superseded
+# PR pushes are cancelled while pushes to `main` always run to completion.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ci:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      # fetch-depth: 0 so the pragma-justification check (below) can diff
+      # against origin/main. The default of 1 makes `git diff origin/main...HEAD`
+      # silently empty.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # Fails if any line added by the PR introduces a new /* v8 ignore */
+      # pragma without a same-line "// justification: <reason>" comment.
+      # Only runs on pull_request events — on push-to-main there is no
+      # diff base, and existing pragmas are not retroactively flagged.
+      # See issue #278 for the rationale and #238 for the source rule.
+      #
+      # GITHUB_BASE_REF goes through env (not ${{ }} interpolation in the
+      # run: line) to avoid script-injection — a malicious branch name
+      # would otherwise execute as shell.
+      - name: Check pragma justifications
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: node scripts/check-pragma-justifications.js
+
+  build:
     runs-on: ubuntu-latest
     env:
       HUSKY: '0'
@@ -24,14 +70,125 @@ jobs:
 
       - run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - run: npm run build
 
-      - name: Build
-        run: npm run build
+  unit:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Unit tests
-        run: npm run test:unit
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
 
-      - name: Integration & spec tests
-        run: npm run test:integration && npm run test:spec
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      # The default reporter keeps the human-readable output we want in
+      # the workflow log; the json reporter writes test-results.json,
+      # which scripts/test-timing-report.js consumes in the next step.
+      # See GitHub #248 (part 1: report only, no budget gate yet).
+      - run: npm run test:unit -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      # `if: always()` so timing data still surfaces when tests fail —
+      # a slow-and-failing test should be visible on both axes.
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=unit
+
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:integration -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=integration
+
+  spec:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:spec -- --reporter=default --reporter=json --outputFile=test-results.json
+
+      - name: Top 20 slowest tests
+        if: always()
+        run: node scripts/test-timing-report.js --input=test-results.json --tier=spec
+
+  # Hard gate on the coverage thresholds defined in vitest.config.ts.
+  # Runs the full suite (not a per-stage slice) because v8 coverage on a
+  # partial slice would fail spuriously — e.g. anything only exercised
+  # by integration tests would look uncovered to the unit slice. The
+  # parallel test jobs above keep the per-stage signal fast; this job
+  # exists solely to enforce the threshold on the merged execution. See
+  # issue #240 for the design rationale and the option-A vs option-B
+  # tradeoff.
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run test:coverage
+
+  knip:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run lint:deps
