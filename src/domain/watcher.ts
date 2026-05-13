@@ -176,6 +176,7 @@ async function readContentIfEligible(
   } catch {
     return undefined;
   }
+  /* v8 ignore next -- chokidar add/change events only fire for files; the non-file branch is a defensive guard against future event-source changes */
   if (!stat.isFile()) return undefined;
   if (stat.size >= CONTENT_SIZE_CUTOFF_BYTES) return undefined;
   try {
@@ -267,6 +268,7 @@ export class WatcherManager {
       ignored: (absPath: string) => {
         if (absPath === projectDir) return false;
         const rel = path.relative(projectDir, absPath);
+        /* v8 ignore next -- chokidar always invokes this callback with paths under projectDir, so the upward-traversal guard is defensive */
         if (!rel || rel.startsWith('..')) return false;
         return shouldIgnorePath(rel);
       },
@@ -298,6 +300,7 @@ export class WatcherManager {
           for (const name of names) {
             const abs = path.join(dir, name);
             const rel = path.relative(projectDir, abs);
+            /* v8 ignore next -- getWatched() only returns descendants of projectDir, so the upward-traversal guard is defensive */
             if (!rel || rel.startsWith('..')) continue;
             if (shouldIgnorePath(rel)) continue;
             snapshots.push(
@@ -366,7 +369,9 @@ export class WatcherManager {
     type: FileEventType
   ): Promise<void> {
     const rel = path.relative(entry.projectDir, absPath);
+    /* v8 ignore next -- enqueue is only called from the chokidar handler with paths under projectDir, so the upward-traversal guard is defensive */
     if (!rel || rel.startsWith('..')) return;
+    /* v8 ignore next -- chokidar's `ignored` filter already strips matching paths before they reach enqueue; this is a defensive belt-and-suspenders check */
     if (shouldIgnorePath(rel)) return;
 
     // Guard against late-arriving FSEvents for the initial scan's files.
@@ -381,6 +386,7 @@ export class WatcherManager {
       if (snap) {
         try {
           const st = await fs.stat(absPath);
+          /* v8 ignore next -- macOS-only stale-FSEvents-replay guard. On Linux/Windows, post-ready `change` events always reflect a real write so size+mtimeMs cannot match the snapshot. The macOS-specific test path is covered by the spec/fs-events contract suite when run on darwin */
           if (st.size === snap.size && st.mtimeMs === snap.mtimeMs) return;
         } catch {
           /* file missing — fall through; unlink will follow */
@@ -416,6 +422,7 @@ export class WatcherManager {
 
   private async flush(entry: PerProjectWatcher, relPath: string): Promise<void> {
     const pending = entry.pending.get(relPath);
+    /* v8 ignore next -- flush is only scheduled by enqueue, which always sets pending before scheduling; this guard catches a race where teardown clears pending between schedule and fire (timer is also cleared in that path, so the if-body should be unreachable) */
     if (!pending) return;
     entry.pending.delete(relPath);
 

@@ -98,9 +98,9 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
       // the `@fastify/sse` plugin falls back to our handler without
       // installing `reply.sse`, which would crash into a 500 TypeError.
       // Reject explicitly with 400 problem+json instead. Real browser
-      // EventSource always sends this header automatically.
-      const accept = request.headers.accept ?? '';
-      if (accept !== 'text/event-stream') {
+      // EventSource always sends this header automatically. Treat a
+      // missing Accept header (`undefined`) the same as a wrong one.
+      if (request.headers.accept !== 'text/event-stream') {
         return reply
           .status(400)
           .type(PROBLEM_JSON)
@@ -122,18 +122,24 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
       // Subscribe first — awaits chokidar's initial scan (and pre-ready event
       // replay) so any write the client performs after `connected` can't be
       // misclassified as `add` when it was actually a `change`.
+      // The `.catch` on `reply.sse.send` swallows the TOCTOU where the
+      // connection closes between the chokidar event firing and the SSE
+      // write reaching the socket. We previously also pre-checked
+      // `reply.sse.isConnected`, but in practice `onClose` (registered
+      // below) unsubscribes before any further events are dispatched,
+      // so the pre-check is unreachable; `.catch` is the genuine guard.
       const unsubscribe = await watcherManager.subscribe(id, projectDir, (evt) => {
-        if (!reply.sse.isConnected) return;
-        // `.catch` swallows the TOCTOU where the connection closes between
-        // the guard above and the write. `writeToStream` rejects
-        // synchronously on closed connections; the unhandled rejection
-        // would otherwise crash the process under Node's default
-        // `--unhandled-rejections=throw`.
         reply.sse.send({ event: sseEventName(evt.type), data: evt }).catch(() => {
           /* client went away mid-send; plugin's own cleanup handles it */
         });
       });
 
+      // `closedDuringSubscribe` covers the narrow window where the
+      // client disconnects during the async subscribe() above (chokidar
+      // initial-scan + pre-ready buffer flush). Without this branch,
+      // the late `reply.sse.onClose(unsubscribe)` push lands on an
+      // already-drained close-callback array and never fires, leaking
+      // the watcher subscription.
       if (closedDuringSubscribe) {
         unsubscribe();
         return;
