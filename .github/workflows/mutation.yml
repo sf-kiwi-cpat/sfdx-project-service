@@ -1,0 +1,125 @@
+name: mutation
+
+# Why this workflow exists: see GitHub #241.
+#
+# A scheduled, daily mutation-testing job. Stryker mutates `src/**/*.ts`
+# and runs only `tests/unit/**/*.test.ts` against each mutant. Surviving
+# mutants — code changes the unit suite did not detect — are funnelled
+# into a single tracking issue per ISO week, so test-quality regressions
+# surface as actionable work without blocking PRs.
+#
+# Why daily/post-merge instead of per-PR: mutation testing is slow (one
+# rerun of the suite per mutant), and on a small TS codebase that's
+# easily 30+ minutes per CI run. Daily on `main` catches the trend
+# (drift in test quality within 24 hours) without paying that toll on
+# every PR. Revisit per-PR scoping once daily proves out.
+#
+# Why unit-only: `vitest.config.ts` sets `fileParallelism: false`
+# because spec/npm-package and spec/fs-events race on shared paths;
+# Stryker's cross-process concurrency isn't governed by that flag.
+# Scoping to tests/unit/** keeps the racy specs out and drops per-mutant
+# runtime ~10×. See #241 for the full reasoning.
+#
+# Security note: the only triggers are `schedule` and `workflow_dispatch`
+# (no inputs), so no user-controlled `github.event.*` data flows into
+# any `run:` shell string. If someone adds a workflow_dispatch input
+# later, pipe it through `env:` rather than interpolating directly —
+# see the equivalent guard in flake-detection.yml.
+
+on:
+  schedule:
+    # 07:00 UTC — overnight in PT/ET, so the report lands by morning
+    # standup without competing with weekday CI traffic on hosted runners.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+# Per-PR cancellation isn't relevant — the only triggers are scheduled
+# and manual — but we still want at most one mutation run at a time
+# on the same ref so two manual dispatches don't race each other and
+# stomp on the reports/mutation/ directory.
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # 60 minutes covers the expected ~30 minutes of mutant runs plus
+    # checkout, npm ci, template build, and the issue-filing step,
+    # with comfortable headroom for the first baseline run before we
+    # have wall-clock numbers from real CI. The "first run will be
+    # ugly" tradeoff in #241 means we'd rather time out cleanly than
+    # silently run a partial set.
+    timeout-minutes: 60
+    permissions:
+      # Required for `file-mutation-issue.js` to create / update the
+      # tracking issue via `gh`. We don't need anything else.
+      issues: write
+      contents: read
+    env:
+      HUSKY: '0'
+      # Two-PR landing per the issue: Part 1 ships dry-run; Part 2
+      # flips this to false (or removes the env entirely) so the
+      # daily schedule files real issues. The script honours DRY_RUN
+      # by printing the would-be body to stdout and exiting 0 —
+      # useful for eyeballing the output of the first scheduled run
+      # before giving the workflow write access to the issue tracker.
+      DRY_RUN: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      # Same rule as ci.yml and flake-detection.yml: lockfiles in this
+      # repo carry internal Salesforce Nexus URLs that don't resolve
+      # from GitHub-hosted runners. Skipping this breaks `npm ci`.
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      # Build templates once before the run. Stryker invokes vitest
+      # directly, not via `npm test`, so the `pretest:
+      # npm run build:templates` hook in package.json does not fire.
+      # Tests that touch any code path resolving `getTemplatesDir()`
+      # (src/config.ts) will fail at module-load time if templates/dist/
+      # doesn't exist, even when the test itself doesn't read templates.
+      - name: Build templates once
+        run: npm run build:templates
+
+      # Stryker's exit code is determined by `thresholds.break` in
+      # stryker.config.json — set to 0 advisory-only for now, so a low
+      # mutation score does NOT fail this step. Issue filing is keyed
+      # off the file-mutation-issue.js exit code (survivor count > 0),
+      # not Stryker's verdict. See #241 "Mutation score threshold"
+      # section for why we're advisory-only for the first month.
+      - name: Run Stryker
+        run: npx stryker run
+
+      # `if: always()` so the report is preserved even when Stryker
+      # crashes mid-run. 30-day retention matches the cadence: ~30
+      # daily runs × retained → roughly a month of history. The HTML
+      # report is the load-bearing artifact for triage — open it from
+      # the workflow run page to inspect mutants in context with
+      # source.
+      - name: Upload Stryker report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-report
+          path: reports/mutation/
+          retention-days: 30
+
+      # `if: always()` here too: even if Stryker partially failed (e.g.
+      # one runner crashed and Stryker still wrote a partial report),
+      # we want to know what survived in the runs that did complete.
+      # The script's own exit-0-on-no-survivors short-circuit means
+      # this is safe — we just file what's there.
+      - name: File / update tracking issue
+        if: always()
+        run: node scripts/file-mutation-issue.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
