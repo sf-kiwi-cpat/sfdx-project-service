@@ -13,20 +13,28 @@ them for edge cases and isolated logic.
 
 ## Coverage
 
-Thresholds are in `vitest.config.ts`, split by git branch:
+Coverage runs on two axes: an aggregate gate and a per-file floor.
+
+**Aggregate** — in `vitest.config.ts`, split by git branch:
 - **90%** on the `main` branch (all metrics)
 - **85%** on feature branches (all metrics)
 
 "All metrics" means lines, branches, functions, and statements — every coverage metric must clear the threshold for the run to pass.
 
+**Per-file floor** — in `scripts/check-per-file-coverage.js`, applied individually to each `src/**/*.ts` file: lines 75 / branches 60 / functions 45 / statements 75. Catches the failure mode where a new under-covered file hides in the average of well-covered files: a 30%-covered new route pulls the aggregate from 92% to 91% — still over the 90% gate. The aggregate misses it; the per-file floor catches it.
+
+The floor is set deliberately below today's worst-covered file (rather than at the team's aspirational target) so it fires on *new* under-covered files rather than retroactively failing current ones. The script reads vitest's `coverage-summary.json` (already emitted via the `json-summary` reporter) — it doesn't run tests itself, just walks the report. Raising the floor over time: rerun `npm run test:coverage`, take `min(observed per-file value)` per metric, subtract 5pp, round to the nearest 5%, and bump the constants in the script.
+
 Coverage must run against the **full test suite** (not unit-only):
 ```bash
-npm run test:coverage    # all tests + coverage report
+npm run test:coverage    # all tests + coverage + per-file floor check
 ```
 
+`test:coverage` and `test:quality` both chain `vitest run --coverage` with the per-file check via `&&`, so either gate failing fails the run.
+
 The threshold gate is enforced in two places:
-- **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any metric falls below the threshold for the target branch.
-- **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage`, so a local push that drops below 85% fails before it leaves the machine.
+- **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any aggregate metric or any per-file metric falls below the threshold for the target branch.
+- **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage` and the per-file check, so a local push that drops below either gate fails before it leaves the machine.
 
 ## Wall-clock visibility (top-20 slowest tests)
 
