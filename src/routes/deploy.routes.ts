@@ -192,12 +192,13 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
       // A rejected `reply.sse.send(...)` (e.g. broken pipe from an abrupt
       // client disconnect) is treated as a stream-terminal signal: the
-      // poll interval is cleared and the SSE stream is closed directly
-      // from the rejection handler, instead of waiting for `onClose` /
-      // the next-tick `isConnected` guard to catch up. Both of those
-      // remain in place as belt-and-suspenders, but neither responds
-      // synchronously to a write failure, which would leave a doomed
-      // stream re-attempting failed sends until the next tick.
+      // poll interval is cleared and the SSE stream is closed from the
+      // rejection handler. The `.catch` runs as a microtask, so any
+      // `send` calls already issued on the same tick still fire — the
+      // win is preventing the *next* poll tick from issuing more sends
+      // into a doomed stream, instead of waiting for `onClose` or the
+      // next-tick `isConnected` guard to catch up one or more ticks
+      // later. Both of those remain in place as belt-and-suspenders.
       // `close()` and `clearInterval()` are both idempotent, so it is
       // safe if we race with `onClose` or another rejected send.
       const teardownOnSendFailure = (): void => {
