@@ -108,3 +108,22 @@ jobs:
       - run: npm ci
 
       - run: npm run test:spec
+
+  knip:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Rewrite Nexus URLs in all lockfiles
+        run: find . -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      - run: npm ci
+
+      - run: npm run lint:deps
