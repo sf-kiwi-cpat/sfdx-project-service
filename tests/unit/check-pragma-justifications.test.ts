@@ -55,6 +55,29 @@ describe('parseUnifiedDiff', () => {
     expect(parseUnifiedDiff(diff)).toEqual([]);
   });
 
+  it('extracts added lines from a top-level src/foo.ts (no nested directory)', () => {
+    // Regression: the original implementation invoked `git diff` with a
+    // pathspec of 'src/**/*.ts', which git's default pathspec does NOT
+    // expand recursively across "no directory" — top-level files like
+    // src/app.ts were silently filtered out before the parser ever saw
+    // them. The fix moves the scope filter into the JS parser
+    // (path.startsWith('src/') && path.endsWith('.ts')) and keeps
+    // git's pathspec to a plain 'src/'. Lock the parser-side scope in
+    // here so a future "tighten the pathspec" refactor can't reintroduce
+    // the same hole.
+    const diff = [
+      'diff --git a/src/foo.ts b/src/foo.ts',
+      '--- a/src/foo.ts',
+      '+++ b/src/foo.ts',
+      '@@ -10,0 +11,1 @@',
+      '+/* v8 ignore next */',
+    ].join('\n');
+
+    expect(parseUnifiedDiff(diff)).toEqual([
+      { file: 'src/foo.ts', line: 11, content: '/* v8 ignore next */' },
+    ]);
+  });
+
   it('does not record removed lines (only `+`, not `-`)', () => {
     const diff = [
       '--- a/src/foo.ts',

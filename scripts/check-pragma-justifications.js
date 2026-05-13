@@ -48,8 +48,11 @@ const JUSTIFICATION_RE = /\/\/\s*justification:/;
  * Parse the unified diff text into a list of added lines.
  *
  * Returns an array of { file, line, content } where `line` is the
- * line number in the *new* (post-PR) file. Only `+` lines from hunks
- * scoped to `src/**\/*.ts` are returned.
+ * line number in the *new* (post-PR) file. Only `+` lines belonging to
+ * `.ts` files under `src/` (at any depth) are returned — this is the
+ * authoritative scope filter; `gitDiff` keeps git's pathspec inclusive
+ * (`src/`) so this filter sees every candidate file, including
+ * top-level ones like `src/app.ts`.
  *
  * Why we re-implement instead of pulling a parser dep: the diff format
  * we need is narrow (added lines only, with line numbers, in a fixed
@@ -161,12 +164,16 @@ function resolveBaseRef(cliBase) {
 
 function gitDiff(base) {
   // --unified=0 keeps hunks tight; we only inspect added lines so we
-  // don't need context. -- 'src/**/*.ts' scopes to TypeScript sources.
-  // Note: the `**` glob is interpreted by git's pathspec, not the
-  // shell — execFileSync with an array bypasses shell expansion.
+  // don't need context. The pathspec is `src/` (recursive by default
+  // in git pathspec) rather than `src/**/*.ts` — the latter silently
+  // misses top-level files like `src/app.ts` because git's default
+  // pathspec syntax doesn't treat `**` as a recursive glob without
+  // `:(glob)` magic. The JS-side filter in parseUnifiedDiff is the
+  // source of truth for "is this a TypeScript file under src/" — keep
+  // git inclusive and let the parser scope.
   return execFileSync(
     'git',
-    ['diff', `${base}...HEAD`, '--unified=0', '--', 'src/**/*.ts'],
+    ['diff', `${base}...HEAD`, '--unified=0', '--', 'src/'],
     { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
   );
 }
