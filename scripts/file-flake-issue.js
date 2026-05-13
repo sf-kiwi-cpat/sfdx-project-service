@@ -79,6 +79,19 @@ if (flakes.length === 0 && alwaysFailed.length === 0 && infrastructureFailures =
  * Monday in UTC. `Date#getUTCDay()` returns 0 (Sunday) through 6
  * (Saturday); we map Sunday to 7 so subtracting `(day - 1)` lands on
  * the preceding Monday for every other day of the week as well.
+ *
+ * Boundary note (intentional, not a bug): ISO-8601 treats Sunday as the
+ * last day of the week that started on the *prior* Monday. So a run at
+ * 23:59 UTC on Sunday and a run at 08:00 UTC on the following Monday
+ * compute *different* `weekStamp` values — Sunday lands on the prior
+ * Monday, Monday lands on itself — and a `workflow_dispatch` straddling
+ * that boundary can spawn two issues for what a human might call "this
+ * week's flakes." The cadence is weekly and the regular schedule is
+ * Monday morning UTC, so drift is rare in practice; if it ever bites,
+ * collapse the duplicates manually rather than reach for a non-ISO
+ * boundary here. Equivalent formulations like
+ * `(date.getUTCDay() + 6) % 7` produce identical results — the boundary
+ * is a property of ISO-8601 itself, not of this implementation.
  */
 function isoWeekMondayUTC(date = new Date()) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
