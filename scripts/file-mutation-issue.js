@@ -186,7 +186,7 @@ function renderBody() {
   lines.push(`Last run: ${new Date().toISOString()}.`);
   lines.push('');
   lines.push(
-    `Mutants killed: **${totalKilled} / ${detectableMutants}** detectable (mutation score: **${mutationScore}%**, suite-aware — excludes timeouts and no-coverage).`,
+    `Mutants killed: **${totalKilled} / ${detectableMutants}** detectable (mutation score: **${mutationScore}%**, suite-aware — excludes timeouts, no-coverage, and runtime errors).`,
   );
   lines.push(`Mutants surviving: **${totalSurvived}** across **${survivorsByFile.length}** file(s).`);
   if (totalMutants !== detectableMutants) {
@@ -302,6 +302,13 @@ function gh(args, options = {}) {
 // avoid `--label` and similar filters. Note we search by week stamp
 // only (not by survivor count) so a re-run with a different count still
 // hits the existing issue.
+//
+// GitHub's search syntax doesn't OR multiple `in:title` qualifiers in a
+// single query — a second `in:title` shadows the first. We narrow on
+// the week stamp here (the most distinctive substring) and re-enforce
+// the `[mutation]` prefix client-side below. The client-side filter is
+// the load-bearing check; the search-side qualifier is just a way to
+// keep the API result set small.
 let existingNumber = null;
 try {
   const found = gh([
@@ -312,7 +319,7 @@ try {
     '--state',
     'open',
     '--search',
-    `in:title "[mutation]" in:title "week of ${weekStamp}"`,
+    `in:title "week of ${weekStamp}"`,
     '--json',
     'number,title',
     '--limit',
