@@ -1,0 +1,102 @@
+# Dependabot configuration for sfdx-project-service.
+#
+# Goals:
+#   - Group related bumps so we get one PR per family per week instead of
+#     one per dependency. Volume is ~1 PR/week today; grouping mostly
+#     reduces lockfile churn and consolidates CI runs.
+#   - Add a 3-day cooldown so freshly-published versions get a chance to
+#     have regressions surfaced by the broader ecosystem before we adopt.
+#   - Pin @types/node to the supported Node engine range. engines.node is
+#     ">=20" and @types/node is currently ^22.9.0, so block major bumps
+#     >= 23.0.0 until we either lift the engine floor or accept type drift.
+#
+# The patch/minor auto-merge workflow (.github/workflows/dependabot-auto-merge.yml)
+# keys off dependabot/fetch-metadata's update-type, which classifies grouped
+# PRs by the highest update-type in the group — so a grouped patch/minor PR
+# still auto-merges, while any group containing a major requires human review.
+#
+# Reference: forcedotcom/agentic-dx#299 (the originating grouping pattern).
+
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+
+    groups:
+      # Production runtime libs that frequently bump together.
+      fastify:
+        patterns:
+          - "fastify"
+          - "@fastify/*"
+      salesforce:
+        patterns:
+          - "@salesforce/*"
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vite-tsconfig-paths"
+
+      # Dev-tool families.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      eslint:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "eslint-plugin-*"
+      stryker:
+        patterns:
+          - "@stryker-mutator/*"
+
+      # Types: keep @types/node out of this group so its engine pin
+      # (see ignore: below) governs it independently.
+      typescript-types:
+        patterns:
+          - "@types/*"
+        exclude-patterns:
+          - "@types/node"
+
+      # Catch-all for everything else dev-side that isn't already grouped.
+      dev-dependencies:
+        patterns:
+          - "*"
+        dependency-type: "development"
+        exclude-patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "eslint-plugin-*"
+          - "@stryker-mutator/*"
+          - "@types/*"
+
+    ignore:
+      # @types/node tracks the lowest supported Node engine. engines.node
+      # is ">=20" and @types/node is currently pinned at ^22.9.0; block
+      # any @types/node major beyond v22 until we either bump the engine
+      # floor or accept the type drift.
+      - dependency-name: "@types/node"
+        versions:
+          - ">= 23.0.0"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
