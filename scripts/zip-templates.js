@@ -23,20 +23,21 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
+import { requireZipCli } from './lib/require-zip-cli.js';
 
 const root = resolve(import.meta.dirname, '..');
 const srcDir = join(root, 'templates', 'src');
 const distDir = join(root, 'templates', 'dist');
 
 // Fail early with a clear message if the system `zip` CLI is missing —
-// otherwise execFileSync below would surface a bare ENOENT.
+// otherwise the execFileSync('zip', ...) below would surface a bare
+// ENOENT. Shared with the test-fixture builder in
+// tests/unit/projects.test.ts so the actionable message reaches both
+// surfaces.
 try {
-  execFileSync('zip', ['-v'], { stdio: 'ignore' });
-} catch {
-  console.error(
-    'error: the `zip` CLI is required to build templates but was not found on PATH.\n' +
-      '  install via: apt-get install zip / brew install zip / choco install zip'
-  );
+  requireZipCli();
+} catch (err) {
+  console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 }
 
