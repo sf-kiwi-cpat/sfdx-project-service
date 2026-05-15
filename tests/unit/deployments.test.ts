@@ -42,8 +42,15 @@ describe('deployments', () => {
       const id1 = createDeployment('project-1');
       const id2 = createDeployment('project-2');
 
-      expect(id1).toMatch(/^deploy_\d+_[a-z0-9]+$/);
-      expect(id2).toMatch(/^deploy_\d+_[a-z0-9]+$/);
+      // Deployment IDs are `deploy_` + a v4 UUID. See generateDeploymentId
+      // in src/deployments.ts — `randomUUID()` is CSPRNG-backed, so the
+      // shape is `deploy_<8>-<4>-4<3>-<y><3>-<12>` where y ∈ {8,9,a,b}.
+      expect(id1).toMatch(
+        /^deploy_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+      expect(id2).toMatch(
+        /^deploy_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
       expect(id1).not.toBe(id2);
     });
 

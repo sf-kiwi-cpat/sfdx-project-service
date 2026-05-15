@@ -21,6 +21,8 @@
  * Each deployment tracks its status, metadata, and results.
  */
 
+import { randomUUID } from 'node:crypto';
+
 export interface DeploymentComponentResult {
   fullName: string;
   type: string;
@@ -100,10 +102,16 @@ interface StoredDeployment {
 const deploymentStore = new Map<string, StoredDeployment>();
 
 /**
- * Generate a unique deployment ID with deploy_ prefix
+ * Generate a unique deployment ID with deploy_ prefix.
+ *
+ * The deployment ID is the capability that gates access to a deploy's
+ * SSE event stream, so it must be both unguessable and collision-free.
+ * `crypto.randomUUID()` (CSPRNG-backed, 122 bits of entropy) gives us
+ * both, and matches the pattern already used for project IDs in
+ * `src/domain/projects.ts`.
  */
 function generateDeploymentId(): string {
-  return `deploy_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return `deploy_${randomUUID()}`;
 }
 
 /**
