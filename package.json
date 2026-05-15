@@ -59,7 +59,7 @@
     "@salesforce/metadata-visualizer-core": "^1.1.0",
     "@salesforce/source-deploy-retrieve": "^12.35.0",
     "@salesforce/templates": "^66.6.2",
-    "@salesforce/vite-plugin-ui-bundle": "^1.135.0",
+    "@salesforce/vite-plugin-ui-bundle": "^3.1.0",
     "@sinclair/typebox": "^0.34.0",
     "@vitejs/plugin-react": "^5.0.0",
     "chokidar": "^5.0.0",
