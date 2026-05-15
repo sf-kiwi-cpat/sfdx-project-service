@@ -66,9 +66,9 @@ jobs:
       # before giving the workflow write access to the issue tracker.
       DRY_RUN: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -107,7 +107,7 @@ jobs:
       # source.
       - name: Upload Stryker report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stryker-report
           path: reports/mutation/

@@ -22,11 +22,11 @@ jobs:
       # fetch-depth: 0 so the pragma-justification check (below) can diff
       # against origin/main. The default of 1 makes `git diff origin/main...HEAD`
       # silently empty.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -62,9 +62,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -85,9 +85,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -118,9 +118,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -145,9 +145,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -180,9 +180,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -203,9 +203,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -233,9 +233,9 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm

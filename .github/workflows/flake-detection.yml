@@ -57,9 +57,9 @@ jobs:
       # giving the workflow write access to the issue tracker.
       DRY_RUN: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: npm
@@ -102,7 +102,7 @@ jobs:
       # weekly run × ~4 retained → roughly a month of history.
       - name: Upload per-run logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flake-logs
           path: reports/flake/
