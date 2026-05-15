@@ -109,12 +109,23 @@ for (const name of templates) {
 
   // Zip content/ directory using the system `zip` CLI — keeps adm-zip out
   // of package.json (production uses extract-zip; we don't want both).
-  // `-r` recurses, `-q` quiets per-file output, `-X` strips extra file
-  // attributes for reproducibility.
   const zipPath = join(outDir, 'content.zip');
   // Remove any pre-existing output so `zip` writes a fresh archive instead
   // of appending. (rmSync above clears distDir, but be explicit.)
   rmSync(zipPath, { force: true });
+  // Flags: `-r` recurses, `-q` quiets per-file output. `-X` is the
+  // load-bearing one for the runtime side: it tells `zip` to omit extra
+  // file attribute fields (UID/GID, extended timestamps, etc.) but to
+  // *keep* the Unix mode bits in each entry's external file attributes
+  // (files 0o644, dirs 0o755). On the consume side
+  // (src/domain/projects.ts), extract-zip honors those embedded modes —
+  // its `defaultFileMode` / `defaultDirMode` options only fire when an
+  // entry's mode is 0, which never happens for archives produced this
+  // way. Verified empirically against templates/dist/data-curator/
+  // content.zip (6,646 entries, all with non-zero embedded mode bits)
+  // per the lwetmore-sf review on #227. As a side benefit, omitting the
+  // extra fields also makes archives more byte-reproducible across
+  // builds.
   execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: contentDir, stdio: 'pipe' });
   console.error(`  ${name} → ${outDir}/`);
 }
