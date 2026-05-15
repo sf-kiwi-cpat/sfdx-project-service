@@ -70,7 +70,7 @@ Run before merging any PR that touches:
 
 - `src/domain/deploy.ts`, `src/domain/deploy-auth.ts`
 - `src/domain/build.ts`
-- `src/routes/deployments.ts`
+- `src/routes/deploy.routes.ts`
 - `templates/src/**` (any template source)
 - New templates added under `templates/src/`
 
