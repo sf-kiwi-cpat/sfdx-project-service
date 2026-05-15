@@ -298,6 +298,58 @@ describe('deploy routes integration', () => {
       expect(res.text).toContain('start');
       expect(res.text).toContain('complete');
     });
+
+    // Exercises the setInterval poll-loop branches in the SSE handler:
+    // - the `if (earlyResult)` false arm at line 269 (deploy not yet
+    //   complete when GET arrives, so the interval is armed)
+    // - the body of the setInterval that picks up the deploy result on
+    //   a subsequent tick.
+    // Without an artificially-slowed deploy, the early-result branch
+    // always wins (every other test waits for the deploy to finish
+    // before subscribing).
+    it('streams progress and complete via setInterval when GET arrives before deploy completes', async () => {
+      // Hold pollStatus open until we explicitly resolve it. The SSE
+      // GET will subscribe while the deploy is still pending, hitting
+      // the setInterval poll path.
+      let resolvePoll: ((v: unknown) => void) | undefined;
+      mockPollStatus.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve;
+          })
+      );
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' })
+        .expect(202);
+
+      const deploymentId = deployRes.body.deploymentId;
+
+      // Subscribe to SSE while the deploy is still pending (no result
+      // yet). The handler arms setInterval here.
+      const ssePromise = request(app.server)
+        .get(`/v1/projects/${projectId}/deployments/${deploymentId}/events`)
+        .set('Accept', 'text/event-stream');
+
+      // Give the GET handler a moment to register and arm setInterval.
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Now finish the deploy. The setInterval tick should observe the
+      // result and emit `complete`.
+      resolvePoll!({
+        response: {
+          status: 'Succeeded',
+          numberComponentsDeployed: 1,
+          numberComponentsTotal: 1,
+        },
+        getFileResponses: () => [{ fullName: 'Late__c', type: 'CustomObject', state: 'Created' }],
+      });
+
+      const res = await ssePromise.expect(200);
+      expect(res.text).toContain('start');
+      expect(res.text).toContain('complete');
+    });
   });
 
   // Regression tests for issue #206: see fs-events.routes.test.ts for the
@@ -349,6 +401,20 @@ describe('deploy routes integration', () => {
         .send({ orgAlias: '' })
         .expect(400);
       expect(res.body.status).toBe(400);
+    });
+
+    // Exercises the non-Error arm of `err instanceof Error ? err.message :
+    // 'Connection failed'` in the buildConnectionFromAuth catch. The
+    // existing 502 test rejects with `new Error(...)` (Error arm); this
+    // forces the fallback message path by rejecting with a string.
+    it('returns 502 with fallback message when Connection.create rejects with a non-Error', async () => {
+      mockConnectionCreate.mockRejectedValueOnce('socket reset');
+      const res = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' })
+        .expect(502);
+      expect(res.body.status).toBe(502);
+      expect(res.body.detail).toContain('Connection failed');
     });
   });
 

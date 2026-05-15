@@ -127,4 +127,37 @@ describe('runViteBuild', () => {
     await expect(runViteBuild(tmpDir)).rejects.toThrow(BuildError);
     await expect(runViteBuild(tmpDir)).rejects.toThrow('Build failed');
   });
+
+  // Exercises the concurrent-build coalescing branch in runViteBuild():
+  // when a second call arrives for the same projectDir while a first
+  // build is in flight, both callers must share the same underlying
+  // vite.build() invocation rather than racing and producing two
+  // builds against the same outDir.
+  it('coalesces concurrent builds for the same projectDir', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'build-test-'));
+    mockViteBuild.mockClear();
+    let resolveBuild: (() => void) | undefined;
+    mockViteBuild.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          resolveBuild = (): void => resolve(undefined);
+        })
+    );
+
+    // Kick off two builds for the same dir; the second should coalesce
+    // onto the first instead of invoking vite.build() a second time.
+    const first = runViteBuild(tmpDir);
+    const second = runViteBuild(tmpDir);
+
+    // Yield through the fs.realpath await inside doBuild so the inner
+    // build() call lands. setImmediate alone fires before realpath
+    // resolves; a 50ms tick is generous enough for the realpath
+    // microtask and vite.build invocation to be observed.
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockViteBuild).toHaveBeenCalledTimes(1);
+    resolveBuild!();
+    await Promise.all([first, second]);
+    expect(mockViteBuild).toHaveBeenCalledTimes(1);
+  });
 });

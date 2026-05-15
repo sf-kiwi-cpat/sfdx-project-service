@@ -36,6 +36,12 @@ The threshold gate is enforced in two places:
 - **CI:** the `coverage` job in `.github/workflows/ci.yml` runs `npm run test:coverage` and fails the build if any aggregate metric or any per-file metric falls below the threshold for the target branch.
 - **Pre-push:** the husky pre-push hook runs `npm run test:quality`, which is wired to `--coverage` and the per-file check, so a local push that drops below either gate fails before it leaves the machine.
 
+### No pragma without justification
+
+**Don't add `/* v8 ignore next */` (or any v8-ignore variant) to clear a coverage gate without justification.** When a coverage failure is caused by a real, missing test, the right action is to write the test or remove the dead branch — not annotate around it. Pragmas are reserved for branches the type system already excludes (e.g., `?? defaultValue` where the left side is non-nullable per the function signature) or for genuinely unreachable defensive code that exists as a guard against an invariant violation that cannot occur in practice.
+
+If you find yourself adding a pragma to make CI pass, **stop and reconsider whether the branch should be tested instead.** The 90% / 85% threshold is the deterministic forcing function that keeps coverage meaningful for autonomous AI implementers; pragmas without justification erode that signal silently. The threshold itself is held strict on purpose — see issue #238 for the framing — and the right escape hatches are (1) writing the missing test or (2) deleting genuinely-dead code, not annotating around the gap.
+
 ### Pragma justifications (CI-enforced)
 
 Every NEW `/* v8 ignore */` pragma added to `src/**/*.ts` in a PR diff must be paired with a same-line `// justification: <reason>` comment. The check is enforced by `scripts/check-pragma-justifications.js` running as a step in the `lint` job in `.github/workflows/ci.yml` — failures are not soft warnings, they fail the build. Existing pragmas on `main` are not affected; only added lines in the PR diff are inspected.

@@ -102,7 +102,12 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const body = (request.body ?? {}) as { orgAlias?: string };
+      // Fastify materialises an object body for application/json routes
+      // and TypeBox validation rejects a missing body before this
+      // handler runs, so the nullish-coalesce alternative is
+      // structurally unreachable. The cast is the runtime form of the
+      // schema guarantee.
+      const body = request.body as { orgAlias?: string };
 
       // Get project directory
       const projectDir = await getProjectDir(id);
@@ -223,9 +228,9 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       // the `@fastify/sse` plugin falls back to our handler without
       // installing `reply.sse`, which would crash into a 500 TypeError.
       // Reject explicitly with 400 problem+json instead. Real browser
-      // EventSource always sends this header automatically.
-      const accept = request.headers.accept ?? '';
-      if (accept !== 'text/event-stream') {
+      // EventSource always sends this header automatically. Treat a
+      // missing Accept header (`undefined`) the same as a wrong one.
+      if (request.headers.accept !== 'text/event-stream') {
         return reply
           .status(400)
           .type(PROBLEM_JSON)

@@ -27,9 +27,15 @@ import {
   setDeploymentPollPromise,
   addProgressEvent,
   getProgressEvents,
+  addStageEvent,
+  getDeploymentStageEvents,
+  addWarningEvent,
+  getDeploymentWarningEvents,
   clearAllDeployments,
   type DeploymentResult,
   type ProgressEvent,
+  type StageEvent,
+  type DeploymentWarning,
 } from '../../src/deployments.js';
 
 describe('deployments', () => {
@@ -241,6 +247,53 @@ describe('deployments', () => {
 
       expect(deploymentExists(id1)).toBe(false);
       expect(deploymentExists(id2)).toBe(false);
+    });
+  });
+
+  // The following describes cover the missing-deployment branches that
+  // existed for setDeploymentResult/setDeploymentError/setDeploymentPollPromise/
+  // addProgressEvent but not for the stage / warning equivalents or for
+  // the bare `getDeployment`. Each setter no-ops on a missing id and each
+  // getter returns the empty default. Tested explicitly so the falsy arm
+  // of `if (deployment)` is exercised across every accessor.
+  describe('getDeployment', () => {
+    it('returns null for non-existent deployment', () => {
+      expect(getDeployment('deploy_nonexistent')).toBeNull();
+    });
+  });
+
+  describe('addStageEvent', () => {
+    it('adds a stage event to an existing deployment', () => {
+      const deploymentId = createDeployment('project-1');
+      const event: StageEvent = { deploymentId, name: 'package', index: 0, total: 2 };
+      addStageEvent(deploymentId, event);
+      expect(getDeploymentStageEvents(deploymentId)).toEqual([event]);
+    });
+
+    it('does not throw for non-existent deployment', () => {
+      const event: StageEvent = {
+        deploymentId: 'deploy_nonexistent',
+        name: 'package',
+        index: 0,
+        total: 1,
+      };
+      addStageEvent('deploy_nonexistent', event);
+      expect(getDeploymentStageEvents('deploy_nonexistent')).toEqual([]);
+    });
+  });
+
+  describe('addWarningEvent', () => {
+    it('adds a warning event to an existing deployment', () => {
+      const deploymentId = createDeployment('project-1');
+      const event: DeploymentWarning = { stage: 'prompts', errorMessage: 'optional stage failed' };
+      addWarningEvent(deploymentId, event);
+      expect(getDeploymentWarningEvents(deploymentId)).toEqual([event]);
+    });
+
+    it('does not throw for non-existent deployment', () => {
+      const event: DeploymentWarning = { stage: 'x', errorMessage: 'y' };
+      addWarningEvent('deploy_nonexistent', event);
+      expect(getDeploymentWarningEvents('deploy_nonexistent')).toEqual([]);
     });
   });
 });

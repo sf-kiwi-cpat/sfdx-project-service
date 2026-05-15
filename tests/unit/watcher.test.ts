@@ -282,6 +282,117 @@ describe('WatcherManager', () => {
     expect(events.filter((e) => e.path === '.project-meta.json')).toHaveLength(0);
   });
 
+  it('coalesces a rapid change-then-change burst into a single change with the latest content', async () => {
+    // Exercises the *false* arm of the `existing.type === 'add' && type ===
+    // 'change'` branch in enqueue(). The existing add+change test covers
+    // the true arm; this one ensures the resolvedType-fallthrough path
+    // (existing exists but the combination isn't add+change) is reached.
+    process.env.WATCHER_DEBOUNCE_MS = '300';
+    try {
+      const events: FileEvent[] = [];
+      // Pre-create the file, subscribe, then change twice in rapid
+      // succession. The first event is a post-add change; the second
+      // arrives during the debounce window and overwrites the resolved
+      // type via the else path (resolvedType = type, no add-coalesce).
+      const target = path.join(projectDir, 'changing.txt');
+      await fs.writeFile(target, 'v1');
+      await manager.subscribe('pid', projectDir, (e) => events.push(e));
+
+      await fs.writeFile(target, 'v2');
+      await new Promise((r) => setTimeout(r, 100));
+      await fs.writeFile(target, 'v3');
+      await new Promise((r) => setTimeout(r, 600));
+
+      const matches = events.filter((e) => e.path === 'changing.txt');
+      expect(matches).toHaveLength(1);
+      expect(matches[0].type).toBe('change');
+      expect(matches[0].content).toBe('v3');
+    } finally {
+      process.env.WATCHER_DEBOUNCE_MS = '50';
+    }
+  });
+
+  it('only one of two subscribers tearing down does not destroy the underlying watcher', async () => {
+    // Exercises the false arm of `if (current.listeners.size === 0)` in
+    // unsubscribe — the multi-subscriber case where one disconnect
+    // leaves listeners > 0 and the watcher must stay alive.
+    const eventsA: FileEvent[] = [];
+    const eventsB: FileEvent[] = [];
+    const unsubscribeA = await manager.subscribe('pid', projectDir, (e) => eventsA.push(e));
+    await manager.subscribe('pid', projectDir, (e) => eventsB.push(e));
+
+    // First subscriber leaves; the underlying watcher must stay open.
+    unsubscribeA();
+
+    await fs.writeFile(path.join(projectDir, 'after-one-leaves.txt'), 'still-watching');
+    await new Promise((r) => setTimeout(r, 300));
+
+    // The remaining subscriber still receives events.
+    expect(eventsB.some((e) => e.path === 'after-one-leaves.txt')).toBe(true);
+    // The departed subscriber does not.
+    expect(eventsA.some((e) => e.path === 'after-one-leaves.txt')).toBe(false);
+  });
+
+  it('honors WATCHER_USE_POLLING=0 to force-disable polling', async () => {
+    // Exercises the explicit-`'0'` arm of the polling ternary in
+    // createWatcher(). Without this, the only paths reached on a
+    // non-darwin machine are the `'1'` and undefined arms.
+    const original = process.env.WATCHER_USE_POLLING;
+    process.env.WATCHER_USE_POLLING = '0';
+    try {
+      const events: FileEvent[] = [];
+      await manager.subscribe('pid', projectDir, (e) => events.push(e));
+      await fs.writeFile(path.join(projectDir, 'no-poll.txt'), 'native');
+      // Linux inotify and Windows ReadDirectoryChangesW deliver synchronously
+      // enough that a small wait is sufficient even without polling.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(events.some((e) => e.path === 'no-poll.txt')).toBe(true);
+    } finally {
+      if (original === undefined) {
+        delete process.env.WATCHER_USE_POLLING;
+      } else {
+        process.env.WATCHER_USE_POLLING = original;
+      }
+    }
+  });
+
+  it('honors WATCHER_USE_POLLING=1 to force-enable polling', async () => {
+    // Exercises the explicit-`'1'` arm of the polling ternary in
+    // createWatcher(), independent of the OS default. Hits the
+    // `usePolling ? 50 : undefined` true arm in `interval` /
+    // `binaryInterval`.
+    const original = process.env.WATCHER_USE_POLLING;
+    process.env.WATCHER_USE_POLLING = '1';
+    try {
+      const events: FileEvent[] = [];
+      await manager.subscribe('pid', projectDir, (e) => events.push(e));
+      await fs.writeFile(path.join(projectDir, 'forced-poll.txt'), 'polled');
+      await new Promise((r) => setTimeout(r, 400));
+      expect(events.some((e) => e.path === 'forced-poll.txt')).toBe(true);
+    } finally {
+      if (original === undefined) {
+        delete process.env.WATCHER_USE_POLLING;
+      } else {
+        process.env.WATCHER_USE_POLLING = original;
+      }
+    }
+  });
+
+  it('ignores .project-meta.json under a nested directory', async () => {
+    // Exercises the deeper-segment branch of the EXTRA_IGNORED_NAMES
+    // check in shouldIgnorePath. The existing test only covers the
+    // top-level case.
+    const events: FileEvent[] = [];
+    await manager.subscribe('pid', projectDir, (e) => events.push(e));
+
+    const nested = path.join(projectDir, 'nested');
+    await fs.mkdir(nested);
+    await fs.writeFile(path.join(nested, '.project-meta.json'), '{}');
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(events.filter((e) => e.path.endsWith('.project-meta.json'))).toHaveLength(0);
+  });
+
   it('decodes file content as UTF-8 — non-UTF-8 bytes become U+FFFD', async () => {
     // Pins the UTF-8 assumption at the watcher layer. The contract-level
     // test covers the full SSE round-trip; this is a fast isolated check

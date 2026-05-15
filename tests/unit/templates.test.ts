@@ -15,10 +15,12 @@
  * limitations under the License.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { listTemplates } from '../../src/domain/templates.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_SRC = path.resolve(__dirname, '../../templates/src');
@@ -94,5 +96,92 @@ describe('templates on disk', () => {
         expect(apiVersion).toBeGreaterThanOrEqual(66.0);
       }
     });
+  });
+});
+
+describe('listTemplates', () => {
+  let tmpDir: string;
+  let originalTemplatesDir: string | undefined;
+
+  afterEach(async () => {
+    if (originalTemplatesDir === undefined) {
+      delete process.env.TEMPLATES_DIR;
+    } else {
+      process.env.TEMPLATES_DIR = originalTemplatesDir;
+    }
+    if (tmpDir) {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // Exercises the `if (!entry.isDirectory()) continue;` branch in
+  // listTemplates(). A stray file at the top of the templates dir must
+  // be skipped silently — this is real logic (the templates dir on disk
+  // can pick up README.md, .DS_Store, etc.) and the absence of test
+  // coverage for it would otherwise leave a meaningful branch unverified.
+  it('skips non-directory entries in the templates dir', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'templates-list-'));
+    originalTemplatesDir = process.env.TEMPLATES_DIR;
+    process.env.TEMPLATES_DIR = tmpDir;
+
+    // A regular file at the top level — must not crash listTemplates.
+    await fs.writeFile(path.join(tmpDir, 'README.md'), '# stray');
+    // A real template alongside it — must be returned.
+    await fs.mkdir(path.join(tmpDir, 'real-template'));
+    await fs.writeFile(
+      path.join(tmpDir, 'real-template', 'template.json'),
+      JSON.stringify({
+        id: 'real-template',
+        name: 'Real',
+        description: 'A real template',
+        categories: ['demo'],
+      })
+    );
+
+    const templates = await listTemplates();
+    expect(templates).toHaveLength(1);
+    expect(templates[0].id).toBe('real-template');
+  });
+
+  // Exercises the `meta.categories ?? []` branch in listTemplates(). The
+  // TemplateMeta interface declares `categories?: string[]`, so a
+  // template.json without the field is structurally valid; the route
+  // must surface it with categories: [] rather than undefined.
+  it('defaults categories to [] when template.json omits the field', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'templates-cats-'));
+    originalTemplatesDir = process.env.TEMPLATES_DIR;
+    process.env.TEMPLATES_DIR = tmpDir;
+
+    await fs.mkdir(path.join(tmpDir, 'no-categories'));
+    await fs.writeFile(
+      path.join(tmpDir, 'no-categories', 'template.json'),
+      JSON.stringify({
+        id: 'no-categories',
+        name: 'Bare',
+        description: 'No categories key in template.json',
+      })
+    );
+
+    const templates = await listTemplates();
+    expect(templates).toHaveLength(1);
+    expect(templates[0].categories).toEqual([]);
+  });
+
+  // Pre-existing visible:false coverage exists at the spec layer; this
+  // adds the failing-template-json branch (try/catch swallowing parse
+  // errors) for completeness.
+  it('skips template directories whose template.json is missing or malformed', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'templates-bad-'));
+    originalTemplatesDir = process.env.TEMPLATES_DIR;
+    process.env.TEMPLATES_DIR = tmpDir;
+
+    // Directory without template.json
+    await fs.mkdir(path.join(tmpDir, 'missing-meta'));
+    // Directory with malformed template.json
+    await fs.mkdir(path.join(tmpDir, 'broken-meta'));
+    await fs.writeFile(path.join(tmpDir, 'broken-meta', 'template.json'), '{not-json');
+
+    const templates = await listTemplates();
+    expect(templates).toEqual([]);
   });
 });
