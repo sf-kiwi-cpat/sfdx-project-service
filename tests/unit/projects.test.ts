@@ -30,6 +30,9 @@ import {
   TemplateNotFoundError,
   ProjectNotFoundError,
 } from '../../src/domain/projects.js';
+// The script is plain JS and exports `requireZipCli` for shared use.
+// @ts-expect-error — JS module without an .d.ts shim; test-only import.
+import { requireZipCli } from '../../scripts/lib/require-zip-cli.js';
 
 /**
  * Build a zip containing the given files at the given output path.
@@ -41,6 +44,11 @@ async function buildZip(
   outputPath: string,
   files: Array<{ name: string; content: Buffer | string }>
 ): Promise<void> {
+  // Surface the actionable "zip CLI not on PATH" message via a thrown
+  // error instead of the bare ENOENT execFileSync would produce.
+  // Idempotent — see scripts/lib/require-zip-cli.js — so calling it
+  // here per buildZip() invocation is cheap.
+  requireZipCli();
   const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'zip-staging-'));
   try {
     for (const file of files) {
