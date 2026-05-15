@@ -220,3 +220,61 @@ jobs:
       - run: npm ci
 
       - run: npm run lint:deps
+
+  # Validates that every template's package.json / package-lock.json installs
+  # cleanly. Today this is covered as a side-effect of `scripts/zip-templates.js`
+  # running `npm install --ignore-scripts` inside each template's install dir
+  # during `npm run build`; issue #230 will delete that install step, taking
+  # the implicit safety net with it. This job is the explicit replacement —
+  # it must land before #230 so a Dependabot bump that breaks a template
+  # transitive fails the PR instead of merging green. See issue #233.
+  templates:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      # Narrowed to template lockfiles only. The root lockfile is pinned to
+      # the public registry via /.npmrc (issue #172). Template lockfiles
+      # still go through Nexus on dev machines and need rewriting on hosted
+      # runners until #283 lands per-template .npmrc files.
+      - name: Rewrite Nexus URLs in template lockfiles
+        run: find ./templates -not -path '*/node_modules/*' -name package-lock.json -exec sed -i 's|https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/|https://registry.npmjs.org/|g' {} +
+
+      # Discovery is dynamic (`find` over `templates/src/`) rather than a
+      # hardcoded path list so root-layout and bundle-layout templates are
+      # both covered without code changes. Two layouts exist today; new
+      # templates may add a third — a static list would silently bypass
+      # the gate when a layout shifts.
+      #
+      # `--ignore-scripts` mirrors what scripts/zip-templates.js does today.
+      # Templates have no postinstall we want to execute as validation; the
+      # goal is "the manifest installs," not "the package's postinstall
+      # works." Do not drop this flag without a clear reason.
+      #
+      # We use `npm ci` when a sibling package-lock.json is present (the
+      # case for both current templates) and fall back to `npm install`
+      # only if a future template ships a package.json without a lockfile.
+      # All failures are collected so a broken template doesn't mask a
+      # second broken template in the same run.
+      - name: Validate template manifests install
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r pkg; do
+            dir=$(dirname "$pkg")
+            echo "::group::install in $dir"
+            if [ -f "$dir/package-lock.json" ]; then
+              (cd "$dir" && npm ci --ignore-scripts) || fail=1
+            else
+              (cd "$dir" && npm install --ignore-scripts) || fail=1
+            fi
+            echo "::endgroup::"
+          done < <(find templates/src -name package.json -not -path '*/node_modules/*')
+          exit "$fail"
