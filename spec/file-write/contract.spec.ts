@@ -158,6 +158,29 @@ describe('PUT /v1/projects/:id/file', () => {
       expect(res.body.status).toBe(400);
     });
 
+    it('returns 400 when path traverses a symlink whose target is outside the project root', async () => {
+      // path.resolve is lexical, so a symlink planted inside the project
+      // would otherwise let an attacker write through it to anywhere on
+      // disk. Writes through such symlinks must be rejected without
+      // touching the target file.
+      const outsideTarget = path.join(tmpDir, 'outside-the-project.txt');
+      await fs.writeFile(outsideTarget, 'untouched');
+      await fs.symlink(outsideTarget, path.join(projectDir, 'escape-link'));
+
+      const res = await request(app.server)
+        .put(`/v1/projects/${projectId}/file`)
+        .send({ path: 'escape-link', content: 'pwned' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+
+      // The target file must remain unchanged — the response code is
+      // load-bearing only if the side-effect was actually prevented.
+      const after = await fs.readFile(outsideTarget, 'utf-8');
+      expect(after).toBe('untouched');
+    });
+
     it('returns 400 for path traversal attempts', async () => {
       const res = await request(app.server)
         .put(`/v1/projects/${projectId}/file`)
