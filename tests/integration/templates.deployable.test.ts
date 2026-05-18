@@ -106,7 +106,10 @@ describe('tier-1: every template is deployable (structurally)', async () => {
       projectId = res.body.id as string;
       projectDir = path.join(tmpRoot, projectId);
       expect(projectId).toBeDefined();
-    }, 15_000);
+    },
+    // data-curator template extracts ~1k files; under load this can exceed
+    // the default 5s budget and cascade-fail subsequent tests in this block.
+    30_000);
 
     it('sfdx-project.json pins API version >= 66.0', async () => {
       const raw = await fs.readFile(path.join(projectDir, 'sfdx-project.json'), 'utf-8');
