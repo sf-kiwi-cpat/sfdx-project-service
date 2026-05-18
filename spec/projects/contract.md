@@ -24,7 +24,6 @@ Templates may optionally declare an `initialMessages` array in their `template.j
 - `orgAlias` (optional, string): Alias of a Salesforce org already authenticated via `sf org login`
   - When provided: validated against the local auth store (StateAggregator). A resolved alias is persisted to `.sf/config.json` as `target-org`.
   - When omitted: no target-org is written. The deploy endpoint will fall back to the global default org (if any) or require an `orgAlias` on the POST body.
-
 **Responses:**
 
 - **201 Created** — Project created successfully
@@ -32,7 +31,7 @@ Templates may optionally declare an `initialMessages` array in their `template.j
   ```json
   {
     "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "name": "brave-falcon",
+    "name": "Untitled",
     "lastAccessedAt": "2026-04-22T14:00:00.000Z",
     "targetOrg": "my-scratch-org",
     "initialMessages": [
@@ -82,12 +81,12 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
   [
     {
       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-      "name": "brave-falcon",
+      "name": "Untitled",
       "lastAccessedAt": "2026-04-13T12:00:00.000Z"
     },
     {
       "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
-      "name": "swift-river",
+      "name": "Untitled 2",
       "lastAccessedAt": "2026-04-13T12:01:00.000Z"
     }
   ]
@@ -166,8 +165,11 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
   - `initialMessages`, when set at project creation, is preserved through rename and can be observed via a subsequent `GET /v1/projects/:id`
 
 - **400 Bad Request** — Invalid input
-  - `name` field is missing or empty string
-  - Response: RFC 9457 Problem Detail (`application/problem+json`)
+  - `name` field is missing
+  - `name` is empty string or only whitespace (after trimming)
+  - `name` exceeds 80 characters
+  - Error type: `InvalidProjectNameError`
+  - Response: RFC 9457 Problem Detail (`application/problem+json`) with `title` containing "invalid" or "name"
 
 - **404 Not Found** — Project does not exist
   - Response: RFC 9457 Problem Detail (`application/problem+json`)
@@ -217,9 +219,11 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 ### Projects Have Names
 
 - Every project gets a human-readable name at creation time (auto-generated)
+- **Blank projects:** name follows the `Untitled` / `Untitled N` convention — first instance is `Untitled`, subsequent ones are `Untitled 2`, `Untitled 3`, etc. (see Project Naming Convention below)
+- **Template projects:** name follows the same `<base>` / `<base> N` pattern, where `<base>` is the template's display name from `template.json:name` (e.g., "Data Curator", "Data Curator 2", "Data Curator 3")
 - Names can be changed via PATCH — the generated name is a default, not permanent
+- Names are trimmed (leading/trailing whitespace removed) and must be 1–80 characters after trimming
 - `GET /v1/projects/:id` returns the current name, reflecting any prior rename (no caching)
-- Name format is an implementation detail; the contract only guarantees a non-empty string
 
 ### Projects Track Last Access
 
@@ -234,6 +238,16 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 - `POST /projects {}` (no template) is a first-class creation path, not an error
 - Blank projects are scaffolded in-memory — no zip file, no disk lookup
 - The blank option never appears in `GET /templates` — it's the absence of a template, not a special one
+
+### Project Naming Convention
+
+- Both blank and template-based projects share a single count-based naming scheme
+- Pattern: `<base>` for the first project with that base name, then `<base> 2`, `<base> 3`, …
+- For blank projects, `<base>` is the literal string `"Untitled"`
+- For template projects, `<base>` is the template's display name (read from `template.json:name`, falling back to the templateId if missing or unparseable)
+- Count is computed as: (number of existing projects whose name exactly matches `<base>` or `<base> <integer>`) + 1
+- Counting is **count-based, not slot-based** — a number freed by a rename is not reused (e.g., renaming "Untitled 2" to "Custom" does not free up "2"; the next blank project becomes "Untitled 2" only because there is now only one Untitled-prefixed project, not because the slot reopened)
+- No LLM dependency for either path
 
 ### Templates Can Seed Initial Agent Messages
 
@@ -283,16 +297,16 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 | Unknown template  | 400  | `template` field provided but not recognized                                          |
 | Project not found | 404  | GET `/:id`, GET `/:id/tree`, or PATCH `/:id` for a nonexistent or non-UUID project ID |
 | Missing name      | 400  | PATCH without `name` field                                                            |
-| Empty name        | 400  | PATCH with `name: ""`                                                                 |
+| Empty name        | 400  | PATCH with `name: ""` or only whitespace (after trimming)                             |
+| Name too long     | 400  | PATCH with `name` exceeding 80 characters after trimming                              |
 
 ---
 
 ## Test Summary
 
-- **POST /projects**: 9 tests (2 with template, 2 blank, 1 error, 1 create/list consistency, 1 initialMessages from template, 1 initialMessages absent on blank, 1 create/get initialMessages consistency)
-- **GET /projects**: 5 tests (array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state)
-- **GET /projects/:id**: 10 tests (200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH)
-- **PATCH /projects/:id**: 6 tests (rename with lastAccessedAt bump, persistence, rename/list consistency, 404, missing name, empty name)
-- **GET /projects/:id/tree**: 3 tests (template project, blank project, nonexistent)
-- **Meta file integrity**: 5 tests (missing meta not fabricated on /:id; unparseable meta preserved on /:id, /:id/tree, /:id/file; PATCH rename recovers a corrupted project)
-- **Total**: 38 contract tests, 6 describe blocks
+- **POST /projects**: includes orgAlias resolution, blank-project Untitled-N numbering, template-flow `<TemplateName> N` numbering, name-persistence-across-list/retrieve, and initialMessages handling from templates.
+- **GET /projects**: array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state.
+- **GET /projects/:id**: 200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH.
+- **PATCH /projects/:id**: rename with lastAccessedAt bump, persistence, rename/list consistency, 404 for nonexistent, missing name, empty/whitespace name (400), >80-char name (400), exactly-80-char name (200), trim semantics.
+- **GET /projects/:id/tree**: template project, blank project, nonexistent.
+- **Meta file integrity**: missing meta not fabricated on /:id; unparseable meta preserved on /:id, /:id/tree, /:id/file; PATCH rename recovers a corrupted project.

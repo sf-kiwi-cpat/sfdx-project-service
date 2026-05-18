@@ -302,6 +302,129 @@ describe('Projects API', () => {
         expect(res.body.detail).toContain('unknown-alias');
       });
     });
+
+    describe('blank-project naming (Untitled N)', () => {
+      // Each test creates blank projects in an isolated PROJECTS_ROOT so the
+      // count-based numbering is deterministic and not polluted by other tests.
+      let isolatedDir: string;
+      let isolatedApp: ReturnType<typeof createApp>;
+      let originalRoot: string | undefined;
+
+      beforeEach(async () => {
+        isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'untitled-naming-'));
+        originalRoot = process.env.PROJECTS_ROOT;
+        process.env.PROJECTS_ROOT = isolatedDir;
+        isolatedApp = createApp();
+        await isolatedApp.ready();
+      });
+
+      afterEach(async () => {
+        await isolatedApp.close();
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      });
+
+      it('names the first blank project "Untitled"', async () => {
+        const res = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        expect(res.body.name).toBe('Untitled');
+      });
+
+      it('numbers subsequent blank projects: Untitled, Untitled 2, Untitled 3', async () => {
+        const r1 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        const r2 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        const r3 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        expect(r1.body.name).toBe('Untitled');
+        expect(r2.body.name).toBe('Untitled 2');
+        expect(r3.body.name).toBe('Untitled 3');
+      });
+
+      it('does not reuse a number after a project is renamed away from it', async () => {
+        const r1 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        const r2 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        // Rename Untitled 2 to something else; Untitled 2 is now free, but the
+        // count-based scheme should NOT reuse it — next blank is Untitled 2's
+        // successor by count, not by gap-fill.
+        await request(isolatedApp.server)
+          .patch(`/v1/projects/${r2.body.id}`)
+          .send({ name: 'Custom Name' })
+          .expect(200);
+        const r3 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        expect(r1.body.name).toBe('Untitled');
+        // Only one Untitled-prefixed project remains, so the next is Untitled 2
+        // (count-based, not slot-based). This is intentional simplicity.
+        expect(r3.body.name).toBe('Untitled 2');
+      });
+    });
+
+    describe('template-flow naming (TemplateName N)', () => {
+      let isolatedDir: string;
+      let isolatedApp: ReturnType<typeof createApp>;
+      let originalRoot: string | undefined;
+
+      beforeEach(async () => {
+        isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'template-naming-'));
+        originalRoot = process.env.PROJECTS_ROOT;
+        process.env.PROJECTS_ROOT = isolatedDir;
+        isolatedApp = createApp();
+        await isolatedApp.ready();
+      });
+
+      afterEach(async () => {
+        await isolatedApp.close();
+        process.env.PROJECTS_ROOT = originalRoot;
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      });
+
+      it('uses the template display name (from template.json:name) for the first instance', async () => {
+        const res = await request(isolatedApp.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+        // template.json declares { "name": "Data Curator" }
+        expect(res.body.name).toBe('Data Curator');
+      });
+
+      it(
+        'numbers subsequent template projects: TemplateName, TemplateName 2, TemplateName 3',
+        async () => {
+          const r1 = await request(isolatedApp.server)
+            .post('/v1/projects')
+            .send({ template: 'data-curator' })
+            .expect(201);
+          const r2 = await request(isolatedApp.server)
+            .post('/v1/projects')
+            .send({ template: 'data-curator' })
+            .expect(201);
+          const r3 = await request(isolatedApp.server)
+            .post('/v1/projects')
+            .send({ template: 'data-curator' })
+            .expect(201);
+          expect(r1.body.name).toBe('Data Curator');
+          expect(r2.body.name).toBe('Data Curator 2');
+          expect(r3.body.name).toBe('Data Curator 3');
+        },
+        // Template extraction copies a real React/Vite scaffold, which is heavy.
+        // Three sequential extractions can exceed the default 5s budget.
+        30000
+      );
+
+      it('names persist across project list and retrieve', async () => {
+        const createRes = await request(isolatedApp.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+        const createdName = createRes.body.name;
+
+        const listRes = await request(isolatedApp.server).get('/v1/projects').expect(200);
+        const listedProject = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+        expect(listedProject.name).toBe(createdName);
+
+        const getRes = await request(isolatedApp.server)
+          .get(`/v1/projects/${createRes.body.id}`)
+          .expect(200);
+        expect(getRes.body.name).toBe(createdName);
+      });
+    });
   });
 
   describe('GET /projects', () => {
@@ -637,6 +760,79 @@ describe('Projects API', () => {
         .expect(400);
 
       expect(res.body.status).toBe(400);
+    });
+
+    it('returns 400 when name is only whitespace (trimmed to empty)', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: '   \n\t   ' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
+    it('returns 400 when name exceeds 80 characters', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const longName = 'a'.repeat(81);
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: longName })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
+    it('returns 200 when name is exactly 80 characters', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const eightyCharName = 'a'.repeat(80);
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: eightyCharName })
+        .expect(200);
+
+      expect(res.body.name).toBe(eightyCharName);
+    });
+
+    it('trims leading and trailing whitespace from name', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: '  my-project-name  ' })
+        .expect(200);
+
+      expect(res.body.name).toBe('my-project-name');
+    });
+
+    it('persists trimmed name to metadata', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: '  trimmed-name  ' })
+        .expect(200);
+
+      const listRes = await request(app.server).get('/v1/projects').expect(200);
+      const project = listRes.body.find((p: { id: string }) => p.id === createRes.body.id);
+      expect(project.name).toBe('trimmed-name');
+    });
+
+    it('returns InvalidProjectNameError (400 Problem Detail) for invalid names', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: '' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.title).toMatch(/invalid|bad|name/i);
     });
   });
 
