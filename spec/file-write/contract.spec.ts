@@ -148,6 +148,16 @@ describe('PUT /v1/projects/:id/file', () => {
       expect(res.body.status).toBe(400);
     });
 
+    it('returns 400 when path points to an existing directory', async () => {
+      const res = await request(app.server)
+        .put(`/v1/projects/${projectId}/file`)
+        .send({ path: 'force-app', content: 'oops' })
+        .expect(400);
+
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.status).toBe(400);
+    });
+
     it('returns 400 for path traversal attempts', async () => {
       const res = await request(app.server)
         .put(`/v1/projects/${projectId}/file`)
