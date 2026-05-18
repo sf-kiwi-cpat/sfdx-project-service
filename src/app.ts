@@ -42,11 +42,16 @@ export function createApp() {
     // pre-built pino instances. Using `logger` with an instance throws
     // "logger options only accepts a configuration object" at runtime.
     loggerInstance: logger,
-    // Override @fastify/ajv-compiler defaults: `removeAdditional: true` would
-    // silently strip unknown properties before `additionalProperties: false`
-    // could reject them. Setting it to false lets schema validation surface
-    // typos and unsupported fields instead of hiding them.
-    ajv: { customOptions: { removeAdditional: false } },
+    // Override @fastify/ajv-compiler defaults:
+    // - `removeAdditional: true` would silently strip unknown properties
+    //   before `additionalProperties: false` could reject them.
+    // - `coerceTypes: 'array'` would silently coerce a JSON number to a
+    //   string when the schema declares `Type.String()`, masking type
+    //   errors at the wire boundary (e.g. `{ content: 123 }` becomes
+    //   `{ content: "123" }` and slips through validation).
+    // Disable both so schema validation surfaces typos, unsupported
+    // fields, and type mismatches instead of hiding them.
+    ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
     // Default formatter produces "body must NOT have additional properties"
     // without naming the offending key. Callers need the property name to
     // identify the typo — append it when the keyword is additionalProperties.

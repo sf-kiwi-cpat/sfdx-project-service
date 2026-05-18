@@ -19,12 +19,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getProjectPath } from '../config.js';
 import {
+  EmptyPathError,
   FileNotFoundError,
   MAX_PATH_LENGTH,
   NotAFileError,
   PathTooLongError,
   PathTraversalError,
   RestrictedPathError,
+  SymlinkEscapeError,
 } from '../errors.js';
 
 export interface TreeNode {
@@ -140,13 +142,71 @@ export async function readFile(queryPath: string, projectRoot?: string): Promise
 
 /**
  * Write file contents. Auto-creates parent directories.
+ *
+ * Three guards run before the write:
+ *
+ *  1. **Empty path** — `resolveProjectPath('')` resolves to the project root
+ *     (a directory), which would surface as `EISDIR` from `fs.writeFile`.
+ *     Reject explicitly so the contract (`POST {path: ''}` → 400) doesn't
+ *     depend on a coincidence of error mappings.
+ *  2. **Existing directory** — stat the target; if it's already a directory,
+ *     reject with `NotAFileError`. The lexical resolver doesn't catch this.
+ *  3. **Symlink escape** — `path.resolve` is purely lexical, so a symlink
+ *     planted inside the project that points outside passes the resolver
+ *     and `fs.writeFile` then follows it. Realpath the deepest existing
+ *     prefix of the absolute target and verify it stays inside the project.
+ *
+ * Must be the same project root used to resolve `queryPath` — otherwise the
+ * containment check is meaningless.
  */
 export async function writeFile(
   queryPath: string,
   content: string,
   projectRoot?: string
 ): Promise<void> {
+  if (queryPath.length === 0) {
+    throw new EmptyPathError();
+  }
+
   const { absolute } = resolveProjectPath(queryPath, projectRoot);
+  const baseProjectPath = path.resolve(projectRoot ?? getProjectPath());
+  // macOS-style /tmp → /private/tmp links mean the lexical projectRoot and
+  // its realpath differ. Compare realpath-to-realpath so a benign symlinked
+  // tempdir doesn't look like an escape.
+  const realProjectPath = await fs.realpath(baseProjectPath);
+
+  // (2) Reject writes that would target an existing directory.
+  try {
+    const stat = await fs.lstat(absolute);
+    if (stat.isDirectory()) {
+      throw new NotAFileError(queryPath);
+    }
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException;
+    if (nodeErr?.code !== 'ENOENT') throw err;
+    // Target doesn't exist — that's fine, we're creating a new file.
+  }
+
+  // (3) Walk up from the target to the deepest existing prefix and realpath
+  // it. If the realpath escapes the project root, a symlink ancestor is
+  // pointing outside — reject without touching anything.
+  let probe = absolute;
+  while (probe !== path.dirname(probe)) {
+    try {
+      const real = await fs.realpath(probe);
+      const relativeReal = path.relative(realProjectPath, real);
+      if (relativeReal.startsWith('..') || path.isAbsolute(relativeReal)) {
+        throw new SymlinkEscapeError(queryPath);
+      }
+      break;
+    } catch (err) {
+      const nodeErr = err as NodeJS.ErrnoException;
+      if (nodeErr?.code !== 'ENOENT') throw err;
+      // This level doesn't exist yet; keep walking up.
+      probe = path.dirname(probe);
+    }
+  }
+
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   await fs.writeFile(absolute, content, 'utf-8');
 }

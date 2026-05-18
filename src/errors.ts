@@ -128,6 +128,27 @@ export class PathTooLongError extends Error {
   }
 }
 
+/** Thrown when an operation requires a non-empty path. */
+export class EmptyPathError extends Error {
+  constructor() {
+    super('Path must not be empty');
+    this.name = 'EmptyPathError';
+  }
+}
+
+/**
+ * Thrown when a write target's resolved real path escapes the project root,
+ * typically because the target itself or one of its ancestors is a symlink
+ * pointing outside. `path.resolve` is purely lexical, so symlink-following
+ * checks must happen with `realpath`/`lstat` before any write.
+ */
+export class SymlinkEscapeError extends Error {
+  constructor(queryPath: string) {
+    super(`Path resolves through a symlink that escapes the project root: ${queryPath}`);
+    this.name = 'SymlinkEscapeError';
+  }
+}
+
 /**
  * Map thrown errors to HTTP problem details.
  */
@@ -157,6 +178,12 @@ export function errorToProblem(err: unknown): ProblemDetail {
     return problemDetail(400, 'Bad Request', err.message);
   }
   if (err instanceof PathTooLongError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof EmptyPathError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
+  if (err instanceof SymlinkEscapeError) {
     return problemDetail(400, 'Bad Request', err.message);
   }
   if (err instanceof BuildError) {
@@ -190,6 +217,9 @@ export function errorToProblem(err: unknown): ProblemDetail {
   }
   if (nodeErr?.code === 'ENAMETOOLONG') {
     return problemDetail(400, 'Bad Request', 'Path is too long');
+  }
+  if (nodeErr?.code === 'EISDIR') {
+    return problemDetail(400, 'Bad Request', 'Path refers to a directory, not a file');
   }
 
   // Forward err.message only for plain Errors (not ErrnoException).
