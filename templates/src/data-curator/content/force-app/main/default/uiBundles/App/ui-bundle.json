@@ -1,5 +1,4 @@
 {
-  "name": "data-curator",
   "outputDir": "dist",
   "routing": {
     "trailingSlash": "never",
