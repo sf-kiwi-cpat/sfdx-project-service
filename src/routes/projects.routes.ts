@@ -21,6 +21,7 @@ import { buildTree, readFile, writeFile } from '../domain/files.js';
 import {
   createBlankProject,
   createProject,
+  deleteProject,
   getProject,
   getProjectDir,
   listProjects,
@@ -231,6 +232,37 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
       const result = await renameProject(id, name);
       return reply.send(result);
+    }
+  );
+
+  app.delete(
+    '/projects/:id',
+    {
+      schema: {
+        summary: 'Delete a project',
+        description:
+          "Removes the project's directory from disk. No org-side cleanup — any " +
+          'metadata previously deployed to a linked Salesforce org remains in ' +
+          'the org.',
+        tags: ['Projects'],
+        params: Type.Object({
+          id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+        }),
+        response: {
+          204: {
+            description: 'The project was deleted. The response body is empty.',
+            type: 'null',
+          },
+          404: problemJsonResponse(
+            'No project exists with the supplied id, or the id is not a valid project identifier.'
+          ),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      await deleteProject(id);
+      return reply.status(204).send();
     }
   );
 

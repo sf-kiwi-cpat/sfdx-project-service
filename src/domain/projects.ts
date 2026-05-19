@@ -386,6 +386,20 @@ export async function renameProject(projectId: string, name: string): Promise<Pr
 }
 
 /**
+ * Delete a project's directory from disk. Throws ProjectNotFoundError if the
+ * id is not a UUID, the directory does not exist, or the path does not point
+ * at a directory. No org-side cleanup — this only touches local disk.
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  const projectDir = await getProjectDir(projectId);
+  // force: false so a dir that disappeared between the existence check above
+  // and this rm still surfaces ENOENT — letting a concurrent second DELETE
+  // return 404 instead of silently succeeding.
+  await fs.rm(projectDir, { recursive: true, force: false });
+  logger.info({ projectId }, 'Project deleted');
+}
+
+/**
  * Get the absolute path for a project directory. Throws if it doesn't exist.
  */
 export async function getProjectDir(projectId: string): Promise<string> {
