@@ -17,7 +17,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { buildTree, readFile } from '../domain/files.js';
+import { buildTree, readFile, writeFile } from '../domain/files.js';
 import {
   createBlankProject,
   createProject,
@@ -281,6 +281,59 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       await updateLastAccessed(projectDir);
       const content = await readFile(path, projectDir);
       return reply.type('text/plain').send(content);
+    }
+  );
+
+  app.put(
+    '/projects/:id/file',
+    {
+      schema: {
+        summary: 'Write a project file',
+        description:
+          'Replaces the contents of a file inside the project, or creates it ' +
+          'if missing. Parent directories are auto-created. Path traversal, ' +
+          'restricted paths (`.git/`, `.sf/`, `node_modules/`, dotfiles), ' +
+          'directory targets, and symlinks that escape the project root all ' +
+          'return 400.',
+        tags: ['Projects'],
+        params: Type.Object({
+          id: Type.String({ description: 'Project identifier returned by create/list endpoints.' }),
+        }),
+        body: Type.Object(
+          {
+            path: Type.String({
+              minLength: 1,
+              description:
+                'File path relative to the project root. Must not traverse outside the project (`..`).',
+            }),
+            content: Type.String({
+              description: 'New file contents as a UTF-8 string.',
+            }),
+          },
+          { additionalProperties: false }
+        ),
+        response: {
+          // 204 has no body — declare the schema as null so Fastify's serializer
+          // doesn't try to coerce one. The route's `reply.status(204).send()`
+          // satisfies the typing, and OpenAPI gets a documented "no content".
+          204: Type.Null({ description: 'File written successfully.' }),
+          400: problemJsonResponse(
+            'The path is missing, exceeds the maximum length, traverses outside ' +
+              'the project root, resolves to a restricted path, refers to an ' +
+              'existing directory, or traverses a symlink that escapes the ' +
+              'project root; or the body is malformed.'
+          ),
+          404: problemJsonResponse('No project exists with the supplied id.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { path, content } = request.body as { path: string; content: string };
+      const projectDir = await getProjectDir(id);
+      await updateLastAccessed(projectDir);
+      await writeFile(path, content, projectDir);
+      return reply.status(204).send();
     }
   );
 
