@@ -241,12 +241,13 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 
 ### Project Naming Convention
 
-- Both blank and template-based projects share a single count-based naming scheme
+- Both blank and template-based projects share a single max-based naming scheme
 - Pattern: `<base>` for the first project with that base name, then `<base> 2`, `<base> 3`, …
 - For blank projects, `<base>` is the literal string `"Untitled"`
 - For template projects, `<base>` is the template's display name (read from `template.json:name`, falling back to the templateId if missing or unparseable)
-- Count is computed as: (number of existing projects whose name exactly matches `<base>` or `<base> <integer>`) + 1
-- Counting is **count-based, not slot-based** — a number freed by a rename is not reused (e.g., renaming "Untitled 2" to "Custom" does not free up "2"; the next blank project becomes "Untitled 2" only because there is now only one Untitled-prefixed project, not because the slot reopened)
+- Naming rule: take the **maximum N** among existing projects matching `<base>` (treated as N=1) or `<base> N`, and return `<base> ${N+1}` (or just `<base>` if no match exists)
+- Gap slots are intentionally **not** reused — for example, renaming "Untitled 2" away from a `{Untitled, Untitled 2, Untitled 3}` set does not free up the "2" slot; the next blank project is "Untitled 4" because the max remaining N is 3
+- This avoids two failure modes the alternative count-based scheme had: (1) collisions when a middle slot is renamed (count + 1 can equal an in-use N), and (2) the race where two concurrent creates both pick the same gap
 - No LLM dependency for either path
 
 ### Templates Can Seed Initial Agent Messages

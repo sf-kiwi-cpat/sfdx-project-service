@@ -51,20 +51,31 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Generate a project name in the pattern "<base>" or "<base> N" where N is
- * the next available count among existing projects (count of matches + 1).
+ * Generate a project name in the pattern "<base>" or "<base> N".
+ *
+ * Picks the smallest N strictly greater than the highest existing N among
+ * `<base>` (treated as N=1) and `<base> N`. Gap slots between 1 and the
+ * max are intentionally not reused — that's the simpler invariant and
+ * avoids the alternative race where two concurrent creates pick the same
+ * gap. Critically, this also rules out collisions: counting matches and
+ * adding 1 (the prior approach) returns N=3 when {Untitled, Untitled 3}
+ * exist, colliding with the existing Untitled 3.
  *
  * Used both for blank projects (base = "Untitled") and template-flow
  * projects (base = template's display name).
  */
 async function generateProjectName(base: string): Promise<string> {
   const projects = await listProjects();
-  const pattern = new RegExp(`^${escapeRegExp(base)}(\\s+\\d+)?$`);
-  const matches = projects.filter((p) => pattern.test(p.name));
-  if (matches.length === 0) {
-    return base;
+  const pattern = new RegExp(`^${escapeRegExp(base)}(?:\\s+(\\d+))?$`);
+  let maxN = 0;
+  for (const p of projects) {
+    const m = pattern.exec(p.name);
+    if (!m) continue;
+    const n = m[1] ? Number(m[1]) : 1;
+    if (n > maxN) maxN = n;
   }
-  return `${base} ${matches.length + 1}`;
+  if (maxN === 0) return base;
+  return `${base} ${maxN + 1}`;
 }
 
 async function templateDisplayName(templateId: string): Promise<string> {

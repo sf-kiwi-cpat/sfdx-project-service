@@ -338,21 +338,44 @@ describe('Projects API', () => {
         expect(r3.body.name).toBe('Untitled 3');
       });
 
-      it('does not reuse a number after a project is renamed away from it', async () => {
+      it('does not reuse a freed gap when the highest N also moved', async () => {
+        // After {Untitled} the only highest-N is N=1, so the next blank is
+        // Untitled 2 — same outcome as a fresh second create. Renaming the
+        // second project away from "Untitled 2" leaves only "Untitled", so
+        // maxN = 1, next = "Untitled 2".
         const r1 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
         const r2 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
-        // Rename Untitled 2 to something else; Untitled 2 is now free, but the
-        // count-based scheme should NOT reuse it — next blank is Untitled 2's
-        // successor by count, not by gap-fill.
         await request(isolatedApp.server)
           .patch(`/v1/projects/${r2.body.id}`)
           .send({ name: 'Custom Name' })
           .expect(200);
         const r3 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
         expect(r1.body.name).toBe('Untitled');
-        // Only one Untitled-prefixed project remains, so the next is Untitled 2
-        // (count-based, not slot-based). This is intentional simplicity.
         expect(r3.body.name).toBe('Untitled 2');
+      });
+
+      it('never reuses an in-use number when a middle slot was renamed away', async () => {
+        // Regression test: under "count of matches + 1" naming, this scenario
+        // produced a collision. After {Untitled, Untitled 3} (because Untitled
+        // 2 was renamed), count=2 + 1 = 3 → "Untitled 3" already exists.
+        // The max-based scheme returns "Untitled 4" instead.
+        const r1 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        const r2 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+        await request(isolatedApp.server)
+          .patch(`/v1/projects/${r2.body.id}`)
+          .send({ name: 'My App' })
+          .expect(200);
+
+        const r4 = await request(isolatedApp.server).post('/v1/projects').send({}).expect(201);
+
+        expect(r1.body.name).toBe('Untitled');
+        // Highest existing N is 3 (Untitled 3 still exists), so next is 4 — not 3.
+        expect(r4.body.name).toBe('Untitled 4');
+        // And critically: the new name does not collide with any existing project.
+        const all = await request(isolatedApp.server).get('/v1/projects').expect(200);
+        const names: string[] = all.body.map((p: { name: string }) => p.name);
+        expect(new Set(names).size).toBe(names.length);
       });
     });
 
@@ -384,29 +407,25 @@ describe('Projects API', () => {
         expect(res.body.name).toBe('Data Curator');
       });
 
-      it(
-        'numbers subsequent template projects: TemplateName, TemplateName 2, TemplateName 3',
-        async () => {
-          const r1 = await request(isolatedApp.server)
-            .post('/v1/projects')
-            .send({ template: 'data-curator' })
-            .expect(201);
-          const r2 = await request(isolatedApp.server)
-            .post('/v1/projects')
-            .send({ template: 'data-curator' })
-            .expect(201);
-          const r3 = await request(isolatedApp.server)
-            .post('/v1/projects')
-            .send({ template: 'data-curator' })
-            .expect(201);
-          expect(r1.body.name).toBe('Data Curator');
-          expect(r2.body.name).toBe('Data Curator 2');
-          expect(r3.body.name).toBe('Data Curator 3');
-        },
-        // Template extraction copies a real React/Vite scaffold, which is heavy.
-        // Three sequential extractions can exceed the default 5s budget.
-        30000
-      );
+      it('numbers subsequent template projects: TemplateName, TemplateName 2, TemplateName 3', async () => {
+        const r1 = await request(isolatedApp.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+        const r2 = await request(isolatedApp.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+        const r3 = await request(isolatedApp.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+        expect(r1.body.name).toBe('Data Curator');
+        expect(r2.body.name).toBe('Data Curator 2');
+        expect(r3.body.name).toBe('Data Curator 3');
+      }, // Template extraction copies a real React/Vite scaffold, which is heavy.
+      // Three sequential extractions can exceed the default 5s budget.
+      30000);
 
       it('names persist across project list and retrieve', async () => {
         const createRes = await request(isolatedApp.server)

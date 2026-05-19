@@ -133,13 +133,16 @@ describe('createProject', () => {
       expect(c.name).toBe('Untitled 3');
     });
 
-    it('does not reuse a number after a project is renamed away from it', async () => {
+    it('does not collide with an existing numbered slot after a middle rename', async () => {
+      // {Untitled, Untitled 2, Untitled 3} → rename Untitled 2 → {Untitled, Untitled 3}.
+      // Naive "count + 1" returns 3, colliding. Max + 1 returns 4.
       const a = await createBlankProject();
       const b = await createBlankProject();
-      await renameProject(b.id, 'Custom Name');
-      const c = await createBlankProject();
+      await createBlankProject();
+      await renameProject(b.id, 'My App');
+      const d = await createBlankProject();
       expect(a.name).toBe('Untitled');
-      expect(c.name).toBe('Untitled 2');
+      expect(d.name).toBe('Untitled 4');
     });
 
     it('creates sfdx-project.json with packageDirectories', async () => {
