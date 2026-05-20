@@ -24,6 +24,7 @@ import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
 import { resolveAlias, writeProjectTargetOrg } from './auth.js';
+import { watcherManager } from './watcher.js';
 
 const ADJECTIVES = [
   'brave',
@@ -392,6 +393,14 @@ export async function renameProject(projectId: string, name: string): Promise<Pr
  */
 export async function deleteProject(projectId: string): Promise<void> {
   const projectDir = await getProjectDir(projectId);
+  // Close any active fs-events SSE subscribers and tear down the per-project
+  // chokidar watcher BEFORE removing the directory. Doing this first means:
+  //   - Connected clients see the stream end as part of DELETE's lifetime,
+  //     not after a delay.
+  //   - chokidar doesn't fire a flurry of `unlink` events from the rm we're
+  //     about to do (the watcher is already gone).
+  // No-op if no watcher exists for this project.
+  await watcherManager.closeForProject(projectId);
   // force: false so a dir that disappeared between the existence check above
   // and this rm still surfaces ENOENT — letting a concurrent second DELETE
   // return 404 instead of silently succeeding.
