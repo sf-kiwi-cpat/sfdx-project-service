@@ -24,7 +24,7 @@ Starts with a letter, alphanumeric or underscore otherwise, ≤80 characters.
 ### 2. Uniqueness across projects
 Two distinct projects created from the same template have **different** UIBundle DeveloperNames. For templates that also ship a CustomApplication (e.g. `data-curator`), two distinct projects also have **different** CustomApplication DeveloperNames.
 
-This prevents collisions on shared orgs across every singular-shipped metadata kind.
+This prevents collisions on shared orgs across every singular-shipped metadata kind. The contract is asserted against both shipped templates that contain a UIBundle (`data-curator`, `local-react-test`) so the implementation cannot be silently special-cased to one template.
 
 ### 3. Idempotency for a single project
 Rebuilding the same project does **not** change its UIBundle DeveloperName, and does **not** change its CustomApplication DeveloperName (when present). Otherwise each redeploy creates an orphaned component in the org.
@@ -40,6 +40,7 @@ The `appUrl` returned in the deployment-complete event is built from the deploye
 - **Generation strategy.** Implementations may use a hash, a random suffix, a template-stamped opaque token, an adjective-noun combo, or any other scheme — as long as the invariants hold. A natural choice is a single per-project token (e.g. `_8f3a2c1b`) suffixed onto every singular-shipped component name (so UIBundle becomes `App_8f3a2c1b` and CustomApplication becomes `Data_Curator_8f3a2c1b`), but the spec does not require this specific approach.
 - **Where uniqueness state is persisted.** A reasonable implementation persists the chosen DeveloperName(s) in `.project-meta.json` so rebuilds are idempotent; the spec does not require this specific location.
 - **Migration of pre-existing on-disk projects.** Projects created before this contract ships are implementation freedom: they may keep the legacy literal names, be lazily renamed on first build, or be eagerly migrated. Tests cover newly-created projects only.
+- **Blank projects.** `POST /v1/projects` without a `template` argument creates a project that ships no UIBundle (and no CustomApplication). No naming invariant applies.
 - **Human-readable labels.** The `<masterLabel>` inside `*.uibundle-meta.xml` and the `<label>` inside `*.app-meta.xml` are user-facing display names and are not pinned by this contract.
 
 ## Test Surface
@@ -51,8 +52,13 @@ The spec drives all assertions through the public HTTP surface:
 
 Tests discover the bundle directory and CustomApplication file via `fs.readdir` rather than asserting any literal path. This keeps the spec flexible — any future change to the generation scheme is implementation-only.
 
+## Notes for reviewers
+
+- The two idempotency assertions pass vacuously on today's code (today's hardcoded names already don't change between builds). They function as **regression guards** during implementation, not as drivers of code change. The uniqueness tests are the assertions that fail red.
+- All assertions are reachable through the public HTTP surface; no private helpers, no fixture mutation. An implementation that uniquifies names anywhere in the project-creation pipeline satisfies this spec.
+
 ## Summary
 
 - 1 describe block: `per-project unique App (UIBundle) DeveloperName`
-- 3 nested describes: `on-disk bundle name (DeveloperName format)` (3 tests), `uniqueness across projects` (2 tests), `idempotency for a single project` (2 tests)
-- **7 tests total**
+- 3 nested describes: `on-disk bundle name (DeveloperName format)` (3 tests), `uniqueness across projects` (3 tests), `idempotency for a single project` (2 tests)
+- **8 tests total**

@@ -61,6 +61,14 @@
  *     created after this change ships).
  *   - Multi-bundle templates (no template ships more than one UIBundle
  *     today; if/when one does, this contract may need extension).
+ *   - Blank projects (POST /v1/projects with no template). They ship
+ *     no UIBundle, so no naming invariant applies.
+ *
+ * Note on idempotency tests: the two idempotency assertions pass
+ * vacuously today — today's hardcoded names already don't change
+ * between builds. They function as regression guards once the
+ * implementation lands, not as contract drivers. Only the uniqueness
+ * tests (it.todo) are red against current code.
  *
  * Mock boundary: same as `spec/react-deploy/contract.spec.ts` — vite,
  * @salesforce/core, SDR are mocked. Filesystem and Fastify are real.
@@ -311,6 +319,30 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
         expect(appA).toMatch(DEVELOPER_NAME_PATTERN);
         expect(appB).toMatch(DEVELOPER_NAME_PATTERN);
         expect(appA).not.toBe(appB);
+      }
+    );
+
+    // Second template ensures the implementation isn't special-cased
+    // to data-curator. local-react-test ALSO ships uiBundles/App/, so
+    // an implementation that only uniquifies data-curator would pass
+    // the test above but still collide for local-react-test users.
+    it.todo(
+      'two projects from local-react-test have different UIBundle DeveloperNames',
+      { timeout: 30_000 },
+      async () => {
+        const a = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'local-react-test' })
+          .expect(201);
+        const b = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'local-react-test' })
+          .expect(201);
+
+        const nameA = await findBundleDir(path.join(tmpDir, a.body.id));
+        const nameB = await findBundleDir(path.join(tmpDir, b.body.id));
+
+        expect(nameA).not.toBe(nameB);
       }
     );
   });
