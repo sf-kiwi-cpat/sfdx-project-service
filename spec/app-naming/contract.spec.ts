@@ -67,8 +67,7 @@
  * Note on idempotency tests: the two idempotency assertions pass
  * vacuously today — today's hardcoded names already don't change
  * between builds. They function as regression guards once the
- * implementation lands, not as contract drivers. Only the uniqueness
- * tests (it.todo) are red against current code.
+ * implementation lands, not as contract drivers.
  *
  * Mock boundary: same as `spec/react-deploy/contract.spec.ts` — vite,
  * @salesforce/core, SDR are mocked. Filesystem and Fastify are real.
@@ -277,11 +276,7 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
     // /v1/projects → unzip + write hundreds of files), so the default
     // 5s vitest timeout is too tight. 30s gives comfortable headroom on
     // loaded CI without hiding genuine hangs.
-    // it.todo until /cdd-implement satisfies it. The assertion body is
-    // intact so reviewers can read the intent. Today this fails because
-    // every project gets the literal `App` — that's exactly the bug
-    // this work fixes. Implementation will switch this back to `it`.
-    it.todo(
+    it(
       'two projects from the same template have different UIBundle DeveloperNames',
       { timeout: 30_000 },
       async () => {
@@ -304,9 +299,7 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
       }
     );
 
-    // it.todo until /cdd-implement satisfies it. Today this fails
-    // because every data-curator project gets `Data_Curator`.
-    it.todo(
+    it(
       'two projects from a template that ships a CustomApplication have different CustomApplication names',
       { timeout: 30_000 },
       async () => {
@@ -342,7 +335,7 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
     // to data-curator. local-react-test ALSO ships uiBundles/App/, so
     // an implementation that only uniquifies data-curator would pass
     // the test above but still collide for local-react-test users.
-    it.todo(
+    it(
       'two projects from local-react-test have different UIBundle DeveloperNames',
       { timeout: 30_000 },
       async () => {
