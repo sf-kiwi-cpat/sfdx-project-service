@@ -150,10 +150,21 @@ describe('POST /v1/projects/:id/deployments with Vite build step', () => {
       expect(res.body.deploymentId).toMatch(/^deploy_/);
       expect(res.body.status).toBe('Queued');
 
-      // Wait for async pipeline to complete, then verify build ran
+      // Wait for async pipeline to complete, then verify build ran with
+      // outDir pointing at the project's UIBundle dist/ directory.
+      // The bundle directory name is implementation freedom (see
+      // spec/app-naming) — assert SHAPE, not literal value.
       const { deploymentId } = res.body;
       await getDeploymentPollPromise(deploymentId);
-      expect(mockViteBuild).toHaveBeenCalled();
+      expect(mockViteBuild).toHaveBeenCalledWith(
+        expect.objectContaining({
+          build: expect.objectContaining({
+            outDir: expect.stringMatching(
+              /force-app\/main\/default\/uiBundles\/[A-Za-z][A-Za-z0-9_]{0,79}\/dist$/
+            ),
+          }),
+        })
+      );
     });
 
     it('build fails → 202 Accepted, deployment result contains build error', async () => {

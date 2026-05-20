@@ -49,7 +49,7 @@ The service scans the project directory for `.tsx` or `.jsx` files. If any are f
 ### Execution
 Build uses the Vite programmatic API (`vite.build()`). The service provides the build configuration:
 - **Entry:** `index.html` at project root
-- **Output:** `force-app/main/default/uiBundles/App/dist/`
+- **Output:** `force-app/main/default/uiBundles/<bundle-dir>/dist/`, where `<bundle-dir>` is the project's UIBundle directory (per-project unique DeveloperName — see [`spec/app-naming/contract.md`](../app-naming/contract.md))
 - **Timeout:** 5 minutes (300,000 ms)
 - **Concurrency:** per-project lock prevents duplicate builds; concurrent requests coalesce
 
@@ -57,7 +57,7 @@ Build uses the Vite programmatic API (`vite.build()`). The service provides the 
 Build is skipped (deployment proceeds directly) when no `.tsx` or `.jsx` files exist. This covers metadata-only SFDX projects.
 
 ### Build Output
-Vite outputs compiled assets to `force-app/main/default/uiBundles/App/dist/`. The `uibundle.json` declares `outputDir: "dist"`. SDR picks up the `UIBundle` metadata for deployment to Salesforce.
+Vite outputs compiled assets to `force-app/main/default/uiBundles/<bundle-dir>/dist/`. The `uibundle.json` declares `outputDir: "dist"`. SDR picks up the `UIBundle` metadata for deployment to Salesforce.
 
 ### Timeout Cleanup
 If the build exceeds 5 minutes, the output directory is cleaned up to prevent stale artifacts from being deployed by a subsequent attempt.
@@ -96,7 +96,7 @@ POST /v1/projects/{id}/deployments  body: { "orgAlias": "my-scratch" }
   ├─ Returns 202 Accepted + deploymentId
   │  [async pipeline]
   ├─ Project contains src/App.tsx
-  ├─ vite.build() succeeds → assets in uiBundles/App/dist/
+  ├─ vite.build() succeeds → assets in uiBundles/<bundle-dir>/dist/
   ├─ SDR deploys metadata
   └─ Deployment result: Succeeded
 ```
