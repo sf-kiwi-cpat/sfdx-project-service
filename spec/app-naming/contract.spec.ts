@@ -210,50 +210,66 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
   });
 
   describe('on-disk bundle name (DeveloperName format)', () => {
-    it('a newly-created project has exactly one UIBundle directory', async () => {
-      // The contract is single-bundle today — multi-bundle is out of scope.
-      const res = await request(app.server)
-        .post('/v1/projects')
-        .send({ template: 'data-curator' })
-        .expect(201);
+    // Each test here POSTs a fresh project, which extracts the
+    // data-curator template (unzip + write hundreds of files). The
+    // default 5s vitest timeout is too tight on loaded CI runners;
+    // 30s gives headroom without hiding genuine hangs.
+    it(
+      'a newly-created project has exactly one UIBundle directory',
+      { timeout: 30_000 },
+      async () => {
+        // The contract is single-bundle today — multi-bundle is out of scope.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
 
-      const projectDir = path.join(tmpDir, res.body.id);
-      const uiBundlesRoot = path.join(projectDir, UI_BUNDLES_REL_PATH);
-      const entries = await fs.readdir(uiBundlesRoot);
+        const projectDir = path.join(tmpDir, res.body.id);
+        const uiBundlesRoot = path.join(projectDir, UI_BUNDLES_REL_PATH);
+        const entries = await fs.readdir(uiBundlesRoot);
 
-      expect(entries).toHaveLength(1);
-    });
+        expect(entries).toHaveLength(1);
+      }
+    );
 
-    it('the bundle directory name is a valid Salesforce DeveloperName', async () => {
-      // Format invariant: alphanumeric+underscore, starts with a letter,
-      // max 80 chars. This is the constraint Salesforce enforces server-side.
-      const res = await request(app.server)
-        .post('/v1/projects')
-        .send({ template: 'data-curator' })
-        .expect(201);
+    it(
+      'the bundle directory name is a valid Salesforce DeveloperName',
+      { timeout: 30_000 },
+      async () => {
+        // Format invariant: alphanumeric+underscore, starts with a letter,
+        // max 80 chars. This is the constraint Salesforce enforces server-side.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
 
-      const projectDir = path.join(tmpDir, res.body.id);
-      const bundleName = await findBundleDir(projectDir);
+        const projectDir = path.join(tmpDir, res.body.id);
+        const bundleName = await findBundleDir(projectDir);
 
-      expect(bundleName).toMatch(DEVELOPER_NAME_PATTERN);
-    });
+        expect(bundleName).toMatch(DEVELOPER_NAME_PATTERN);
+      }
+    );
 
-    it('the bundle metadata file is named <bundleName>.uibundle-meta.xml', async () => {
-      // The meta filename and the directory name must agree — Salesforce
-      // derives `fullName` from the meta filename, and the directory name
-      // is what surfaces in error messages.
-      const res = await request(app.server)
-        .post('/v1/projects')
-        .send({ template: 'data-curator' })
-        .expect(201);
+    it(
+      'the bundle metadata file is named <bundleName>.uibundle-meta.xml',
+      { timeout: 30_000 },
+      async () => {
+        // The meta filename and the directory name must agree — Salesforce
+        // derives `fullName` from the meta filename, and the directory name
+        // is what surfaces in error messages.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
 
-      const projectDir = path.join(tmpDir, res.body.id);
-      const bundleName = await findBundleDir(projectDir);
-      const bundleDir = path.join(projectDir, UI_BUNDLES_REL_PATH, bundleName);
+        const projectDir = path.join(tmpDir, res.body.id);
+        const bundleName = await findBundleDir(projectDir);
+        const bundleDir = path.join(projectDir, UI_BUNDLES_REL_PATH, bundleName);
 
-      const metaFile = path.join(bundleDir, `${bundleName}.uibundle-meta.xml`);
-      await expect(fs.stat(metaFile)).resolves.toBeDefined();
-    });
+        const metaFile = path.join(bundleDir, `${bundleName}.uibundle-meta.xml`);
+        await expect(fs.stat(metaFile)).resolves.toBeDefined();
+      }
+    );
   });
 
   describe('uniqueness across projects', () => {
@@ -348,48 +364,59 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
   });
 
   describe('idempotency for a single project', () => {
-    it('rebuilding the same project does not change the UIBundle DeveloperName', async () => {
-      // Idempotency invariant: the bundle name is project-stable, not
-      // build-time-random. Otherwise every redeploy creates a new orphaned
-      // bundle in the org.
-      const res = await request(app.server)
-        .post('/v1/projects')
-        .send({ template: 'data-curator' })
-        .expect(201);
+    // Each test extracts data-curator AND runs through the deploy
+    // pipeline (mocked SDR + mocked vite, but real fs + Fastify).
+    // Same 30s budget rationale as the format/uniqueness blocks.
+    it(
+      'rebuilding the same project does not change the UIBundle DeveloperName',
+      { timeout: 30_000 },
+      async () => {
+        // Idempotency invariant: the bundle name is project-stable, not
+        // build-time-random. Otherwise every redeploy creates a new orphaned
+        // bundle in the org.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
 
-      const projectDir = path.join(tmpDir, res.body.id);
-      const nameBefore = await findBundleDir(projectDir);
+        const projectDir = path.join(tmpDir, res.body.id);
+        const nameBefore = await findBundleDir(projectDir);
 
-      // Trigger a deploy (which runs the build pipeline).
-      const deployRes = await request(app.server)
-        .post(`/v1/projects/${res.body.id}/deployments`)
-        .send({ orgAlias: TEST_ORG_ALIAS })
-        .expect(202);
-      await getDeploymentPollPromise(deployRes.body.deploymentId);
+        // Trigger a deploy (which runs the build pipeline).
+        const deployRes = await request(app.server)
+          .post(`/v1/projects/${res.body.id}/deployments`)
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(202);
+        await getDeploymentPollPromise(deployRes.body.deploymentId);
 
-      const nameAfter = await findBundleDir(projectDir);
-      expect(nameAfter).toBe(nameBefore);
-    });
+        const nameAfter = await findBundleDir(projectDir);
+        expect(nameAfter).toBe(nameBefore);
+      }
+    );
 
-    it('rebuilding the same project does not change the CustomApplication DeveloperName', async () => {
-      const res = await request(app.server)
-        .post('/v1/projects')
-        .send({ template: 'data-curator' })
-        .expect(201);
+    it(
+      'rebuilding the same project does not change the CustomApplication DeveloperName',
+      { timeout: 30_000 },
+      async () => {
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
 
-      const projectDir = path.join(tmpDir, res.body.id);
-      const nameBefore = await findCustomApplicationName(projectDir);
-      expect(nameBefore).toBeDefined();
+        const projectDir = path.join(tmpDir, res.body.id);
+        const nameBefore = await findCustomApplicationName(projectDir);
+        expect(nameBefore).toBeDefined();
 
-      const deployRes = await request(app.server)
-        .post(`/v1/projects/${res.body.id}/deployments`)
-        .send({ orgAlias: TEST_ORG_ALIAS })
-        .expect(202);
-      await getDeploymentPollPromise(deployRes.body.deploymentId);
+        const deployRes = await request(app.server)
+          .post(`/v1/projects/${res.body.id}/deployments`)
+          .send({ orgAlias: TEST_ORG_ALIAS })
+          .expect(202);
+        await getDeploymentPollPromise(deployRes.body.deploymentId);
 
-      const nameAfter = await findCustomApplicationName(projectDir);
-      expect(nameAfter).toBe(nameBefore);
-    });
+        const nameAfter = await findCustomApplicationName(projectDir);
+        expect(nameAfter).toBe(nameBefore);
+      }
+    );
   });
 
   // appUrl shape is pinned by `spec/deploy/contract.spec.ts` already
