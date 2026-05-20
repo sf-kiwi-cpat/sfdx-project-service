@@ -398,6 +398,8 @@ describe('Projects API', () => {
         await fs.rm(isolatedDir, { recursive: true, force: true });
       });
 
+      // Template extraction copies a real React/Vite scaffold, which is heavy
+      // and can exceed the default 5s budget under shared-runner load.
       it('uses the template display name (from template.json:name) for the first instance', async () => {
         const res = await request(isolatedApp.server)
           .post('/v1/projects')
@@ -405,7 +407,7 @@ describe('Projects API', () => {
           .expect(201);
         // template.json declares { "name": "Data Curator" }
         expect(res.body.name).toBe('Data Curator');
-      });
+      }, 30_000);
 
       it('numbers subsequent template projects: TemplateName, TemplateName 2, TemplateName 3', async () => {
         const r1 = await request(isolatedApp.server)
@@ -423,8 +425,7 @@ describe('Projects API', () => {
         expect(r1.body.name).toBe('Data Curator');
         expect(r2.body.name).toBe('Data Curator 2');
         expect(r3.body.name).toBe('Data Curator 3');
-      }, // Template extraction copies a real React/Vite scaffold, which is heavy.
-      // Three sequential extractions can exceed the default 5s budget.
+      }, // Three sequential extractions can exceed the default 5s budget. // Template extraction copies a real React/Vite scaffold, which is heavy.
       30000);
 
       it('names persist across project list and retrieve', async () => {
@@ -442,7 +443,7 @@ describe('Projects API', () => {
           .get(`/v1/projects/${createRes.body.id}`)
           .expect(200);
         expect(getRes.body.name).toBe(createdName);
-      });
+      }, 30_000);
     });
   });
 
