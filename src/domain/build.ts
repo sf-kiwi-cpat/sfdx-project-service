@@ -25,7 +25,28 @@ import { shouldIgnoreEntry } from './files.js';
 
 const BUILD_TIMEOUT_MS = 300_000; // 5 minutes
 const REACT_EXTENSIONS = new Set(['.tsx', '.jsx']);
-const BUNDLE_DIR = 'force-app/main/default/uiBundles/App';
+const UI_BUNDLES_REL = 'force-app/main/default/uiBundles';
+
+/**
+ * Resolve the project's bundle directory (relative to the project root).
+ * The bundle name is per-project unique — see spec/app-naming. Falls
+ * back to the literal `uiBundles/App` if no bundle directory exists yet
+ * so callers that consume `BUNDLE_DIR`-style paths still get something
+ * pointable. Callers that need to deploy MUST go through `runViteBuild`,
+ * which resolves the layout for real.
+ */
+async function resolveBundleRel(projectDir: string): Promise<string> {
+  const uiBundlesRoot = path.join(projectDir, UI_BUNDLES_REL);
+  try {
+    const entries = await fs.readdir(uiBundlesRoot);
+    if (entries.length === 1) {
+      return path.join(UI_BUNDLES_REL, entries[0]);
+    }
+  } catch {
+    /* no bundles dir; return legacy fallback */
+  }
+  return `${UI_BUNDLES_REL}/App`;
+}
 
 const buildLocks = new Map<string, Promise<void>>();
 
@@ -80,7 +101,8 @@ interface ResolvedLayout {
  * short-circuited via `hasReactFiles` and not invoked the build at all.
  */
 async function resolveLayout(projectDir: string): Promise<ResolvedLayout> {
-  const bundleDir = path.join(projectDir, BUNDLE_DIR);
+  const bundleRel = await resolveBundleRel(projectDir);
+  const bundleDir = path.join(projectDir, bundleRel);
   const bundleIndexHtml = path.join(bundleDir, 'index.html');
   try {
     await fs.access(bundleIndexHtml);
@@ -94,7 +116,7 @@ async function resolveLayout(projectDir: string): Promise<ResolvedLayout> {
   }
   return {
     viteRoot: projectDir,
-    outDir: path.join(projectDir, BUNDLE_DIR, 'dist'),
+    outDir: path.join(projectDir, bundleRel, 'dist'),
     layout: 'legacy',
   };
 }

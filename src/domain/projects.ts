@@ -24,6 +24,7 @@ import type { ProjectOptions } from '@salesforce/templates';
 import { getProjectsRoot, getTemplatesDir } from '../config.js';
 import { logger } from '../logger.js';
 import { resolveAlias, writeProjectTargetOrg } from './auth.js';
+import { uniquifyAppNames } from './app-naming.js';
 
 const ADJECTIVES = [
   'brave',
@@ -108,6 +109,10 @@ interface ProjectMeta {
   name: string;
   lastAccessedAt?: string;
   initialMessages?: Message[];
+  // Per-project token suffixed onto singular-shipped metadata DeveloperNames
+  // (UIBundle, CustomApplication) so concurrent deploys to a shared org
+  // don't collide. See spec/app-naming/contract.md.
+  appNameToken?: string;
 }
 
 function generateName(): string {
@@ -288,6 +293,11 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
     throw err;
   }
 
+  // Suffix singular-shipped metadata DeveloperNames (UIBundle,
+  // CustomApplication) with a per-project token so concurrent deploys
+  // to the same Salesforce org don't collide. See spec/app-naming.
+  const appNameToken = await uniquifyAppNames(projectDir);
+
   const name = generateName();
   const lastAccessedAt = new Date().toISOString();
 
@@ -308,13 +318,13 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
     // template.json is optional for initialMessages; absence is not an error
   }
 
-  const meta: ProjectMeta = { name, lastAccessedAt };
+  const meta: ProjectMeta = { name, lastAccessedAt, appNameToken };
   if (initialMessages) {
     meta.initialMessages = initialMessages;
   }
   await writeProjectMeta(projectDir, meta);
 
-  logger.info({ projectId, templateId, name }, 'Project created from template');
+  logger.info({ projectId, templateId, name, appNameToken }, 'Project created from template');
   const result: ProjectResult = { id: projectId, name, lastAccessedAt };
   if (initialMessages) {
     result.initialMessages = initialMessages;
