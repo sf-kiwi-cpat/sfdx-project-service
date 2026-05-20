@@ -212,6 +212,37 @@ describe('uniquifyAppNames', () => {
     expect(manifest).not.toMatch(/<members>Data_Curator<\/members>/);
   });
 
+  it('treats bundle/app names as literals when rewriting manifests (regex special chars)', async () => {
+    // Today's metadata DeveloperNames are alphanumeric only, but the
+    // manifest rewrite must not break if a future template ships a name
+    // containing regex metacharacters. Stage a project where the bundle
+    // and app names contain `.` and `+` to defend against accidental
+    // regex-injection regression.
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-naming-regex-'));
+    const bundleRoot = path.join(projectDir, UI_BUNDLES_REL);
+    const oddBundleName = 'My.Weird+Bundle';
+    await fs.mkdir(path.join(bundleRoot, oddBundleName), { recursive: true });
+    await fs.writeFile(
+      path.join(bundleRoot, oddBundleName, `${oddBundleName}.uibundle-meta.xml`),
+      '<UIBundle/>'
+    );
+    const appsRoot = path.join(projectDir, APPLICATIONS_REL);
+    await fs.mkdir(appsRoot, { recursive: true });
+    const oddAppName = 'Odd.App';
+    await fs.writeFile(path.join(appsRoot, `${oddAppName}.app-meta.xml`), '<CustomApplication/>');
+    await fs.mkdir(path.join(projectDir, 'manifest'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, 'manifest/package.xml'),
+      `<Package><members>${oddBundleName}</members><members>${oddAppName}</members></Package>\n`
+    );
+
+    await uniquifyAppNames(projectDir, 'abc12345');
+
+    const manifest = await fs.readFile(path.join(projectDir, 'manifest/package.xml'), 'utf-8');
+    expect(manifest).toContain(`<members>${oddBundleName}_abc12345</members>`);
+    expect(manifest).toContain(`<members>${oddAppName}_abc12345</members>`);
+  });
+
   it('does not write the manifest when nothing was renamed', async () => {
     projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-naming-no-rename-'));
     const manifestDir = path.join(projectDir, 'manifest');

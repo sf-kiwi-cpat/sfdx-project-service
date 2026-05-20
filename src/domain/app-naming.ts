@@ -18,10 +18,22 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { logger } from '../logger.js';
 
 const UI_BUNDLES_REL = 'force-app/main/default/uiBundles';
 const APPLICATIONS_REL = 'force-app/main/default/applications';
 const MANIFEST_DIR_REL = 'manifest';
+
+/**
+ * Escape regex metacharacters in a literal so it can be safely
+ * interpolated into `new RegExp(...)`. Today's metadata DeveloperNames
+ * happen to be `[A-Za-z0-9_]` only and don't need this, but a future
+ * template that ships e.g. `my.bundle` would otherwise inject pattern
+ * fragments. Cheap defense.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * Generate a per-project token used to suffix singular-shipped metadata
@@ -48,22 +60,23 @@ export function generateAppNameToken(): string {
  * Salesforce derives `fullName` from the filename — so renaming the file
  * is sufficient.
  *
- * Idempotency is the caller's responsibility: persist `token` in
- * `.project-meta.json` and skip this call on subsequent builds.
+ * Must only be invoked once per project, immediately after template
+ * extraction — the function does not detect already-uniquified projects
+ * and would produce `App_token1_token2` if invoked twice. Callers
+ * persist the returned token in `.project-meta.json` for visibility, but
+ * idempotency is enforced by the call-site (`createProject`), not the
+ * function.
  *
- * Returns the token used so the caller can persist it. If the project
- * does not contain any of the singular-shipped metadata directories
- * (e.g. blank project), this is a no-op and still returns the token.
+ * Returns the token used. If the project does not contain any of the
+ * singular-shipped metadata directories (e.g. blank project), this is a
+ * no-op and still returns the token.
  */
 export async function uniquifyAppNames(
   projectDir: string,
   token: string = generateAppNameToken()
 ): Promise<string> {
   const oldBundleName = await renameSingularBundleDir(path.join(projectDir, UI_BUNDLES_REL), token);
-  const renamedApps = await renameSingularApplicationFile(
-    path.join(projectDir, APPLICATIONS_REL),
-    token
-  );
+  const renamedApps = await renameApplicationFiles(path.join(projectDir, APPLICATIONS_REL), token);
   // Manifests under `manifest/` reference metadata DeveloperNames by
   // old value; rewrite them to point at the new names so SDR's
   // ComponentSet.fromManifest resolves correctly. Templates with
@@ -104,21 +117,25 @@ async function renameSingularBundleDir(
   const newMeta = path.join(newDir, `${newName}.uibundle-meta.xml`);
   try {
     await fs.rename(oldMeta, newMeta);
-  } catch {
+  } catch (err) {
     // If the meta file is missing the bundle is malformed; the deploy
     // will surface that error with better context than we could here.
+    // Log so the rename is visible in case of later confusion.
+    logger.warn({ bundleDir: newDir, err }, 'uibundle-meta.xml missing during rename');
   }
   return oldName;
 }
 
 /**
- * Rename `<name>.app-meta.xml` files. Returns the list of pre-rename
- * DeveloperNames so callers can rewrite manifest references.
+ * Rename every `<name>.app-meta.xml` file under the given directory.
+ * Templates today ship at most one CustomApplication, but the function
+ * intentionally walks all matching files: a future template that ships
+ * multiple CustomApplications still gets per-component uniqueness for
+ * free, and refusing to handle that case would just push the problem
+ * forward. Returns the list of pre-rename DeveloperNames so callers can
+ * rewrite manifest references.
  */
-async function renameSingularApplicationFile(
-  applicationsRoot: string,
-  token: string
-): Promise<string[]> {
+async function renameApplicationFiles(applicationsRoot: string, token: string): Promise<string[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(applicationsRoot);
@@ -168,11 +185,11 @@ async function rewriteManifestMembers(
     const xml = await fs.readFile(manifestPath, 'utf-8');
     let updated = xml;
     if (oldBundleName) {
-      const exact = new RegExp(`<members>${oldBundleName}</members>`, 'g');
+      const exact = new RegExp(`<members>${escapeRegExp(oldBundleName)}</members>`, 'g');
       updated = updated.replace(exact, `<members>${oldBundleName}_${token}</members>`);
     }
     for (const app of renamedApps) {
-      const exact = new RegExp(`<members>${app}</members>`, 'g');
+      const exact = new RegExp(`<members>${escapeRegExp(app)}</members>`, 'g');
       updated = updated.replace(exact, `<members>${app}_${token}</members>`);
     }
     if (updated !== xml) {
