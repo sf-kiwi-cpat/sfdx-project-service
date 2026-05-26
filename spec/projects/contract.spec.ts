@@ -425,8 +425,7 @@ describe('Projects API', () => {
         expect(r1.body.name).toBe('Data Curator');
         expect(r2.body.name).toBe('Data Curator 2');
         expect(r3.body.name).toBe('Data Curator 3');
-      }, // Three sequential extractions can exceed the default 5s budget.
-      // Template extraction copies a real React/Vite scaffold, which is heavy.
+      }, // Template extraction copies a real React/Vite scaffold, which is heavy. // Three sequential extractions can exceed the default 5s budget.
       30000);
 
       it('names persist across project list and retrieve', async () => {

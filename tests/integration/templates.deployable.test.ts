@@ -112,13 +112,17 @@ describe('tier-1: every template is deployable (structurally)', async () => {
       expect(v, 'UIBundle requires API 66.0+').toBeGreaterThanOrEqual(66.0);
     });
 
-    it('ships App.uibundle-meta.xml with canonical lowercase suffix', async () => {
-      const dir = path.join(projectDir, 'force-app/main/default/uiBundles/App');
+    it('ships <bundleName>.uibundle-meta.xml with canonical lowercase suffix', async () => {
+      const bundlesRoot = path.join(projectDir, 'force-app/main/default/uiBundles');
+      const bundleEntries = await fs.readdir(bundlesRoot);
+      expect(bundleEntries).toHaveLength(1);
+      const bundleName = bundleEntries[0];
+      const dir = path.join(bundlesRoot, bundleName);
       const entries = await fs.readdir(dir);
-      expect(entries).toContain('App.uibundle-meta.xml');
+      expect(entries).toContain(`${bundleName}.uibundle-meta.xml`);
       // Belt-and-suspenders: make sure the mixed-case form is gone —
       // it'd silently succeed on macOS and fail on Linux / SDR's server.
-      expect(entries).not.toContain('App.uiBundle-meta.xml');
+      expect(entries).not.toContain(`${bundleName}.uiBundle-meta.xml`);
     });
 
     it('readDeployStages parses cleanly (returns undefined or valid stages)', async () => {
@@ -146,7 +150,9 @@ describe('tier-1: every template is deployable (structurally)', async () => {
       await runViteBuild(projectDir);
       const elapsed = Date.now() - start;
 
-      const distDir = path.join(projectDir, 'force-app/main/default/uiBundles/App/dist');
+      const bundlesRoot = path.join(projectDir, 'force-app/main/default/uiBundles');
+      const bundleEntries = await fs.readdir(bundlesRoot);
+      const distDir = path.join(bundlesRoot, bundleEntries[0], 'dist');
       const indexHtml = path.join(distDir, 'index.html');
       await expect(fs.stat(indexHtml)).resolves.toBeDefined();
 
