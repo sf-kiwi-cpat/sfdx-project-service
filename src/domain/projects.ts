@@ -26,73 +26,9 @@ import { logger } from '../logger.js';
 import { resolveAlias, writeProjectTargetOrg } from './auth.js';
 import { watcherManager } from './watcher.js';
 
-const ADJECTIVES = [
-  'brave',
-  'calm',
-  'dark',
-  'eager',
-  'fair',
-  'glad',
-  'happy',
-  'keen',
-  'bold',
-  'cool',
-  'deep',
-  'fast',
-  'gold',
-  'high',
-  'kind',
-  'lean',
-  'mild',
-  'neat',
-  'pure',
-  'rich',
-  'safe',
-  'soft',
-  'true',
-  'warm',
-  'wise',
-  'wild',
-  'swift',
-  'stark',
-  'prime',
-  'rare',
-];
-
-const NOUNS = [
-  'falcon',
-  'river',
-  'storm',
-  'cedar',
-  'flame',
-  'frost',
-  'grove',
-  'haven',
-  'brook',
-  'cliff',
-  'coral',
-  'crane',
-  'delta',
-  'drift',
-  'ember',
-  'field',
-  'forge',
-  'glade',
-  'heron',
-  'lotus',
-  'maple',
-  'north',
-  'ocean',
-  'pearl',
-  'ridge',
-  'shore',
-  'spark',
-  'stone',
-  'tower',
-  'valley',
-];
-
 const META_FILE = '.project-meta.json';
+
+const BLANK_PROJECT_NAME = 'Untitled';
 
 export interface Message {
   role: string;
@@ -111,10 +47,52 @@ interface ProjectMeta {
   initialMessages?: Message[];
 }
 
-function generateName(): string {
-  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  return `${adj}-${noun}`;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Generate a project name in the pattern "<base>" or "<base> N".
+ *
+ * Picks the smallest N strictly greater than the highest existing N among
+ * `<base>` (treated as N=1) and `<base> N`. Gap slots between 1 and the
+ * max are intentionally not reused — that's the simpler invariant and
+ * avoids the alternative race where two concurrent creates pick the same
+ * gap. Critically, this also rules out collisions: counting matches and
+ * adding 1 (the prior approach) returns N=3 when {Untitled, Untitled 3}
+ * exist, colliding with the existing Untitled 3.
+ *
+ * Used both for blank projects (base = "Untitled") and template-flow
+ * projects (base = template's display name).
+ */
+async function generateProjectName(base: string): Promise<string> {
+  const projects = await listProjects();
+  const pattern = new RegExp(`^${escapeRegExp(base)}(?:\\s+(\\d+))?$`);
+  let maxN = 0;
+  for (const p of projects) {
+    const m = pattern.exec(p.name);
+    if (!m) continue;
+    const n = m[1] ? Number(m[1]) : 1;
+    if (n > maxN) maxN = n;
+  }
+  if (maxN === 0) return base;
+  return `${base} ${maxN + 1}`;
+}
+
+async function templateDisplayName(templateId: string): Promise<string> {
+  try {
+    const raw = await fs.readFile(
+      path.join(getTemplatesDir(), templateId, 'template.json'),
+      'utf-8'
+    );
+    const templateMeta = JSON.parse(raw) as { name?: string };
+    if (templateMeta.name) {
+      return templateMeta.name;
+    }
+  } catch {
+    // Fall back to templateId if template.json is missing or unreadable
+  }
+  return templateId;
 }
 
 async function writeProjectMeta(projectDir: string, meta: ProjectMeta): Promise<void> {
@@ -199,6 +177,13 @@ export class OrgAliasEmptyError extends Error {
   }
 }
 
+export class InvalidProjectNameError extends Error {
+  constructor(reason: string) {
+    super(`Invalid project name: ${reason}`);
+    this.name = 'InvalidProjectNameError';
+  }
+}
+
 /**
  * Create a blank SFDX project using the official SF template library.
  * Uses the 'empty' project template from @salesforce/templates.
@@ -240,11 +225,10 @@ export async function createBlankProject(orgAlias?: string): Promise<ProjectResu
   }
 
   const projectDir = path.join(projectsRoot, projectId);
-  const name = generateName();
+  const name = await generateProjectName(BLANK_PROJECT_NAME);
   const lastAccessedAt = new Date().toISOString();
   await writeProjectMeta(projectDir, { name, lastAccessedAt });
 
-  // Persist target-org if orgAlias was provided
   if (orgAlias) {
     await writeProjectTargetOrg(projectDir, orgAlias);
     logger.info({ projectId, name, orgAlias }, 'Blank project created with target-org');
@@ -289,7 +273,7 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
     throw err;
   }
 
-  const name = generateName();
+  const name = await generateProjectName(await templateDisplayName(templateId));
   const lastAccessedAt = new Date().toISOString();
 
   let initialMessages: Message[] | undefined;
@@ -371,19 +355,29 @@ export async function getProject(projectId: string): Promise<ProjectResult> {
 }
 
 /**
- * Rename a project. Throws if the project doesn't exist.
+ * Rename a project. Validates the name (trim, non-empty, ≤80 chars).
+ * Throws InvalidProjectNameError or ProjectNotFoundError.
  */
 export async function renameProject(projectId: string, name: string): Promise<ProjectResult> {
+  // Trim the name and validate
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0) {
+    throw new InvalidProjectNameError('name must not be empty after trimming');
+  }
+  if (trimmedName.length > 80) {
+    throw new InvalidProjectNameError('name must not exceed 80 characters');
+  }
+
   const projectDir = await getProjectDir(projectId);
   const existingMeta = await readProjectMeta(projectDir);
   const lastAccessedAt = new Date().toISOString();
   await writeProjectMeta(projectDir, {
     ...existingMeta,
-    name,
+    name: trimmedName,
     lastAccessedAt,
   });
-  logger.info({ projectId, name }, 'Project renamed');
-  return { id: projectId, name, lastAccessedAt };
+  logger.info({ projectId, name: trimmedName }, 'Project renamed');
+  return { id: projectId, name: trimmedName, lastAccessedAt };
 }
 
 /**

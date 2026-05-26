@@ -121,8 +121,28 @@ describe('createProject', () => {
     it('returns an object with id and name', async () => {
       const result = await createBlankProject();
       expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-      expect(typeof result.name).toBe('string');
-      expect(result.name.length).toBeGreaterThan(0);
+      expect(result.name).toBe('Untitled');
+    });
+
+    it('numbers subsequent blank projects: Untitled, Untitled 2, Untitled 3', async () => {
+      const a = await createBlankProject();
+      const b = await createBlankProject();
+      const c = await createBlankProject();
+      expect(a.name).toBe('Untitled');
+      expect(b.name).toBe('Untitled 2');
+      expect(c.name).toBe('Untitled 3');
+    });
+
+    it('does not collide with an existing numbered slot after a middle rename', async () => {
+      // {Untitled, Untitled 2, Untitled 3} → rename Untitled 2 → {Untitled, Untitled 3}.
+      // Naive "count + 1" returns 3, colliding. Max + 1 returns 4.
+      const a = await createBlankProject();
+      const b = await createBlankProject();
+      await createBlankProject();
+      await renameProject(b.id, 'My App');
+      const d = await createBlankProject();
+      expect(a.name).toBe('Untitled');
+      expect(d.name).toBe('Untitled 4');
     });
 
     it('creates sfdx-project.json with packageDirectories', async () => {
@@ -464,6 +484,66 @@ describe('createProject', () => {
 
       const entries = await fs.readdir(projectDir);
       expect(entries.every((e) => !e.includes('.tmp'))).toBe(true);
+    });
+  });
+
+  describe('template-flow naming', () => {
+    it('uses template display name for the first instance and numbers subsequent ones', async () => {
+      await createTemplateWithZip('data-curator', {
+        id: 'data-curator',
+        name: 'Data Curator',
+        description: 'test',
+      });
+
+      const a = await createProject('data-curator');
+      const b = await createProject('data-curator');
+      const c = await createProject('data-curator');
+
+      expect(a.name).toBe('Data Curator');
+      expect(b.name).toBe('Data Curator 2');
+      expect(c.name).toBe('Data Curator 3');
+    });
+
+    it('falls back to templateId when template.json has no name', async () => {
+      await createTemplateWithZip('no-name-template', {
+        id: 'no-name-template',
+        description: 'test',
+      });
+
+      const result = await createProject('no-name-template');
+
+      expect(result.name).toBe('no-name-template');
+    });
+  });
+
+  describe('renameProject validation', () => {
+    it('throws on empty string', async () => {
+      const { id } = await createBlankProject();
+      await expect(renameProject(id, '')).rejects.toThrow(/empty/i);
+    });
+
+    it('throws on whitespace-only string', async () => {
+      const { id } = await createBlankProject();
+      await expect(renameProject(id, '   ')).rejects.toThrow(/empty/i);
+    });
+
+    it('throws on names longer than 80 characters', async () => {
+      const { id } = await createBlankProject();
+      const longName = 'a'.repeat(81);
+      await expect(renameProject(id, longName)).rejects.toThrow(/80/);
+    });
+
+    it('accepts a name of exactly 80 characters', async () => {
+      const { id } = await createBlankProject();
+      const name = 'a'.repeat(80);
+      const result = await renameProject(id, name);
+      expect(result.name).toBe(name);
+    });
+
+    it('trims leading and trailing whitespace before persisting', async () => {
+      const { id } = await createBlankProject();
+      const result = await renameProject(id, '  Padded Name  ');
+      expect(result.name).toBe('Padded Name');
     });
   });
 });
