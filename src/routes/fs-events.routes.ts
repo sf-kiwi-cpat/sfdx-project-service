@@ -129,11 +129,22 @@ export async function fsEventRoutes(app: FastifyInstance): Promise<void> {
       // the pre-check did: a chokidar event whose handler runs against a
       // closed stream rejects, the `.catch` swallows it, and no event is
       // delivered. The pre-check was redundant.
-      const unsubscribe = await watcherManager.subscribe(id, projectDir, (evt) => {
-        reply.sse.send({ event: sseEventName(evt.type), data: evt }).catch(() => {
-          /* client went away mid-send; plugin's own cleanup handles it */
-        });
-      });
+      // `onForceClose` is invoked by `watcherManager.closeForProject` when
+      // the project is deleted: end the SSE response so the client doesn't
+      // sit on a stream that will never produce another event. The plugin's
+      // own `onClose` will then run and trigger `unsubscribe` for us.
+      const unsubscribe = await watcherManager.subscribe(
+        id,
+        projectDir,
+        (evt) => {
+          reply.sse.send({ event: sseEventName(evt.type), data: evt }).catch(() => {
+            /* client went away mid-send; plugin's own cleanup handles it */
+          });
+        },
+        () => {
+          reply.sse.close();
+        }
+      );
 
       // `closedDuringSubscribe` covers the narrow window where the
       // client disconnects during the async subscribe() above (chokidar
