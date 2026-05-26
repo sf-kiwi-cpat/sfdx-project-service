@@ -200,8 +200,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
             name: Type.Optional(
               Type.String({
                 minLength: 1,
-                maxLength: 80,
-                description: 'New human-readable name for the project. Must be a non-empty string.',
+                maxLength: 200,
+                description:
+                  'New human-readable name for the project. Must be 1–80 characters after trimming.',
               })
             ),
           },
