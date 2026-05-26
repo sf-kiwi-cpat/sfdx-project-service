@@ -120,6 +120,13 @@ interface PerProjectWatcher {
   projectDir: string;
   watcher: FSWatcher;
   listeners: Set<FileEventListener>;
+  /**
+   * Force-close callbacks registered alongside listeners. Invoked by
+   * `closeForProject` (e.g., on project deletion) so the route layer can
+   * end open SSE responses from the server side. Distinct from `listeners`
+   * because forced close is server-driven, not a chokidar event.
+   */
+  forceCloseCallbacks: Set<() => void>;
   /** Per-path pending debounce timers + the latest observed event type. */
   pending: Map<string, { type: FileEventType; timer: NodeJS.Timeout }>;
   /** Resolves once chokidar has completed its initial scan. */
@@ -201,11 +208,18 @@ export class WatcherManager {
    * after awaiting is guaranteed to be observable), and the resolved value
    * is the `unsubscribe` function. When the last subscriber unsubscribes,
    * the watcher is torn down.
+   *
+   * `onForceClose` (optional) is invoked by `closeForProject(projectId)` —
+   * the project-deletion teardown path. It lets the route layer end the
+   * underlying SSE response so a deleted project's clients don't sit on
+   * an open stream that will never produce another event. Subscribers are
+   * notified at most once per subscription.
    */
   async subscribe(
     projectId: string,
     projectDir: string,
-    listener: FileEventListener
+    listener: FileEventListener,
+    onForceClose?: () => void
   ): Promise<() => void> {
     let entry = this.watchers.get(projectId);
     if (!entry) {
@@ -213,6 +227,7 @@ export class WatcherManager {
       this.watchers.set(projectId, entry);
     }
     entry.listeners.add(listener);
+    if (onForceClose) entry.forceCloseCallbacks.add(onForceClose);
 
     // Wait for the initial scan to complete before returning — otherwise
     // writes that land during the scan window may be misclassified (an
@@ -226,10 +241,37 @@ export class WatcherManager {
       const current = this.watchers.get(projectId);
       if (!current) return;
       current.listeners.delete(listener);
+      if (onForceClose) current.forceCloseCallbacks.delete(onForceClose);
       if (current.listeners.size === 0) {
         void this.teardown(projectId);
       }
     };
+  }
+
+  /**
+   * Force every active subscriber for `projectId` to close, then tear down
+   * the watcher. Used by the project-delete path so a deletion does not
+   * leave dangling SSE streams or a stale chokidar instance behind. No-op
+   * if no watcher exists for the project.
+   */
+  async closeForProject(projectId: string): Promise<void> {
+    const entry = this.watchers.get(projectId);
+    if (!entry) return;
+    // Snapshot the callbacks: the route handler's onForceClose ends the
+    // SSE response, which triggers the plugin's onClose, which calls our
+    // unsubscribe — and unsubscribe mutates `forceCloseCallbacks`.
+    // Iterating the live Set would skip entries.
+    const callbacks = [...entry.forceCloseCallbacks];
+    entry.forceCloseCallbacks.clear();
+    for (const cb of callbacks) {
+      try {
+        cb();
+      } catch (err) {
+        /* v8 ignore next 2 */ // justification: defensive — a buggy callback must not strand siblings
+        logger.warn({ err, projectId }, 'fs-events forceClose callback threw');
+      }
+    }
+    await this.teardown(projectId);
   }
 
   /** Graceful shutdown — close every underlying watcher. */
@@ -338,6 +380,7 @@ export class WatcherManager {
       projectDir,
       watcher,
       listeners: new Set(),
+      forceCloseCallbacks: new Set(),
       pending: new Map(),
       ready,
       initialSnap,
@@ -458,6 +501,7 @@ export class WatcherManager {
     }
     entry.pending.clear();
     entry.listeners.clear();
+    entry.forceCloseCallbacks.clear();
     try {
       await entry.watcher.close();
     } catch (err) {
