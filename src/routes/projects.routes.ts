@@ -24,7 +24,9 @@ import {
   deleteProject,
   getProject,
   getProjectDir,
+  InvalidProjectNameError,
   listProjects,
+  ProjectNotFoundError,
   renameProject,
   updateLastAccessed,
 } from '../domain/projects.js';
@@ -199,7 +201,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
             name: Type.Optional(
               Type.String({
                 minLength: 1,
-                description: 'New human-readable name for the project. Must be a non-empty string.',
+                maxLength: 200,
+                description:
+                  'New human-readable name for the project. Must be 1–80 characters after trimming.',
               })
             ),
           },
@@ -221,7 +225,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
       const { name } = request.body as { name?: string };
 
-      if (!name || typeof name !== 'string' || name.length === 0) {
+      if (!name || typeof name !== 'string') {
         return reply
           .status(400)
           .type(PROBLEM_JSON)
@@ -230,8 +234,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
           );
       }
 
-      const result = await renameProject(id, name);
-      return reply.send(result);
+      try {
+        const result = await renameProject(id, name);
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof ProjectNotFoundError) {
+          return reply
+            .status(404)
+            .type(PROBLEM_JSON)
+            .send(problemDetail(404, 'Not Found', (err as Error).message));
+        }
+        if (err instanceof InvalidProjectNameError) {
+          return reply
+            .status(400)
+            .type(PROBLEM_JSON)
+            .send(problemDetail(400, 'Invalid Project Name', (err as Error).message));
+        }
+        throw err;
+      }
     }
   );
 

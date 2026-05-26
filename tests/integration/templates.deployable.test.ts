@@ -91,13 +91,9 @@ describe('tier-1: every template is deployable (structurally)', async () => {
     let projectId: string;
     let projectDir: string;
 
-    // 15s ceiling accommodates the 40 MB data-curator template — extract-zip
-    // (yauzl-backed, async) takes ~5s wall-clock to unpack it, which blew
-    // through vitest's default 5s timeout. The extraction is now off the
-    // event loop (which is the point of the swap from adm-zip), so a higher
-    // wall-clock budget here is the correct trade-off. 15s is ~3x the
-    // current actual cost — comfortable headroom while still flagging a
-    // regression if extraction performance degrades meaningfully further.
+    // 30s timeout: data-curator extracts ~1k files; under quality-suite load
+    // this can exceed the default 5s budget and cascade-fail every dependent
+    // test in the same describe.each block.
     it('creates a project via POST /v1/projects', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
@@ -106,7 +102,7 @@ describe('tier-1: every template is deployable (structurally)', async () => {
       projectId = res.body.id as string;
       projectDir = path.join(tmpRoot, projectId);
       expect(projectId).toBeDefined();
-    }, 15_000);
+    }, 30_000);
 
     it('sfdx-project.json pins API version >= 66.0', async () => {
       const raw = await fs.readFile(path.join(projectDir, 'sfdx-project.json'), 'utf-8');

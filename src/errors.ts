@@ -20,6 +20,7 @@ import {
   ProjectNotFoundError,
   OrgAliasNotFoundError,
   OrgAliasEmptyError,
+  InvalidProjectNameError,
 } from './domain/projects.js';
 import {
   PluginNotFoundError,
@@ -153,6 +154,9 @@ export class SymlinkEscapeError extends Error {
  * Map thrown errors to HTTP problem details.
  */
 export function errorToProblem(err: unknown): ProblemDetail {
+  if (err instanceof InvalidProjectNameError) {
+    return problemDetail(400, 'Bad Request', err.message);
+  }
   if (err instanceof OrgAliasEmptyError) {
     return problemDetail(400, 'Bad Request', err.message);
   }
