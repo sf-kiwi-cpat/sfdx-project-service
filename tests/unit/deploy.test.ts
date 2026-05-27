@@ -24,6 +24,7 @@ import {
   buildComponentSet,
   mapStatusToProgressEvent,
   readDeployStages,
+  toAppDomainUrl,
 } from '../../src/domain/deploy.js';
 import { BuildError } from '../../src/errors.js';
 import {
@@ -107,6 +108,50 @@ describe('mapStatusToProgressEvent', () => {
 
     expect(event.status).toBe('Succeeded');
     expect(event.components).toEqual([]);
+  });
+});
+
+describe('toAppDomainUrl', () => {
+  it('rewrites a pc-rnd sandbox instance URL to the canonical --c app domain', () => {
+    expect(toAppDomainUrl('https://orgfarm-1fa1bb3933.test1.my.pc-rnd.salesforce.com')).toBe(
+      'https://orgfarm-1fa1bb3933--c.test1.my.pc-rnd.salesforce.app'
+    );
+  });
+
+  it('rewrites a prod-shape instance URL', () => {
+    expect(toAppDomainUrl('https://acme.my.salesforce.com')).toBe(
+      'https://acme--c.my.salesforce.app'
+    );
+  });
+
+  it('rewrites a scratch org URL', () => {
+    expect(toAppDomainUrl('https://acme-dev-ed.scratch.my.salesforce.com')).toBe(
+      'https://acme-dev-ed--c.scratch.my.salesforce.app'
+    );
+  });
+
+  it('preserves a trailing path on the instance URL', () => {
+    expect(toAppDomainUrl('https://acme.my.salesforce.com/services/data')).toBe(
+      'https://acme--c.my.salesforce.app/services/data'
+    );
+  });
+
+  it('passes through a URL already on the salesforce.app domain', () => {
+    const url = 'https://acme--c.my.salesforce.app';
+    expect(toAppDomainUrl(url)).toBe(url);
+  });
+
+  it('returns null when the leftmost label already carries a namespace marker', () => {
+    expect(toAppDomainUrl('https://acme--ns.my.salesforce.com')).toBeNull();
+  });
+
+  it('returns null for non-Salesforce hosts', () => {
+    expect(toAppDomainUrl('https://example.com')).toBeNull();
+  });
+
+  it('returns null for malformed URLs', () => {
+    expect(toAppDomainUrl('not a url')).toBeNull();
+    expect(toAppDomainUrl('')).toBeNull();
   });
 });
 

@@ -37,6 +37,47 @@ import { hasReactFiles, runViteBuild } from './build.js';
 import { BuildError } from '../errors.js';
 
 /**
+ * Rewrite an org instance URL to the canonical "Salesforce App" domain
+ * used by deployed UIBundle (React/LWR) apps. Cookie-auth REST calls
+ * from the deployed app are only allow-listed when the page is served
+ * from this domain — direct nav to the same path on `*.my.salesforce.com`
+ * 401s on every Connect API call (W-22404059).
+ *
+ *   https://orgfarm-1fa1bb3933.test1.my.pc-rnd.salesforce.com
+ *   →
+ *   https://orgfarm-1fa1bb3933--c.test1.my.pc-rnd.salesforce.app
+ *
+ * The swap is two edits: append `--c` to the leftmost host label
+ * (the namespace marker required by core's SalesforceAppDomainFilter)
+ * and change the TLD from `salesforce.com` to `salesforce.app`.
+ *
+ * Returns `null` when the input doesn't match the expected shape so
+ * call sites can fall back to the unmodified instance URL rather than
+ * surface a fabricated host. Already-app-domain URLs and inputs whose
+ * leftmost label already carries a `--<ns>` suffix are passed through
+ * unchanged.
+ *
+ * Note that the `--c` host only resolves once the target org has the
+ * `salesforceAppDomain` org pref enabled — that's a separate operator
+ * step (per W-22404059 follow-up). Until then the toast points at a
+ * non-resolving host; that's still preferable to today's behavior of
+ * pointing at a resolving host where every API call 401s.
+ */
+export function toAppDomainUrl(instanceUrl: string): string | null {
+  const match = instanceUrl.match(/^(https?:\/\/)([^/]+)(.*)$/);
+  if (!match) return null;
+  const [, scheme, host, rest] = match;
+  if (host.endsWith('.salesforce.app')) return instanceUrl;
+  if (!host.endsWith('.salesforce.com')) return null;
+  const labels = host.split('.');
+  const firstLabel = labels[0];
+  if (!firstLabel || firstLabel.includes('--')) return null;
+  labels[0] = `${firstLabel}--c`;
+  labels[labels.length - 1] = 'app';
+  return `${scheme}${labels.join('.')}${rest}`;
+}
+
+/**
  * A single stage in a multi-manifest deploy. Declared in a template's
  * `template.json` under `deployStages`. Templates that do not declare
  * `deployStages` run a single-pass `ComponentSet.fromSource(force-app)`
@@ -432,7 +473,8 @@ async function runStagedDeploy(
     if (uiBundle) {
       const instanceUrl = connection.getAuthInfoFields().instanceUrl;
       if (instanceUrl) {
-        deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
+        const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+        deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
       }
     }
   }
@@ -509,7 +551,8 @@ export async function deployMetadataAsync(
       if (uiBundle) {
         const instanceUrl = connection.getAuthInfoFields().instanceUrl;
         if (instanceUrl) {
-          deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
+          const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+          deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
         }
       }
 
