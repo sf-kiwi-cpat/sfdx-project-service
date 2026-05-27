@@ -18,13 +18,13 @@ Write a short message that:
 4. Uses a professional and collaborative tone</content>
         <inputs>
             <apiName>asset_name</apiName>
-            <definition>PRIMITIVE://String</definition>
+            <definition>primitive://String</definition>
             <referenceName>Input:asset_name</referenceName>
             <required>true</required>
         </inputs>
         <inputs>
             <apiName>request_context</apiName>
-            <definition>PRIMITIVE://String</definition>
+            <definition>primitive://String</definition>
             <referenceName>Input:request_context</referenceName>
             <required>true</required>
         </inputs>

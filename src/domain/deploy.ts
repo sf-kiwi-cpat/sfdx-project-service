@@ -48,6 +48,88 @@ export interface DeployStage {
 }
 
 /**
+ * Assign each PermissionSet that landed in the deploy to the deploying
+ * user, skipping any already assigned. Idempotent on re-deploys.
+ *
+ * Salesforce's Metadata API never auto-assigns permission sets — even
+ * when the deploying user is a System Admin. Templates that ship a
+ * permset rely on this assignment to grant the calling user FLS on
+ * optional fields (System Admin auto-grants FLS only on `<required>true</required>`
+ * fields), so without it, Apex SOQL surfaces optional fields as
+ * "No such column".
+ *
+ * Failures here are logged as warnings on the deployment, not raised:
+ * the metadata is correctly in place, the deploy itself succeeded, and
+ * a missing assignment is a recoverable problem (the user can self-assign
+ * via Setup) — surfacing it as a deploy failure would be a regression
+ * for templates that don't ship a permset.
+ */
+export async function assignDeployedPermissionSets(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection
+): Promise<DeploymentWarning[]> {
+  const permissionSetNames = Array.from(
+    new Set(fileResponses.filter((f) => f.type === 'PermissionSet').map((f) => f.fullName))
+  );
+  if (permissionSetNames.length === 0) {
+    return [];
+  }
+
+  const userId = connection.getAuthInfoFields().userId;
+  if (!userId) {
+    const warning: DeploymentWarning = {
+      stage: 'permset-assignment',
+      errorMessage: 'Could not resolve deploying userId; skipping PermissionSet auto-assignment',
+    };
+    addWarningEvent(deploymentId, warning);
+    return [warning];
+  }
+
+  const psQuery = await connection.query<{ Id: string; Name: string }>(
+    `SELECT Id, Name FROM PermissionSet WHERE Name IN ('${permissionSetNames.join("','")}')`
+  );
+  const idsByName = new Map(psQuery.records.map((r) => [r.Name, r.Id]));
+
+  const existingAssignments = await connection.query<{ PermissionSetId: string }>(
+    `SELECT PermissionSetId FROM PermissionSetAssignment WHERE AssigneeId = '${userId}' AND PermissionSetId IN ('${Array.from(idsByName.values()).join("','")}')`
+  );
+  const alreadyAssigned = new Set(existingAssignments.records.map((r) => r.PermissionSetId));
+
+  const warnings: DeploymentWarning[] = [];
+  for (const name of permissionSetNames) {
+    const psId = idsByName.get(name);
+    if (!psId) {
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `PermissionSet '${name}' was reported deployed but not found in the org; skipping assignment`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+    if (alreadyAssigned.has(psId)) continue;
+
+    const result = await connection.sobject('PermissionSetAssignment').create({
+      AssigneeId: userId,
+      PermissionSetId: psId,
+    });
+    if (!result.success) {
+      const errs = (result.errors ?? []).map((e) => e.message ?? String(e)).join('; ');
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `Failed to assign PermissionSet '${name}': ${errs}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    } else {
+      logger.info({ deploymentId, permissionSet: name, userId }, 'Assigned PermissionSet');
+    }
+  }
+  return warnings;
+}
+
+/**
  * Build a Salesforce connection from resolved auth.
  *
  * Proactively refreshes the access token before returning.
@@ -295,6 +377,24 @@ async function runStagedDeploy(
     }
   }
 
+  if (!failedRequiredStage) {
+    try {
+      const psWarnings = await assignDeployedPermissionSets(
+        deploymentId,
+        allFileResponses,
+        connection
+      );
+      warnings.push(...psWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `PermissionSet auto-assignment failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+  }
+
   let aggregateStatus: string;
   if (failedRequiredStage) {
     aggregateStatus = 'Failed';
@@ -411,6 +511,26 @@ export async function deployMetadataAsync(
         if (instanceUrl) {
           deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
         }
+      }
+
+      try {
+        const psWarnings = await assignDeployedPermissionSets(
+          deploymentId,
+          runResult.fileResponses,
+          connection
+        );
+        if (psWarnings.length > 0) {
+          deploymentResult.status = 'SucceededWithWarnings';
+          deploymentResult.warnings = psWarnings;
+        }
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: 'permset-assignment',
+          errorMessage: `PermissionSet auto-assignment failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        addWarningEvent(deploymentId, warning);
+        deploymentResult.status = 'SucceededWithWarnings';
+        deploymentResult.warnings = [warning];
       }
     }
 

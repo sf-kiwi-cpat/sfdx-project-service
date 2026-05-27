@@ -15,16 +15,23 @@
  * limitations under the License.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {
+  assignDeployedPermissionSets,
   buildComponentSet,
   mapStatusToProgressEvent,
   readDeployStages,
 } from '../../src/domain/deploy.js';
 import { BuildError } from '../../src/errors.js';
+import {
+  createDeployment,
+  clearAllDeployments,
+  getDeploymentWarningEvents,
+} from '../../src/deployments.js';
+import type { Connection } from '@salesforce/core';
 
 describe('buildComponentSet', () => {
   let tmpDir: string;
@@ -192,5 +199,168 @@ describe('readDeployStages', () => {
     );
     const stages = await readDeployStages(tmpDir);
     expect(stages).toEqual([{ manifest: 'sub/./../manifest/package.xml' }]);
+  });
+});
+
+describe('assignDeployedPermissionSets', () => {
+  let deploymentId: string;
+
+  beforeEach(() => {
+    clearAllDeployments();
+    deploymentId = createDeployment('proj-1');
+  });
+
+  function makeConnection(opts: {
+    userId?: string | null;
+    permsetLookup?: Array<{ Id: string; Name: string }>;
+    existingAssignments?: Array<{ PermissionSetId: string }>;
+    createImpl?: (record: { AssigneeId: string; PermissionSetId: string }) => {
+      success: boolean;
+      errors?: Array<{ message?: string }>;
+    };
+  }): Connection {
+    const queryMock = vi.fn().mockImplementation((soql: string) => {
+      if (soql.startsWith('SELECT Id, Name FROM PermissionSet')) {
+        return Promise.resolve({ records: opts.permsetLookup ?? [] });
+      }
+      if (soql.startsWith('SELECT PermissionSetId FROM PermissionSetAssignment')) {
+        return Promise.resolve({ records: opts.existingAssignments ?? [] });
+      }
+      return Promise.resolve({ records: [] });
+    });
+    const createMock = vi
+      .fn()
+      .mockImplementation((record: { AssigneeId: string; PermissionSetId: string }) =>
+        Promise.resolve(opts.createImpl?.(record) ?? { success: true })
+      );
+    return {
+      query: queryMock,
+      sobject: vi.fn(() => ({ create: createMock })),
+      getAuthInfoFields: () =>
+        'userId' in opts ? { userId: opts.userId } : { userId: '005xx0000000001' },
+    } as unknown as Connection;
+  }
+
+  it('returns no warnings and skips queries when no PermissionSet was deployed', async () => {
+    const connection = makeConnection({});
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'Foo__c', type: 'CustomField', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toEqual([]);
+    expect(connection.query).not.toHaveBeenCalled();
+  });
+
+  it('assigns a deployed permset that the user does not yet have', async () => {
+    const created: unknown[] = [];
+    const connection = makeConnection({
+      permsetLookup: [{ Id: '0PSx1', Name: 'My_App_Admin' }],
+      existingAssignments: [],
+      createImpl: (record) => {
+        created.push(record);
+        return { success: true };
+      },
+    });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toEqual([]);
+    expect(created).toEqual([{ AssigneeId: '005xx0000000001', PermissionSetId: '0PSx1' }]);
+  });
+
+  it('skips permsets the user already has assigned (idempotent re-deploy)', async () => {
+    const sobjectMock = vi.fn(() => ({ create: vi.fn() }));
+    const connection = {
+      query: vi.fn().mockImplementation((soql: string) => {
+        if (soql.startsWith('SELECT Id, Name FROM PermissionSet')) {
+          return Promise.resolve({ records: [{ Id: '0PSx1', Name: 'My_App_Admin' }] });
+        }
+        return Promise.resolve({ records: [{ PermissionSetId: '0PSx1' }] });
+      }),
+      sobject: sobjectMock,
+      getAuthInfoFields: () => ({ userId: '005xx0000000001' }),
+    } as unknown as Connection;
+
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Changed' }],
+      connection
+    );
+    expect(warnings).toEqual([]);
+    expect(sobjectMock).not.toHaveBeenCalled();
+  });
+
+  it('warns and skips when the deployed permset cannot be found in the org', async () => {
+    const connection = makeConnection({
+      permsetLookup: [],
+      existingAssignments: [],
+    });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'Mystery_PS', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].errorMessage).toMatch(/'Mystery_PS' was reported deployed but not found/);
+    expect(getDeploymentWarningEvents(deploymentId)).toEqual(warnings);
+  });
+
+  it('warns when PermissionSetAssignment insert fails', async () => {
+    const connection = makeConnection({
+      permsetLookup: [{ Id: '0PSx1', Name: 'My_App_Admin' }],
+      existingAssignments: [],
+      createImpl: () => ({ success: false, errors: [{ message: 'INSUFFICIENT_ACCESS' }] }),
+    });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].errorMessage).toMatch(/INSUFFICIENT_ACCESS/);
+  });
+
+  it('warns and bails when userId cannot be resolved from the connection', async () => {
+    const connection = makeConnection({ userId: null });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].errorMessage).toMatch(/Could not resolve deploying userId/);
+    expect(connection.query).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates duplicate PermissionSet entries before querying', async () => {
+    const queryMock = vi.fn().mockImplementation((soql: string) => {
+      if (soql.startsWith('SELECT Id, Name FROM PermissionSet')) {
+        return Promise.resolve({ records: [{ Id: '0PSx1', Name: 'My_App_Admin' }] });
+      }
+      return Promise.resolve({ records: [{ PermissionSetId: '0PSx1' }] });
+    });
+    const connection = {
+      query: queryMock,
+      sobject: vi.fn(() => ({ create: vi.fn() })),
+      getAuthInfoFields: () => ({ userId: '005xx0000000001' }),
+    } as unknown as Connection;
+
+    await assignDeployedPermissionSets(
+      deploymentId,
+      [
+        { fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' },
+        { fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Changed' },
+      ],
+      connection
+    );
+    const lookupCall = queryMock.mock.calls.find((c: unknown[]) =>
+      (c[0] as string).startsWith('SELECT Id, Name FROM PermissionSet')
+    );
+    expect(lookupCall?.[0]).toBe(
+      "SELECT Id, Name FROM PermissionSet WHERE Name IN ('My_App_Admin')"
+    );
   });
 });
