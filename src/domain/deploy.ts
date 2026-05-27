@@ -117,7 +117,19 @@ export async function assignDeployedPermissionSets(
     return [];
   }
 
-  const userId = connection.getAuthInfoFields().userId;
+  // userId resolution: prefer the AuthInfo cache (cheap, no SOQL), fall back
+  // to a `User WHERE Username` lookup when AuthInfo doesn't carry it. The
+  // vaas-test container's auth flow seeds the cache via `sfdx auth:web:login`
+  // output that doesn't include the user_id field, so getAuthInfoFields()
+  // returns undefined there even though the connection itself is valid.
+  const authFields = connection.getAuthInfoFields();
+  let userId = authFields.userId;
+  if (!userId && authFields.username) {
+    const userQuery = await connection.query<{ Id: string }>(
+      `SELECT Id FROM User WHERE Username = '${authFields.username}' LIMIT 1`
+    );
+    userId = userQuery.records[0]?.Id;
+  }
   if (!userId) {
     const warning: DeploymentWarning = {
       stage: 'permset-assignment',

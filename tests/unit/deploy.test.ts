@@ -257,6 +257,8 @@ describe('assignDeployedPermissionSets', () => {
 
   function makeConnection(opts: {
     userId?: string | null;
+    username?: string | null;
+    userQueryResult?: Array<{ Id: string }>;
     permsetLookup?: Array<{ Id: string; Name: string }>;
     existingAssignments?: Array<{ PermissionSetId: string }>;
     createImpl?: (record: { AssigneeId: string; PermissionSetId: string }) => {
@@ -265,6 +267,9 @@ describe('assignDeployedPermissionSets', () => {
     };
   }): Connection {
     const queryMock = vi.fn().mockImplementation((soql: string) => {
+      if (soql.startsWith('SELECT Id FROM User')) {
+        return Promise.resolve({ records: opts.userQueryResult ?? [] });
+      }
       if (soql.startsWith('SELECT Id, Name FROM PermissionSet')) {
         return Promise.resolve({ records: opts.permsetLookup ?? [] });
       }
@@ -281,8 +286,10 @@ describe('assignDeployedPermissionSets', () => {
     return {
       query: queryMock,
       sobject: vi.fn(() => ({ create: createMock })),
-      getAuthInfoFields: () =>
-        'userId' in opts ? { userId: opts.userId } : { userId: '005xx0000000001' },
+      getAuthInfoFields: () => ({
+        userId: 'userId' in opts ? opts.userId : '005xx0000000001',
+        username: 'username' in opts ? opts.username : 'deploy@example.com',
+      }),
     } as unknown as Connection;
   }
 
@@ -368,8 +375,45 @@ describe('assignDeployedPermissionSets', () => {
     expect(warnings[0].errorMessage).toMatch(/INSUFFICIENT_ACCESS/);
   });
 
-  it('warns and bails when userId cannot be resolved from the connection', async () => {
-    const connection = makeConnection({ userId: null });
+  it('falls back to a User SOQL lookup when getAuthInfoFields().userId is missing', async () => {
+    const created: unknown[] = [];
+    const connection = makeConnection({
+      userId: null,
+      username: 'deploy@example.com',
+      userQueryResult: [{ Id: '005FALLBACK0001' }],
+      permsetLookup: [{ Id: '0PSx1', Name: 'My_App_Admin' }],
+      existingAssignments: [],
+      createImpl: (record) => {
+        created.push(record);
+        return { success: true };
+      },
+    });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toEqual([]);
+    expect(created).toEqual([{ AssigneeId: '005FALLBACK0001', PermissionSetId: '0PSx1' }]);
+  });
+
+  it('warns and bails when neither userId nor username can resolve to a User', async () => {
+    const connection = makeConnection({
+      userId: null,
+      username: 'deploy@example.com',
+      userQueryResult: [],
+    });
+    const warnings = await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].errorMessage).toMatch(/Could not resolve deploying userId/);
+  });
+
+  it('warns and bails when neither userId nor username are present', async () => {
+    const connection = makeConnection({ userId: null, username: null });
     const warnings = await assignDeployedPermissionSets(
       deploymentId,
       [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
