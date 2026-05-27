@@ -18,7 +18,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
-import { Connection, AuthInfo } from '@salesforce/core';
+import { Connection, AuthInfo, SfProject } from '@salesforce/core';
+import { Agent } from '@salesforce/agents';
 import { logger } from '../logger.js';
 import { type ResolvedAuth } from './deploy-auth.js';
 import {
@@ -177,6 +178,124 @@ export async function assignDeployedPermissionSets(
       addWarningEvent(deploymentId, warning);
     } else {
       logger.info({ deploymentId, permissionSet: name, userId }, 'Assigned PermissionSet');
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Publish + activate every AiAuthoringBundle that landed in the deploy.
+ *
+ * Deploying an AiAuthoringBundle ships the source file (the `.agent`
+ * script + `bundle-meta.xml`) but does NOT materialize the runtime
+ * BotDefinition / BotVersion in the org — that's a separate compile
+ * + publish API call that the Salesforce CLI's `sf agent publish`
+ * wraps. Until publish runs, the deployed bundle is not invocable
+ * (chat panel returns "agent not found"); after publish, a new
+ * BotVersion exists in `Inactive` state and a follow-up activate is
+ * required to set `Status = Active`.
+ *
+ * We use the `@salesforce/agents` library directly rather than
+ * shelling out to `sf agent publish` — the library is the same code
+ * the CLI wraps, and avoids subprocess management, DX-project assumptions
+ * baked into the CLI, and SF_TEST_API env quirks.
+ *
+ * Idempotency: republishing an already-published bundle is tolerated
+ * — the publish API will create a new BotVersion N+1 against the
+ * existing BotDefinition. Activate then targets the latest version.
+ *
+ * Failures are logged as warnings on the deployment, not raised: the
+ * metadata is correctly in place, the deploy itself succeeded, and a
+ * missing publish/activate is recoverable (the user can run
+ * `sf agent publish` + `sf agent activate` manually) — surfacing it
+ * as a deploy failure would be a regression for templates that don't
+ * ship an AiAuthoringBundle.
+ *
+ * No-op when the deploy ships zero AiAuthoringBundle components.
+ */
+export async function publishDeployedAiAuthoringBundles(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection,
+  projectDir: string
+): Promise<DeploymentWarning[]> {
+  const bundleNames = Array.from(
+    new Set(fileResponses.filter((f) => f.type === 'AiAuthoringBundle').map((f) => f.fullName))
+  );
+  if (bundleNames.length === 0) {
+    return [];
+  }
+
+  let project: SfProject;
+  try {
+    project = await SfProject.resolve(projectDir);
+  } catch (err) {
+    const warning: DeploymentWarning = {
+      stage: 'agent-publish',
+      errorMessage: `Could not resolve SfProject for AiAuthoringBundle publish: ${err instanceof Error ? err.message : 'unknown error'}`,
+    };
+    addWarningEvent(deploymentId, warning);
+    return [warning];
+  }
+
+  const warnings: DeploymentWarning[] = [];
+  for (const aabName of bundleNames) {
+    let scriptAgent;
+    try {
+      scriptAgent = await Agent.init({ connection, project, aabName });
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-publish',
+        errorMessage: `Failed to initialize Agent for '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    let publishResult;
+    try {
+      // skipMetadataRetrieve=true: don't mutate the local DX project on
+      // every deploy. We only care about the org-side BotDefinition +
+      // BotVersion, not pulling the regenerated metadata back to disk.
+      publishResult = await scriptAgent.publish(true);
+      logger.info(
+        {
+          deploymentId,
+          aabName,
+          botId: publishResult.botId,
+          botVersionId: publishResult.botVersionId,
+        },
+        'Published AiAuthoringBundle'
+      );
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-publish',
+        errorMessage: `Failed to publish AiAuthoringBundle '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    try {
+      const productionAgent = await Agent.init({
+        connection,
+        project,
+        apiNameOrId: publishResult.botId,
+      });
+      const activated = await productionAgent.activate();
+      logger.info(
+        { deploymentId, aabName, botVersionId: activated.Id, status: activated.Status },
+        'Activated AiAuthoringBundle BotVersion'
+      );
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-activate',
+        errorMessage: `Failed to activate AiAuthoringBundle '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
     }
   }
   return warnings;
@@ -446,6 +565,23 @@ async function runStagedDeploy(
       warnings.push(warning);
       addWarningEvent(deploymentId, warning);
     }
+
+    try {
+      const aabWarnings = await publishDeployedAiAuthoringBundles(
+        deploymentId,
+        allFileResponses,
+        connection,
+        projectDir
+      );
+      warnings.push(...aabWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-publish',
+        errorMessage: `AiAuthoringBundle publish/activate failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
   }
 
   let aggregateStatus: string;
@@ -568,24 +704,43 @@ export async function deployMetadataAsync(
         }
       }
 
+      const postDeployWarnings: DeploymentWarning[] = [];
       try {
         const psWarnings = await assignDeployedPermissionSets(
           deploymentId,
           runResult.fileResponses,
           connection
         );
-        if (psWarnings.length > 0) {
-          deploymentResult.status = 'SucceededWithWarnings';
-          deploymentResult.warnings = psWarnings;
-        }
+        postDeployWarnings.push(...psWarnings);
       } catch (err) {
         const warning: DeploymentWarning = {
           stage: 'permset-assignment',
           errorMessage: `PermissionSet auto-assignment failed: ${err instanceof Error ? err.message : 'unknown error'}`,
         };
         addWarningEvent(deploymentId, warning);
+        postDeployWarnings.push(warning);
+      }
+
+      try {
+        const aabWarnings = await publishDeployedAiAuthoringBundles(
+          deploymentId,
+          runResult.fileResponses,
+          connection,
+          projectDir
+        );
+        postDeployWarnings.push(...aabWarnings);
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: 'agent-publish',
+          errorMessage: `AiAuthoringBundle publish/activate failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        addWarningEvent(deploymentId, warning);
+        postDeployWarnings.push(warning);
+      }
+
+      if (postDeployWarnings.length > 0) {
         deploymentResult.status = 'SucceededWithWarnings';
-        deploymentResult.warnings = [warning];
+        deploymentResult.warnings = postDeployWarnings;
       }
     }
 

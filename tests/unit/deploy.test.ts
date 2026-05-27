@@ -23,6 +23,7 @@ import {
   assignDeployedPermissionSets,
   buildComponentSet,
   mapStatusToProgressEvent,
+  publishDeployedAiAuthoringBundles,
   readDeployStages,
   toAppDomainUrl,
 } from '../../src/domain/deploy.js';
@@ -33,6 +34,23 @@ import {
   getDeploymentWarningEvents,
 } from '../../src/deployments.js';
 import type { Connection } from '@salesforce/core';
+
+// Mocks for SfProject.resolve and Agent.init — both reach the network/disk
+// in production. Each test wires per-call behavior via `mockImplementation`.
+const sfProjectResolveMock = vi.fn();
+const agentInitMock = vi.fn();
+
+vi.mock('@salesforce/core', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    SfProject: { resolve: (...args: unknown[]) => sfProjectResolveMock(...args) },
+  };
+});
+
+vi.mock('@salesforce/agents', () => ({
+  Agent: { init: (...args: unknown[]) => agentInitMock(...args) },
+}));
 
 describe('buildComponentSet', () => {
   let tmpDir: string;
@@ -451,5 +469,260 @@ describe('assignDeployedPermissionSets', () => {
     expect(lookupCall?.[0]).toBe(
       "SELECT Id, Name FROM PermissionSet WHERE Name IN ('My_App_Admin')"
     );
+  });
+});
+
+describe('publishDeployedAiAuthoringBundles', () => {
+  let deploymentId: string;
+  const projectDir = '/tmp/fake-project';
+
+  beforeEach(() => {
+    clearAllDeployments();
+    deploymentId = createDeployment('proj-aab');
+    sfProjectResolveMock.mockReset();
+    agentInitMock.mockReset();
+    sfProjectResolveMock.mockResolvedValue({ stub: 'project' });
+  });
+
+  function makePublishingScriptAgent(opts: {
+    publish: () => Promise<{ botId: string; botVersionId: string; developerName: string }>;
+  }): { publish: ReturnType<typeof vi.fn> } {
+    const publishMock = vi.fn().mockImplementation(opts.publish);
+    return { publish: publishMock };
+  }
+
+  function makeProductionAgent(opts: { activate: () => Promise<{ Id: string; Status: string }> }): {
+    activate: ReturnType<typeof vi.fn>;
+  } {
+    const activateMock = vi.fn().mockImplementation(opts.activate);
+    return { activate: activateMock };
+  }
+
+  const fakeConnection = {} as unknown as Connection;
+
+  it('returns no warnings and skips Agent.init when no AiAuthoringBundle was deployed', async () => {
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [{ fullName: 'Foo__c', type: 'CustomField', state: 'Created' }],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toEqual([]);
+    expect(agentInitMock).not.toHaveBeenCalled();
+    expect(sfProjectResolveMock).not.toHaveBeenCalled();
+    expect(getDeploymentWarningEvents(deploymentId)).toEqual([]);
+  });
+
+  it('returns no warnings and skips Agent.init when componentSuccesses is empty', async () => {
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toEqual([]);
+    expect(agentInitMock).not.toHaveBeenCalled();
+  });
+
+  it('publishes and activates a single deployed AiAuthoringBundle', async () => {
+    const scriptAgent = makePublishingScriptAgent({
+      publish: async () => ({
+        botId: '0Xx00000000001',
+        botVersionId: '0XV00000000001',
+        developerName: 'DataCuratorAgent',
+      }),
+    });
+    const productionAgent = makeProductionAgent({
+      activate: async () => ({ Id: '0XV00000000001', Status: 'Active' }),
+    });
+    agentInitMock.mockResolvedValueOnce(scriptAgent).mockResolvedValueOnce(productionAgent);
+
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [{ fullName: 'DataCuratorAgent', type: 'AiAuthoringBundle', state: 'Created' }],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toEqual([]);
+    expect(scriptAgent.publish).toHaveBeenCalledWith(true);
+    expect(productionAgent.activate).toHaveBeenCalledTimes(1);
+    expect(agentInitMock).toHaveBeenNthCalledWith(1, {
+      connection: fakeConnection,
+      project: { stub: 'project' },
+      aabName: 'DataCuratorAgent',
+    });
+    expect(agentInitMock).toHaveBeenNthCalledWith(2, {
+      connection: fakeConnection,
+      project: { stub: 'project' },
+      apiNameOrId: '0Xx00000000001',
+    });
+  });
+
+  it('publishes and activates each AiAuthoringBundle when multiple are deployed', async () => {
+    const calls: string[] = [];
+    agentInitMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if ('aabName' in opts) {
+        const name = opts.aabName as string;
+        calls.push(`publish:${name}`);
+        return {
+          publish: vi.fn().mockResolvedValue({
+            botId: `bot_${name}`,
+            botVersionId: `ver_${name}`,
+            developerName: name,
+          }),
+        };
+      }
+      const id = opts.apiNameOrId as string;
+      calls.push(`activate:${id}`);
+      return {
+        activate: vi.fn().mockResolvedValue({ Id: 'ver', Status: 'Active' }),
+      };
+    });
+
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [
+        { fullName: 'AgentA', type: 'AiAuthoringBundle', state: 'Created' },
+        { fullName: 'AgentB', type: 'AiAuthoringBundle', state: 'Created' },
+      ],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toEqual([]);
+    expect(calls).toEqual([
+      'publish:AgentA',
+      'activate:bot_AgentA',
+      'publish:AgentB',
+      'activate:bot_AgentB',
+    ]);
+  });
+
+  it('deduplicates duplicate AiAuthoringBundle entries before publishing', async () => {
+    const scriptAgent = makePublishingScriptAgent({
+      publish: async () => ({
+        botId: '0Xx00000000001',
+        botVersionId: '0XV00000000001',
+        developerName: 'DataCuratorAgent',
+      }),
+    });
+    const productionAgent = makeProductionAgent({
+      activate: async () => ({ Id: '0XV00000000001', Status: 'Active' }),
+    });
+    agentInitMock.mockResolvedValueOnce(scriptAgent).mockResolvedValueOnce(productionAgent);
+
+    await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [
+        { fullName: 'DataCuratorAgent', type: 'AiAuthoringBundle', state: 'Created' },
+        { fullName: 'DataCuratorAgent', type: 'AiAuthoringBundle', state: 'Changed' },
+      ],
+      fakeConnection,
+      projectDir
+    );
+    expect(scriptAgent.publish).toHaveBeenCalledTimes(1);
+    expect(productionAgent.activate).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits a warning and skips activate when publish() throws, but continues with other bundles', async () => {
+    const goodScriptAgent = makePublishingScriptAgent({
+      publish: async () => ({
+        botId: 'botGood',
+        botVersionId: 'verGood',
+        developerName: 'AgentGood',
+      }),
+    });
+    const goodProductionAgent = makeProductionAgent({
+      activate: async () => ({ Id: 'verGood', Status: 'Active' }),
+    });
+    const failingScriptAgent = makePublishingScriptAgent({
+      publish: async () => {
+        throw new Error('publish blew up');
+      },
+    });
+
+    agentInitMock
+      .mockResolvedValueOnce(failingScriptAgent) // publish for AgentBad
+      .mockResolvedValueOnce(goodScriptAgent) // publish for AgentGood
+      .mockResolvedValueOnce(goodProductionAgent); // activate for AgentGood
+
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [
+        { fullName: 'AgentBad', type: 'AiAuthoringBundle', state: 'Created' },
+        { fullName: 'AgentGood', type: 'AiAuthoringBundle', state: 'Created' },
+      ],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual({
+      stage: 'agent-publish',
+      errorMessage: expect.stringMatching(/AgentBad.*publish blew up/),
+    });
+    expect(failingScriptAgent.publish).toHaveBeenCalledTimes(1);
+    expect(goodScriptAgent.publish).toHaveBeenCalledTimes(1);
+    expect(goodProductionAgent.activate).toHaveBeenCalledTimes(1);
+    expect(getDeploymentWarningEvents(deploymentId)).toEqual(warnings);
+  });
+
+  it('emits a warning when activate() throws but does not fail the deploy', async () => {
+    const scriptAgent = makePublishingScriptAgent({
+      publish: async () => ({
+        botId: '0Xx00000000001',
+        botVersionId: '0XV00000000001',
+        developerName: 'DataCuratorAgent',
+      }),
+    });
+    const productionAgent = makeProductionAgent({
+      activate: async () => {
+        throw new Error('activate denied');
+      },
+    });
+    agentInitMock.mockResolvedValueOnce(scriptAgent).mockResolvedValueOnce(productionAgent);
+
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [{ fullName: 'DataCuratorAgent', type: 'AiAuthoringBundle', state: 'Created' }],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual({
+      stage: 'agent-activate',
+      errorMessage: expect.stringMatching(/DataCuratorAgent.*activate denied/),
+    });
+    expect(scriptAgent.publish).toHaveBeenCalledTimes(1);
+    expect(productionAgent.activate).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits a warning and bails when SfProject.resolve fails', async () => {
+    sfProjectResolveMock.mockRejectedValueOnce(new Error('not a DX project'));
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [{ fullName: 'DataCuratorAgent', type: 'AiAuthoringBundle', state: 'Created' }],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual({
+      stage: 'agent-publish',
+      errorMessage: expect.stringMatching(/Could not resolve SfProject.*not a DX project/),
+    });
+    expect(agentInitMock).not.toHaveBeenCalled();
+  });
+
+  it('emits a warning when Agent.init throws (e.g. authoring bundle not found on disk)', async () => {
+    agentInitMock.mockRejectedValueOnce(new Error('AAB not found'));
+    const warnings = await publishDeployedAiAuthoringBundles(
+      deploymentId,
+      [{ fullName: 'Mystery', type: 'AiAuthoringBundle', state: 'Created' }],
+      fakeConnection,
+      projectDir
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual({
+      stage: 'agent-publish',
+      errorMessage: expect.stringMatching(/Mystery.*AAB not found/),
+    });
   });
 });
