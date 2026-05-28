@@ -481,7 +481,10 @@ describe('publishDeployedAiAuthoringBundles', () => {
     deploymentId = createDeployment('proj-aab');
     sfProjectResolveMock.mockReset();
     agentInitMock.mockReset();
-    sfProjectResolveMock.mockResolvedValue({ stub: 'project' });
+    sfProjectResolveMock.mockResolvedValue({
+      stub: 'project',
+      getDefaultPackage: () => ({ path: 'force-app', fullPath: '/abs/force-app' }),
+    });
   });
 
   function makePublishingScriptAgent(opts: {
@@ -546,16 +549,20 @@ describe('publishDeployedAiAuthoringBundles', () => {
     expect(warnings).toEqual([]);
     expect(scriptAgent.publish).toHaveBeenCalledWith(true);
     expect(productionAgent.activate).toHaveBeenCalledTimes(1);
-    expect(agentInitMock).toHaveBeenNthCalledWith(1, {
-      connection: fakeConnection,
-      project: { stub: 'project' },
-      aabName: 'DataCuratorAgent',
-    });
-    expect(agentInitMock).toHaveBeenNthCalledWith(2, {
-      connection: fakeConnection,
-      project: { stub: 'project' },
-      apiNameOrId: '0Xx00000000001',
-    });
+    expect(agentInitMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        connection: fakeConnection,
+        aabName: 'DataCuratorAgent',
+      })
+    );
+    expect(agentInitMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        connection: fakeConnection,
+        apiNameOrId: '0Xx00000000001',
+      })
+    );
   });
 
   it('publishes and activates each AiAuthoringBundle when multiple are deployed', async () => {

@@ -238,6 +238,32 @@ export async function publishDeployedAiAuthoringBundles(
     return [warning];
   }
 
+  // Workaround for a bug in @salesforce/agents@1.6.x:
+  // `scriptAgentPublisher.validateDeveloperName()` calls
+  // `path.resolve(this.project.getDefaultPackage().path)` without passing
+  // the project root as the first arg. `path` is the relative string
+  // declared in `sfdx-project.json` (e.g. "force-app"), so `path.resolve`
+  // joins it against `process.cwd()` — which under vaas-user-workspace is
+  // the project-service install directory, not the user project. Result:
+  // `Cannot find an authoring bundle in /app/services-legacy/.../force-app
+  // that matches DataCuratorAgent`, even when the bundle is correctly
+  // located under <projectDir>/force-app/main/default/aiAuthoringBundles.
+  //
+  // Override `getDefaultPackage` on this single `project` instance to
+  // return an absolute path. The library's `path.resolve(<absolute>)` is
+  // a no-op, so the lookup succeeds. Other code paths that read `path`
+  // expecting the relative form are unaffected because they hold their
+  // own SfProject instances.
+  //
+  // Remove this block once @salesforce/agents ships a fix that uses
+  // `project.getPath()` (or the package's `fullPath` field) for the
+  // base directory.
+  const origGetDefaultPackage = project.getDefaultPackage.bind(project);
+  project.getDefaultPackage = () => {
+    const pkg = origGetDefaultPackage();
+    return { ...pkg, path: pkg.fullPath ?? path.resolve(projectDir, pkg.path) };
+  };
+
   const warnings: DeploymentWarning[] = [];
   for (const aabName of bundleNames) {
     let scriptAgent;
