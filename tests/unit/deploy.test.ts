@@ -22,6 +22,7 @@ import os from 'node:os';
 import {
   assignDeployedPermissionSets,
   buildComponentSet,
+  escapeSoql,
   mapStatusToProgressEvent,
   publishDeployedAiAuthoringBundles,
   readDeployStages,
@@ -249,6 +250,23 @@ describe('readDeployStages', () => {
   });
 });
 
+describe('escapeSoql', () => {
+  it('escapes a single quote so it cannot terminate the literal', () => {
+    expect(escapeSoql("O'Brien")).toBe("O\\'Brien");
+  });
+
+  it('escapes a backslash before quotes (so the quote-escape is not itself neutralized)', () => {
+    expect(escapeSoql('a\\b')).toBe('a\\\\b');
+    expect(escapeSoql("a\\'; DROP")).toBe("a\\\\\\'; DROP");
+  });
+
+  it('leaves quote-free values (the realistic case) byte-identical', () => {
+    expect(escapeSoql('deploy@example.com')).toBe('deploy@example.com');
+    expect(escapeSoql('My_App_Admin')).toBe('My_App_Admin');
+    expect(escapeSoql('005xx0000000001')).toBe('005xx0000000001');
+  });
+});
+
 describe('assignDeployedPermissionSets', () => {
   let deploymentId: string;
 
@@ -397,6 +415,29 @@ describe('assignDeployedPermissionSets', () => {
     );
     expect(warnings).toEqual([]);
     expect(created).toEqual([{ AssigneeId: '005FALLBACK0001', PermissionSetId: '0PSx1' }]);
+  });
+
+  it('escapes a quote-bearing username in the User fallback SOQL (no injection)', async () => {
+    const connection = makeConnection({
+      userId: null,
+      username: "x' OR Username != '",
+      userQueryResult: [{ Id: '005FALLBACK0001' }],
+      permsetLookup: [{ Id: '0PSx1', Name: 'My_App_Admin' }],
+      existingAssignments: [],
+    });
+    await assignDeployedPermissionSets(
+      deploymentId,
+      [{ fullName: 'My_App_Admin', type: 'PermissionSet', state: 'Created' }],
+      connection
+    );
+    const userQueryCall = (connection.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => (c[0] as string).startsWith('SELECT Id FROM User')
+    );
+    // The injected `'` must be escaped to `\'` so it cannot terminate the
+    // literal and graft the `OR Username != ''` clause onto the query.
+    expect(userQueryCall?.[0]).toBe(
+      "SELECT Id FROM User WHERE Username = 'x\\' OR Username != \\'' LIMIT 1"
+    );
   });
 
   it('warns and bails when neither userId nor username can resolve to a User', async () => {

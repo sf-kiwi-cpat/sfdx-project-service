@@ -39,6 +39,25 @@ import { hasReactFiles, runViteBuild } from './build.js';
 import { BuildError } from '../errors.js';
 
 /**
+ * Escape a string value for safe interpolation into a SOQL string literal.
+ *
+ * SOQL string literals are single-quoted; an unescaped `'` (or backslash)
+ * inside the value terminates the literal early and lets the rest be
+ * parsed as query syntax. The values we interpolate today (AuthInfo
+ * usernames, SDR component names, org Ids) cannot realistically contain
+ * a quote, so this is defense-in-depth rather than a live vulnerability —
+ * but it removes a fragile pattern and a future-injection vector if an
+ * upstream ever resolves an alias to a quote-bearing username.
+ *
+ * jsforce on `@salesforce/core@8` exposes no real SOQL bind-parameter
+ * API, so escaping is the practical mitigation. Per the SOQL grammar,
+ * only `\` and `'` are reserved inside a string literal.
+ */
+export function escapeSoql(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
  * Rewrite an org instance URL to the canonical "Salesforce App" domain
  * used by deployed UIBundle (React/LWR) apps. Cookie-auth REST calls
  * from the deployed app are only allow-listed when the page is served
@@ -73,6 +92,12 @@ export function toAppDomainUrl(instanceUrl: string): string | null {
   if (!host.endsWith('.salesforce.com')) return null;
   const labels = host.split('.');
   const firstLabel = labels[0];
+  // A leftmost label already containing `--` is treated as an existing
+  // namespace marker and bailed on, so we never produce a double-namespace
+  // host (`acme--ns--c.…`). This intentionally over-rejects the rare org
+  // whose name legitimately contains `--` for non-namespace reasons
+  // (e.g. `my-team--prod`) — we'd rather fall back to the unmodified URL
+  // than risk fabricating an invalid host.
   if (!firstLabel || firstLabel.includes('--')) return null;
   labels[0] = `${firstLabel}--c`;
   labels[labels.length - 1] = 'app';
@@ -128,7 +153,7 @@ export async function assignDeployedPermissionSets(
   let userId = authFields.userId;
   if (!userId && authFields.username) {
     const userQuery = await connection.query<{ Id: string }>(
-      `SELECT Id FROM User WHERE Username = '${authFields.username}' LIMIT 1`
+      `SELECT Id FROM User WHERE Username = '${escapeSoql(authFields.username)}' LIMIT 1`
     );
     userId = userQuery.records[0]?.Id;
   }
@@ -142,12 +167,12 @@ export async function assignDeployedPermissionSets(
   }
 
   const psQuery = await connection.query<{ Id: string; Name: string }>(
-    `SELECT Id, Name FROM PermissionSet WHERE Name IN ('${permissionSetNames.join("','")}')`
+    `SELECT Id, Name FROM PermissionSet WHERE Name IN ('${permissionSetNames.map(escapeSoql).join("','")}')`
   );
   const idsByName = new Map(psQuery.records.map((r) => [r.Name, r.Id]));
 
   const existingAssignments = await connection.query<{ PermissionSetId: string }>(
-    `SELECT PermissionSetId FROM PermissionSetAssignment WHERE AssigneeId = '${userId}' AND PermissionSetId IN ('${Array.from(idsByName.values()).join("','")}')`
+    `SELECT PermissionSetId FROM PermissionSetAssignment WHERE AssigneeId = '${escapeSoql(userId)}' AND PermissionSetId IN ('${Array.from(idsByName.values()).map(escapeSoql).join("','")}')`
   );
   const alreadyAssigned = new Set(existingAssignments.records.map((r) => r.PermissionSetId));
 
