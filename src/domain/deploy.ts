@@ -290,8 +290,16 @@ export function resolvePublishAabChildPath(): string {
 /**
  * Fork the publish-aab child for a single bundle. Resolves to the
  * structured ChildResult parsed from the child's stdout, or rejects if
- * the child cannot be spawned, exits without emitting a parsable
- * result, or stays alive past the timeout.
+ * the child cannot be spawned or exits without emitting a parsable
+ * result on stdout.
+ *
+ * No timeout is enforced today — a hung `@salesforce/agents` import in
+ * the child would block the parent's `await` indefinitely. Acceptable
+ * for now because the publish step's underlying HTTP calls have their
+ * own timeouts and the child cannot block before reaching them. If a
+ * hang is ever observed, add a `setTimeout` watchdog that kills the
+ * child and rejects with a transport error (mapped to `agent-publish`
+ * by the caller, matching the existing failure-stage contract).
  *
  * Exposed via `runPublishAabChildImpl` so unit tests can swap the
  * fork+IPC plumbing for a stub without monkey-patching `child_process`.
