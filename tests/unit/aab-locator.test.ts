@@ -82,6 +82,47 @@ describe('aab-locator', () => {
       tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aab-locator-'));
       expect(dirContainsBundle(tmpDir, 'DataCuratorAgent')).toBe(false);
     });
+
+    it('does not descend into node_modules (skip-list)', async () => {
+      // A vendored dep that happens to ship an aiAuthoringBundles fixture
+      // must not be matched — only first-party source counts.
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aab-locator-'));
+      await fs.mkdir(
+        path.join(
+          tmpDir,
+          'force-app',
+          'node_modules',
+          'some-dep',
+          'aiAuthoringBundles',
+          'DataCuratorAgent'
+        ),
+        { recursive: true }
+      );
+      expect(dirContainsBundle(path.join(tmpDir, 'force-app'), 'DataCuratorAgent')).toBe(false);
+    });
+
+    it('does not descend into .git/.sf/.sfdx (skip-list)', async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aab-locator-'));
+      for (const skip of ['.git', '.sf', '.sfdx']) {
+        await fs.mkdir(
+          path.join(tmpDir, 'force-app', skip, 'aiAuthoringBundles', 'DataCuratorAgent'),
+          { recursive: true }
+        );
+      }
+      expect(dirContainsBundle(path.join(tmpDir, 'force-app'), 'DataCuratorAgent')).toBe(false);
+    });
+
+    it('returns false for a bundle nested below the depth ceiling', async () => {
+      // 8 levels of nesting before the bundle — past MAX_WALK_DEPTH (6).
+      // A real DX layout is only ~3 deep, so this can only happen via
+      // pathological nesting/symlinks, which we deliberately stop walking.
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aab-locator-'));
+      const deep = path.join(tmpDir, 'force-app', 'a', 'b', 'c', 'd', 'e', 'f', 'g');
+      await fs.mkdir(path.join(deep, 'aiAuthoringBundles', 'DataCuratorAgent'), {
+        recursive: true,
+      });
+      expect(dirContainsBundle(path.join(tmpDir, 'force-app'), 'DataCuratorAgent')).toBe(false);
+    });
   });
 
   describe('findPackageDirContainingBundle', () => {

@@ -39,6 +39,24 @@ import path from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 
 /**
+ * Directories we never descend into while hunting for a bundle. None of
+ * these can legitimately contain a DX `aiAuthoringBundles/` source tree,
+ * and they're exactly the trees that make an unbounded walk expensive
+ * (a vendored `node_modules` under a package root, VCS/CLI metadata).
+ */
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.sf', '.sfdx', '.localdevserver']);
+
+/**
+ * Depth ceiling for the recursive walk. SFDX bundles live at a fixed,
+ * shallow depth under a package directory
+ * (`<pkg>/main/default/aiAuthoringBundles/<name>/` — 3 levels), so 6 is
+ * generous for any real DX layout while bounding the walk on projects
+ * that symlink or nest deeply. Reaching the limit returns false rather
+ * than throwing — same fail-soft contract as an I/O error.
+ */
+const MAX_WALK_DEPTH = 6;
+
+/**
  * Walk every package directory looking for an `aiAuthoringBundles/<aabName>/`
  * directory anywhere inside it. Returns the package directory's absolute
  * path on disk if a match is found, undefined otherwise.
@@ -68,8 +86,16 @@ export function findPackageDirContainingBundle(
  * (descend until a child directory named `aiAuthoringBundles` is hit,
  * then check whether `<aabName>` exists inside it). Returns false on any
  * I/O error so callers don't have to wrap each call in a try/catch.
+ *
+ * The walk skips well-known non-source trees (`node_modules`, `.git`,
+ * …) and is bounded by `MAX_WALK_DEPTH` so a deeply nested or vendored
+ * package directory can't make it expensive or blow the stack. `depth`
+ * is an internal recursion accumulator; callers pass two args.
  */
-export function dirContainsBundle(dir: string, aabName: string): boolean {
+export function dirContainsBundle(dir: string, aabName: string, depth = 0): boolean {
+  if (depth > MAX_WALK_DEPTH) {
+    return false;
+  }
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -83,6 +109,9 @@ export function dirContainsBundle(dir: string, aabName: string): boolean {
     }
   }
   for (const entry of entries) {
+    if (SKIP_DIRS.has(entry)) {
+      continue;
+    }
     const child = path.join(dir, entry);
     let isDir = false;
     try {
@@ -90,7 +119,7 @@ export function dirContainsBundle(dir: string, aabName: string): boolean {
     } catch {
       continue;
     }
-    if (isDir && dirContainsBundle(child, aabName)) {
+    if (isDir && dirContainsBundle(child, aabName, depth + 1)) {
       return true;
     }
   }
