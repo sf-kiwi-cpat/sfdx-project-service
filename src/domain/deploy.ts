@@ -17,6 +17,8 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { Connection, AuthInfo } from '@salesforce/core';
 import { logger } from '../logger.js';
@@ -37,6 +39,72 @@ import { hasReactFiles, runViteBuild } from './build.js';
 import { BuildError } from '../errors.js';
 
 /**
+ * Escape a string value for safe interpolation into a SOQL string literal.
+ *
+ * SOQL string literals are single-quoted; an unescaped `'` (or backslash)
+ * inside the value terminates the literal early and lets the rest be
+ * parsed as query syntax. The values we interpolate today (AuthInfo
+ * usernames, SDR component names, org Ids) cannot realistically contain
+ * a quote, so this is defense-in-depth rather than a live vulnerability —
+ * but it removes a fragile pattern and a future-injection vector if an
+ * upstream ever resolves an alias to a quote-bearing username.
+ *
+ * jsforce on `@salesforce/core@8` exposes no real SOQL bind-parameter
+ * API, so escaping is the practical mitigation. Per the SOQL grammar,
+ * only `\` and `'` are reserved inside a string literal.
+ */
+export function escapeSoql(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * Rewrite an org instance URL to the canonical "Salesforce App" domain
+ * used by deployed UIBundle (React/LWR) apps. Cookie-auth REST calls
+ * from the deployed app are only allow-listed when the page is served
+ * from this domain — direct nav to the same path on `*.my.salesforce.com`
+ * 401s on every Connect API call (W-22404059).
+ *
+ *   https://orgfarm-1fa1bb3933.test1.my.pc-rnd.salesforce.com
+ *   →
+ *   https://orgfarm-1fa1bb3933--c.test1.my.pc-rnd.salesforce.app
+ *
+ * The swap is two edits: append `--c` to the leftmost host label
+ * (the namespace marker required by core's SalesforceAppDomainFilter)
+ * and change the TLD from `salesforce.com` to `salesforce.app`.
+ *
+ * Returns `null` when the input doesn't match the expected shape so
+ * call sites can fall back to the unmodified instance URL rather than
+ * surface a fabricated host. Already-app-domain URLs and inputs whose
+ * leftmost label already carries a `--<ns>` suffix are passed through
+ * unchanged.
+ *
+ * Note that the `--c` host only resolves once the target org has the
+ * `salesforceAppDomain` org pref enabled — that's a separate operator
+ * step (per W-22404059 follow-up). Until then the toast points at a
+ * non-resolving host; that's still preferable to today's behavior of
+ * pointing at a resolving host where every API call 401s.
+ */
+export function toAppDomainUrl(instanceUrl: string): string | null {
+  const match = instanceUrl.match(/^(https?:\/\/)([^/]+)(.*)$/);
+  if (!match) return null;
+  const [, scheme, host, rest] = match;
+  if (host.endsWith('.salesforce.app')) return instanceUrl;
+  if (!host.endsWith('.salesforce.com')) return null;
+  const labels = host.split('.');
+  const firstLabel = labels[0];
+  // A leftmost label already containing `--` is treated as an existing
+  // namespace marker and bailed on, so we never produce a double-namespace
+  // host (`acme--ns--c.…`). This intentionally over-rejects the rare org
+  // whose name legitimately contains `--` for non-namespace reasons
+  // (e.g. `my-team--prod`) — we'd rather fall back to the unmodified URL
+  // than risk fabricating an invalid host.
+  if (!firstLabel || firstLabel.includes('--')) return null;
+  labels[0] = `${firstLabel}--c`;
+  labels[labels.length - 1] = 'app';
+  return `${scheme}${labels.join('.')}${rest}`;
+}
+
+/**
  * A single stage in a multi-manifest deploy. Declared in a template's
  * `template.json` under `deployStages`. Templates that do not declare
  * `deployStages` run a single-pass `ComponentSet.fromSource(force-app)`
@@ -45,6 +113,333 @@ import { BuildError } from '../errors.js';
 export interface DeployStage {
   manifest: string;
   optional?: boolean;
+}
+
+/**
+ * Assign each PermissionSet that landed in the deploy to the deploying
+ * user, skipping any already assigned. Idempotent on re-deploys.
+ *
+ * Salesforce's Metadata API never auto-assigns permission sets — even
+ * when the deploying user is a System Admin. Templates that ship a
+ * permset rely on this assignment to grant the calling user FLS on
+ * optional fields (System Admin auto-grants FLS only on `<required>true</required>`
+ * fields), so without it, Apex SOQL surfaces optional fields as
+ * "No such column".
+ *
+ * Failures here are logged as warnings on the deployment, not raised:
+ * the metadata is correctly in place, the deploy itself succeeded, and
+ * a missing assignment is a recoverable problem (the user can self-assign
+ * via Setup) — surfacing it as a deploy failure would be a regression
+ * for templates that don't ship a permset.
+ */
+export async function assignDeployedPermissionSets(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection
+): Promise<DeploymentWarning[]> {
+  const permissionSetNames = Array.from(
+    new Set(fileResponses.filter((f) => f.type === 'PermissionSet').map((f) => f.fullName))
+  );
+  if (permissionSetNames.length === 0) {
+    return [];
+  }
+
+  // userId resolution: prefer the AuthInfo cache (cheap, no SOQL), fall back
+  // to a `User WHERE Username` lookup when AuthInfo doesn't carry it. The
+  // vaas-test container's auth flow seeds the cache via `sfdx auth:web:login`
+  // output that doesn't include the user_id field, so getAuthInfoFields()
+  // returns undefined there even though the connection itself is valid.
+  const authFields = connection.getAuthInfoFields();
+  let userId = authFields.userId;
+  if (!userId && authFields.username) {
+    const userQuery = await connection.query<{ Id: string }>(
+      `SELECT Id FROM User WHERE Username = '${escapeSoql(authFields.username)}' LIMIT 1`
+    );
+    userId = userQuery.records[0]?.Id;
+  }
+  if (!userId) {
+    const warning: DeploymentWarning = {
+      stage: 'permset-assignment',
+      errorMessage: 'Could not resolve deploying userId; skipping PermissionSet auto-assignment',
+    };
+    addWarningEvent(deploymentId, warning);
+    return [warning];
+  }
+
+  const psQuery = await connection.query<{ Id: string; Name: string }>(
+    `SELECT Id, Name FROM PermissionSet WHERE Name IN ('${permissionSetNames.map(escapeSoql).join("','")}')`
+  );
+  const idsByName = new Map(psQuery.records.map((r) => [r.Name, r.Id]));
+
+  const existingAssignments = await connection.query<{ PermissionSetId: string }>(
+    `SELECT PermissionSetId FROM PermissionSetAssignment WHERE AssigneeId = '${escapeSoql(userId)}' AND PermissionSetId IN ('${Array.from(idsByName.values()).map(escapeSoql).join("','")}')`
+  );
+  const alreadyAssigned = new Set(existingAssignments.records.map((r) => r.PermissionSetId));
+
+  const warnings: DeploymentWarning[] = [];
+  for (const name of permissionSetNames) {
+    const psId = idsByName.get(name);
+    if (!psId) {
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `PermissionSet '${name}' was reported deployed but not found in the org; skipping assignment`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+    if (alreadyAssigned.has(psId)) continue;
+
+    const result = await connection.sobject('PermissionSetAssignment').create({
+      AssigneeId: userId,
+      PermissionSetId: psId,
+    });
+    if (!result.success) {
+      const errs = (result.errors ?? []).map((e) => e.message ?? String(e)).join('; ');
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `Failed to assign PermissionSet '${name}': ${errs}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    } else {
+      logger.info({ deploymentId, permissionSet: name, userId }, 'Assigned PermissionSet');
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Publish + activate every AiAuthoringBundle that landed in the deploy.
+ *
+ * Deploying an AiAuthoringBundle ships the source file (the `.agent`
+ * script + `bundle-meta.xml`) but does NOT materialize the runtime
+ * BotDefinition / BotVersion in the org — that's a separate compile
+ * + publish API call that the Salesforce CLI's `sf agent publish`
+ * wraps. Until publish runs, the deployed bundle is not invocable
+ * (chat panel returns "agent not found"); after publish, a new
+ * BotVersion exists in `Inactive` state and a follow-up activate is
+ * required to set `Status = Active`.
+ *
+ * Originally this hook called `Agent.init` from `@salesforce/agents`
+ * directly in-process — same code the `sf agent publish` CLI wraps,
+ * but invoked as a library import to avoid the CLI's subprocess
+ * overhead, DX-project assumptions, and `SF_TEST_API` env quirks.
+ *
+ * ## Why we fork a child process instead
+ *
+ * `@salesforce/agents@1.6.x` declares `nock` as a *runtime* dependency
+ * (not devDependency). Importing the library transitively imports
+ * `lib/maybe-mock.js`, which `require()`s `nock`, whose module-init
+ * constructs a `BatchInterceptor` from `@mswjs/interceptors` and
+ * monkey-patches `http.ClientRequest` and `http.request` globally —
+ * see `node_modules/@mswjs/interceptors/lib/node/ClientRequest-*.cjs`,
+ * which `MockHttpSocket`-wraps every outgoing socket. The result: any
+ * deploy in the same Node process that imports `@salesforce/agents`
+ * sees its SOAP / metadata API calls fail with `read EINVAL` because
+ * the mock socket aborts requests it doesn't have a matching scope for.
+ *
+ * Concretely: even templates that ship NO AiAuthoringBundle were
+ * failing to deploy because `import { Agent } from '@salesforce/agents'`
+ * at the top of this file fired nock's side effect at module-load
+ * time — long before the bundleNames check ran.
+ *
+ * Forking a child process for the publish + activate calls contains
+ * the side effect:
+ *   - The parent project-service stays clean for the metadata-deploy
+ *     phase (which always runs before this hook, in any case).
+ *   - The child's nock pollution dies with the process when it exits.
+ *   - Cold-start cost (~500ms-1s for `Agent` init) is bounded — only
+ *     fires when an AiAuthoringBundle is in the deploy. The deploy
+ *     itself is the slow part (~30s), so this is not user-visible.
+ *
+ * ## Stop-gap, not durable
+ *
+ * This is a stop-gap. The real fix belongs upstream in
+ * `@salesforce/agents`: `nock` should move to `devDependencies`, and
+ * `lib/maybe-mock.js` should not be imported on the production code
+ * path (or should lazy-require nock only when `SF_MOCK_DIR` is set).
+ *
+ * Once that lands and we bump our pinned version, this hook should
+ * collapse back to an in-process call. The relevant changes to revert:
+ *   - Delete `src/domain/publish-aab-child.ts`.
+ *   - Restore the in-process `Agent.init` + `publish` + `activate`
+ *     calls here, including the `getDefaultPackage` workaround (see
+ *     publish-aab-child.ts for the original shape and rationale —
+ *     that workaround is independent of the nock issue and may also
+ *     be fixed by then).
+ *   - Drop `username` from the parameter list — the in-process path
+ *     reuses the parent's `connection` directly.
+ *
+ * ## Idempotency
+ *
+ * Republishing an already-published bundle is tolerated — the publish
+ * API creates a new BotVersion N+1 against the existing BotDefinition.
+ * Activate then targets the latest version.
+ *
+ * ## Error contract
+ *
+ * Failures emit warning SSE events on the deployment but do not raise:
+ * the metadata is in place, the deploy itself succeeded, and a missing
+ * publish/activate is recoverable (the user can run `sf agent publish`
+ * + `sf agent activate` manually). Surfacing as a deploy failure would
+ * regress templates that don't ship an AiAuthoringBundle.
+ *
+ * No-op when the deploy ships zero AiAuthoringBundle components.
+ */
+
+interface ChildSuccess {
+  ok: true;
+  botId: string;
+  botVersionId: string;
+  botVersionStatus: string;
+}
+interface ChildFailure {
+  ok: false;
+  stage: 'agent-init' | 'agent-publish' | 'agent-activate' | 'sfproject-resolve' | 'connection';
+  errorMessage: string;
+}
+type ChildResult = ChildSuccess | ChildFailure;
+
+/**
+ * Resolve the on-disk path to the compiled child entry point.
+ *
+ * `import.meta.url` resolves to `dist/domain/deploy.js` at runtime, so
+ * the sibling child script sits at `./publish-aab-child.js`. Exported
+ * so tests can stub it without re-deriving the path themselves.
+ */
+export function resolvePublishAabChildPath(): string {
+  return fileURLToPath(new URL('./publish-aab-child.js', import.meta.url));
+}
+
+/**
+ * Fork the publish-aab child for a single bundle. Resolves to the
+ * structured ChildResult parsed from the child's stdout, or rejects if
+ * the child cannot be spawned or exits without emitting a parsable
+ * result on stdout.
+ *
+ * No timeout is enforced today — a hung `@salesforce/agents` import in
+ * the child would block the parent's `await` indefinitely. Acceptable
+ * for now because the publish step's underlying HTTP calls have their
+ * own timeouts and the child cannot block before reaching them. If a
+ * hang is ever observed, add a `setTimeout` watchdog that kills the
+ * child and rejects with a transport error (mapped to `agent-publish`
+ * by the caller, matching the existing failure-stage contract).
+ *
+ * Exposed via `runPublishAabChildImpl` so unit tests can swap the
+ * fork+IPC plumbing for a stub without monkey-patching `child_process`.
+ */
+export async function runPublishAabChildImpl(
+  childPath: string,
+  input: { username: string; projectDir: string; aabName: string }
+): Promise<ChildResult> {
+  return new Promise((resolve, reject) => {
+    // `silent: true` pipes the child's stdio to us so we can read its
+    // single-line JSON result. `stderr` is forwarded to our stderr so
+    // pino logs from inside @salesforce/agents still surface in the
+    // parent's log stream.
+    const child = fork(childPath, [], {
+      silent: true,
+      stdio: ['pipe', 'pipe', 'inherit', 'ipc'],
+    });
+    let stdout = '';
+    let settled = false;
+    const finalize = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8');
+    });
+    child.on('error', (err) => finalize(() => reject(err)));
+    child.on('exit', () => {
+      finalize(() => {
+        // Child writes a single line of JSON regardless of success.
+        // If it's missing or malformed, treat it as a transport failure.
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          reject(new Error('publish-aab child exited without writing a result'));
+          return;
+        }
+        try {
+          resolve(JSON.parse(trimmed) as ChildResult);
+        } catch (parseErr) {
+          reject(
+            new Error(
+              `publish-aab child wrote unparsable result: ${parseErr instanceof Error ? parseErr.message : 'unknown error'}; raw=${trimmed.slice(0, 500)}`
+            )
+          );
+        }
+      });
+    });
+    child.stdin?.write(JSON.stringify(input));
+    child.stdin?.end();
+  });
+}
+
+/**
+ * Internal indirection so unit tests can stub the spawn-and-IPC layer
+ * without monkey-patching `child_process`. Production code calls
+ * `publishDeployedAiAuthoringBundles`, which calls `runPublishAabChild`,
+ * which calls `runPublishAabChildImpl`. Tests reassign `runPublishAabChild`.
+ */
+export let runPublishAabChild = runPublishAabChildImpl;
+export function setRunPublishAabChildForTesting(fn: typeof runPublishAabChildImpl | null): void {
+  runPublishAabChild = fn ?? runPublishAabChildImpl;
+}
+
+export async function publishDeployedAiAuthoringBundles(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  username: string,
+  projectDir: string
+): Promise<DeploymentWarning[]> {
+  const bundleNames = Array.from(
+    new Set(fileResponses.filter((f) => f.type === 'AiAuthoringBundle').map((f) => f.fullName))
+  );
+  if (bundleNames.length === 0) {
+    return [];
+  }
+
+  const childPath = resolvePublishAabChildPath();
+  const warnings: DeploymentWarning[] = [];
+
+  for (const aabName of bundleNames) {
+    let result: ChildResult;
+    try {
+      result = await runPublishAabChild(childPath, { username, projectDir, aabName });
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-publish',
+        errorMessage: `Failed to run publish-aab child for '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    if (result.ok) {
+      logger.info(
+        {
+          deploymentId,
+          aabName,
+          botId: result.botId,
+          botVersionId: result.botVersionId,
+          botVersionStatus: result.botVersionStatus,
+        },
+        'Published + activated AiAuthoringBundle'
+      );
+      continue;
+    }
+
+    const stage = result.stage === 'agent-activate' ? 'agent-activate' : 'agent-publish';
+    const warning: DeploymentWarning = { stage, errorMessage: result.errorMessage };
+    warnings.push(warning);
+    addWarningEvent(deploymentId, warning);
+  }
+  return warnings;
 }
 
 /**
@@ -295,6 +690,41 @@ async function runStagedDeploy(
     }
   }
 
+  if (!failedRequiredStage) {
+    try {
+      const psWarnings = await assignDeployedPermissionSets(
+        deploymentId,
+        allFileResponses,
+        connection
+      );
+      warnings.push(...psWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'permset-assignment',
+        errorMessage: `PermissionSet auto-assignment failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+
+    try {
+      const aabWarnings = await publishDeployedAiAuthoringBundles(
+        deploymentId,
+        allFileResponses,
+        orgUsername,
+        projectDir
+      );
+      warnings.push(...aabWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'agent-publish',
+        errorMessage: `AiAuthoringBundle publish/activate failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+  }
+
   let aggregateStatus: string;
   if (failedRequiredStage) {
     aggregateStatus = 'Failed';
@@ -332,7 +762,8 @@ async function runStagedDeploy(
     if (uiBundle) {
       const instanceUrl = connection.getAuthInfoFields().instanceUrl;
       if (instanceUrl) {
-        deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
+        const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+        deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
       }
     }
   }
@@ -409,8 +840,48 @@ export async function deployMetadataAsync(
       if (uiBundle) {
         const instanceUrl = connection.getAuthInfoFields().instanceUrl;
         if (instanceUrl) {
-          deploymentResult.appUrl = `${instanceUrl}/lwr/application/ai/c-${uiBundle.fullName}`;
+          const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+          deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
         }
+      }
+
+      const postDeployWarnings: DeploymentWarning[] = [];
+      try {
+        const psWarnings = await assignDeployedPermissionSets(
+          deploymentId,
+          runResult.fileResponses,
+          connection
+        );
+        postDeployWarnings.push(...psWarnings);
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: 'permset-assignment',
+          errorMessage: `PermissionSet auto-assignment failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        addWarningEvent(deploymentId, warning);
+        postDeployWarnings.push(warning);
+      }
+
+      try {
+        const aabWarnings = await publishDeployedAiAuthoringBundles(
+          deploymentId,
+          runResult.fileResponses,
+          auth.username,
+          projectDir
+        );
+        postDeployWarnings.push(...aabWarnings);
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: 'agent-publish',
+          errorMessage: `AiAuthoringBundle publish/activate failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        addWarningEvent(deploymentId, warning);
+        postDeployWarnings.push(warning);
+      }
+
+      if (postDeployWarnings.length > 0) {
+        deploymentResult.status = 'SucceededWithWarnings';
+        deploymentResult.warnings = postDeployWarnings;
       }
     }
 

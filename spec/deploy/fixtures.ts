@@ -33,6 +33,17 @@ import { createApp } from '../../src/app.js';
  */
 export const TEST_INSTANCE_URL = 'https://test.salesforce.com';
 
+/**
+ * Canonical "Salesforce App" host that `TEST_INSTANCE_URL` is rewritten to
+ * when constructing the deploy-toast `appUrl`. Cookie-auth REST from the
+ * deployed UIBundle is allow-listed only on the `--c.<…>.salesforce.app`
+ * host (per core's `LightningRequestHandler` + `salesforceAppDomain` gate),
+ * so production code rewrites the leftmost label to append `--c` and swaps
+ * the TLD from `salesforce.com` to `salesforce.app`. See `toAppDomainUrl`
+ * in `src/domain/deploy.ts` for the full rationale.
+ */
+export const EXPECTED_APP_URL_HOST = 'https://test--c.salesforce.app';
+
 export const COMPONENT_RESPONSES = [
   { fullName: 'Hello_World__c', type: 'CustomObject', state: 'Created' },
   { fullName: 'Hello_World__c.Description__c', type: 'CustomField', state: 'Created' },

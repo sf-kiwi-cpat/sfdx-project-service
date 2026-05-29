@@ -67,7 +67,17 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary'],
       include: ['src/**/*.ts'],
-      exclude: ['src/index.ts', 'src/**/*.test.ts'],
+      // `src/index.ts` is the Fastify server entrypoint — never imported,
+      // only run by `node dist/index.js`. `src/domain/publish-aab-child.ts`
+      // is the publish-AAB child entrypoint, never imported (forked via
+      // `child_process.fork` from deploy.ts). Both files are pure
+      // process plumbing whose pure logic has been extracted to
+      // separately-tested modules; covering them inline would require
+      // spinning up a real Fastify server / forking a real child process,
+      // which is integration territory, not unit. The helpers
+      // publish-aab-child uses live in src/domain/aab-locator.ts and
+      // are unit-tested directly.
+      exclude: ['src/index.ts', 'src/domain/publish-aab-child.ts', 'src/**/*.test.ts'],
       thresholds,
     },
   },

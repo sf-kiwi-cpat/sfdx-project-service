@@ -20,13 +20,13 @@ Write a concise briefing with these sections:
 Use direct, admin-friendly language and only rely on the supplied inventory snapshot.</content>
         <inputs>
             <apiName>request_context</apiName>
-            <definition>PRIMITIVE://String</definition>
+            <definition>primitive://String</definition>
             <referenceName>Input:request_context</referenceName>
             <required>true</required>
         </inputs>
         <inputs>
             <apiName>inventory_snapshot</apiName>
-            <definition>PRIMITIVE://String</definition>
+            <definition>primitive://String</definition>
             <referenceName>Input:inventory_snapshot</referenceName>
             <required>true</required>
         </inputs>
