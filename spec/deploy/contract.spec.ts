@@ -140,6 +140,7 @@ import {
   setupHermeticHome,
   cleanupHermeticHome,
   TEST_INSTANCE_URL,
+  EXPECTED_APP_URL_HOST,
 } from './fixtures.js';
 
 /**
@@ -535,12 +536,17 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
     });
 
     it('complete event includes appUrl when deployment contains a UIBundle component', async () => {
+      // The deploy-toast appUrl is constructed against the canonical
+      // "Salesforce App" host (see EXPECTED_APP_URL_HOST docs in fixtures.ts),
+      // not the raw instance URL. Cookie-auth REST from the deployed UIBundle
+      // is allow-listed only on this host — surfacing the my.salesforce.com
+      // host here would 401 on every Connect API call.
       const { complete } = await streamUntilComplete(
         app,
         `/v1/projects/${projectId}/deployments/${deploymentId}/events`
       );
       const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
-      expect(complete.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
+      expect(complete.appUrl).toBe(`${EXPECTED_APP_URL_HOST}/lwr/application/ai/c-${webAppName}`);
     });
 
     it('complete event omits appUrl when no UIBundle component is deployed', async () => {
@@ -601,6 +607,93 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         `/v1/projects/${projectId}/deployments/${failedDeploymentId}/events`
       );
       expect(complete.appUrl).toBeUndefined();
+    });
+
+    it('appUrl host is rewritten from .salesforce.com to --c.<…>.salesforce.app', async () => {
+      // The default test instance URL is `https://test.salesforce.com`. The
+      // canonical-domain rewrite must turn it into `https://test--c.salesforce.app`
+      // — the host swap is two edits: append `--c` to the leftmost label and
+      // change the TLD from `salesforce.com` to `salesforce.app`. This is the
+      // shape the deployed UIBundle's cookie-auth REST gets allow-listed for.
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${deploymentId}/events`
+      );
+      expect(complete.appUrl).toMatch(/^https:\/\/test--c\.salesforce\.app\//);
+      expect(complete.appUrl).not.toMatch(/\.salesforce\.com\//);
+    });
+
+    it('appUrl is unmodified when instanceUrl is already on the .salesforce.app domain', async () => {
+      // Idempotent shape: an instance URL that already targets the canonical
+      // domain (e.g. because core's OrgDnsPublisher has already provisioned
+      // it and Connection surfaced that host) is passed through unchanged.
+      // No double-`--c`, no TLD flip.
+      await app.close();
+      vi.clearAllMocks();
+      app = createApp();
+      await app.ready();
+      const alreadyAppDomain = 'https://example--c.my.salesforce.app';
+
+      setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+      setupDeployMock(mockPollStatus);
+      mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
+
+      mockResolveAlias.mockImplementation((alias: string) =>
+        alias === 'test-alias' ? 'user@test.example.com' : undefined
+      );
+      mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
+        getAuthInfoFields: () => ({ instanceUrl: alreadyAppDomain }),
+      });
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' });
+      const depId = deployRes.body.deploymentId;
+
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
+      expect(complete.appUrl).toBe(`${alreadyAppDomain}/lwr/application/ai/c-${webAppName}`);
+    });
+
+    it('appUrl falls back to the unmodified instance URL when the host shape is unrecognized', async () => {
+      // When the rewrite cannot be applied (e.g. the host doesn't end in
+      // `.salesforce.com`/`.salesforce.app` or the leftmost label already
+      // carries a `--<ns>` suffix), the contract is to surface the unmodified
+      // instance URL rather than a fabricated host. The user gets a working
+      // (if 401-prone) URL instead of a non-resolving one.
+      await app.close();
+      vi.clearAllMocks();
+      app = createApp();
+      await app.ready();
+      const unrecognizedHost = 'https://example.com';
+
+      setupDefaultMocks(mockConnectionCreate, mockAuthInfoCreate);
+      setupDeployMock(mockPollStatus);
+      mockPollStatus.mockResolvedValue(createSuccessDeployResponse());
+
+      mockResolveAlias.mockImplementation((alias: string) =>
+        alias === 'test-alias' ? 'user@test.example.com' : undefined
+      );
+      mockConnectionCreate.mockResolvedValue({
+        refreshAuth: vi.fn().mockResolvedValue(undefined),
+        getAuthInfoFields: () => ({ instanceUrl: unrecognizedHost }),
+      });
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: 'test-alias' });
+      const depId = deployRes.body.deploymentId;
+
+      const { complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
+      expect(complete.appUrl).toBe(`${unrecognizedHost}/lwr/application/ai/c-${webAppName}`);
     });
   });
 
@@ -738,7 +831,9 @@ describe('GET /v1/projects/:id/deployments/:deploymentId/events (SSE)', () => {
         `/v1/projects/${projectId}/deployments/${depId}/events`
       );
       const webAppName = COMPONENT_RESPONSES[3].fullName; // 'App'
-      expect(complete.appUrl).toBe(`${TEST_INSTANCE_URL}/lwr/application/ai/c-${webAppName}`);
+      // Same canonical-domain rewrite as the single-pass branch — see
+      // EXPECTED_APP_URL_HOST docs in fixtures.ts.
+      expect(complete.appUrl).toBe(`${EXPECTED_APP_URL_HOST}/lwr/application/ai/c-${webAppName}`);
     });
 
     it('required stage failure aborts remaining stages', async () => {

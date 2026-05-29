@@ -137,7 +137,7 @@ Fields common to all deployments:
 | `numberComponentsDeployed` | number | Summed across all stages for staged deploys. |
 | `numberComponentsTotal` | number | Summed across all stages for staged deploys. |
 | `components` | `ComponentResult[]` | Summed across all stages for staged deploys. |
-| `appUrl` | string \| undefined | Present **only** when status ∈ `{Succeeded, SucceededWithWarnings}` AND a `UIBundle` component was deployed. Format: `{instanceUrl}/lwr/application/ai/c-{appFullName}`. |
+| `appUrl` | string \| undefined | Present **only** when status ∈ `{Succeeded, SucceededWithWarnings}` AND a `UIBundle` component was deployed. Format: `{appHost}/lwr/application/ai/c-{appFullName}`, where `{appHost}` is the canonical Salesforce App host derived from the org's instance URL — see [appUrl host rewrite](#appurl-host-rewrite). |
 | `errorMessage` | string \| undefined | Present when status = `Failed`. |
 | `failedStage` | string \| undefined | Present when a required stage failed. Value is the failing stage's `manifest` path. |
 
@@ -152,6 +152,28 @@ Fields present only for staged deploys:
 - `Succeeded` — all stages succeeded (or, for a single-pass deploy, SDR returned `Succeeded`).
 - `SucceededWithWarnings` — all required stages succeeded, and at least one optional stage failed.
 - `Failed` — a required stage failed, or a single-pass deploy returned `Failed`.
+
+---
+
+## `appUrl` host rewrite
+
+The deploy-toast `appUrl` is constructed against the canonical "Salesforce App" host derived from the org's instance URL, **not the raw instance URL**. Cookie-auth REST from the deployed UIBundle is allow-listed only on `--c.<…>.salesforce.app` hosts (per core's `LightningRequestHandler` + `salesforceAppDomain` gate); surfacing the unmodified `*.my.salesforce.com` host here would cause every Connect API call from the deployed app to 401.
+
+The rewrite makes two edits to the host:
+1. Append `--c` to the leftmost label.
+2. Replace the TLD `salesforce.com` with `salesforce.app`.
+
+Examples:
+
+| Instance URL | Resulting `appUrl` host |
+|---|---|
+| `https://orgfarm-1fa1bb3933.test1.my.pc-rnd.salesforce.com` | `https://orgfarm-1fa1bb3933--c.test1.my.pc-rnd.salesforce.app` |
+| `https://acme.my.salesforce.com` | `https://acme--c.my.salesforce.app` |
+| `https://example--c.my.salesforce.app` (already on app domain) | `https://example--c.my.salesforce.app` (passthrough) |
+
+**Fallback:** when the rewrite cannot be applied — the host is not under `salesforce.com`/`salesforce.app`, or the leftmost label already carries a `--<ns>` namespace marker — the `appUrl` is constructed against the **unmodified** instance URL. This surfaces a working (if 401-prone) URL rather than fabricating a non-resolving host.
+
+**Note:** The `--c` host only resolves once the target org has the `salesforceAppDomain` org pref enabled, which provisions the `--c` CNAME via core's `OrgDnsPublisherService`. App Studio's org bundle bakes this pref in for newly-provisioned orgs. Until the pref is on, the toast points at a non-resolving host — still preferable to today's behavior of pointing at a resolving host where every API call 401s.
 
 ---
 
