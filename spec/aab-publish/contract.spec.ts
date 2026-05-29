@@ -53,6 +53,7 @@
  * AI implementation agent must NOT modify this file.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import path from 'node:path';
 import request from 'supertest';
 
 // Mock @salesforce/core (auth requires network / real keychain). Pattern
@@ -87,6 +88,8 @@ import {
   cleanupTempProject,
   setupDefaultMocks,
   setupDeployMock,
+  setupStagedTemplateProject,
+  cleanupStagedTemplateProject,
   setupHermeticHome,
   cleanupHermeticHome,
   TEST_INSTANCE_URL,
@@ -310,7 +313,10 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
         username: TEST_USERNAME,
         aabName: 'TestAgent',
       });
-      expect((input as { projectDir: string }).projectDir).toContain(projectId);
+      // Pin the exact path — the hook MUST resolve to <projectsRoot>/<projectId>,
+      // not just any path containing the GUID. A loose `toContain(projectId)`
+      // would pass for a sibling project under the same root.
+      expect((input as { projectDir: string }).projectDir).toBe(path.join(tmpDir, projectId));
     });
   });
 
@@ -332,12 +338,13 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
         app,
         `/v1/projects/${projectId}/deployments/${depId}/events`
       );
-      expect(warnings).toEqual([
-        {
-          stage: 'agent-publish',
-          errorMessage: expect.stringMatching(/TestAgent.*server returned 403/),
-        },
-      ]);
+      // Assert each substring independently — the contract is "the warning
+      // references the affected bundle name AND the underlying error",
+      // not "the implementation formats them in a specific order".
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.stage).toBe('agent-publish');
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('TestAgent'));
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('server returned 403'));
       // The deploy itself completed — the hook is best-effort. The
       // metadata has landed in the org and the user can recover via
       // `sf agent publish` / `sf agent activate` manually.
@@ -361,12 +368,10 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
         app,
         `/v1/projects/${projectId}/deployments/${depId}/events`
       );
-      expect(warnings).toEqual([
-        {
-          stage: 'agent-activate',
-          errorMessage: expect.stringMatching(/TestAgent.*API_ERROR/),
-        },
-      ]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.stage).toBe('agent-activate');
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('TestAgent'));
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('API_ERROR'));
       expect(complete.status).toBe('SucceededWithWarnings');
     });
 
@@ -390,7 +395,8 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
       );
       expect(warnings).toHaveLength(1);
       expect(warnings[0]!.stage).toBe('agent-publish');
-      expect(warnings[0]!.errorMessage).toMatch(/TestAgent.*ENOENT/);
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('TestAgent'));
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('ENOENT'));
       expect(complete.status).toBe('SucceededWithWarnings');
     });
 
@@ -432,7 +438,7 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
       );
       expect(mockChild).toHaveBeenCalledTimes(2);
       expect(warnings).toHaveLength(1);
-      expect(warnings[0]!.errorMessage).toMatch(/AgentA/);
+      expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('AgentA'));
       expect(complete.status).toBe('SucceededWithWarnings');
     });
   });
@@ -465,5 +471,190 @@ describe('POST /v1/projects/:id/deployments — AiAuthoringBundle publish hook',
       expect(warnings).toEqual([]);
       expect(complete.status).toBe('Failed');
     });
+  });
+
+  describe('warnings combine cleanly with other post-deploy hooks', () => {
+    it('preserves both permset-assignment and agent-publish warnings on the same deploy', async () => {
+      // The deploy lifecycle runs multiple post-deploy hooks
+      // (assignDeployedPermissionSets, publishDeployedAiAuthoringBundles).
+      // When more than one hook emits a warning, BOTH must surface to
+      // SSE consumers — the toast UI groups warnings by stage and a
+      // refactor that swallowed one source would silently regress UX.
+      // This test pins that the combined warning list preserves both
+      // stage values and the bundle name.
+      //
+      // Trigger a permset-assignment warning by including a PermissionSet
+      // in the deploy components AND making the deploying-user lookup
+      // fail (the connection mock has no userId in authFields, and no
+      // query() to fall back to). Trigger an agent-publish warning by
+      // having the AAB child report failure.
+      mockPollStatus.mockResolvedValue(
+        deployResponseWithComponents([
+          ...COMPONENT_RESPONSES,
+          { fullName: 'Test_Permset', type: 'PermissionSet', state: 'Created' },
+          { fullName: 'TestAgent', type: 'AiAuthoringBundle', state: 'Created' },
+        ])
+      );
+      mockChild.mockResolvedValue({
+        ok: false,
+        stage: 'agent-publish',
+        errorMessage: "Failed to publish AiAuthoringBundle 'TestAgent': boom",
+      });
+
+      const deployRes = await request(app.server)
+        .post(`/v1/projects/${projectId}/deployments`)
+        .send({ orgAlias: TEST_ORG_ALIAS });
+      const depId = deployRes.body.deploymentId;
+
+      const { warnings, complete } = await streamUntilComplete(
+        app,
+        `/v1/projects/${projectId}/deployments/${depId}/events`
+      );
+      // Both warnings must surface — order is implementation-defined
+      // (hooks run sequentially today), but the contract pins presence.
+      const stages = warnings.map((w) => w.stage).sort();
+      expect(stages).toEqual(['agent-publish', 'permset-assignment']);
+      const aabWarning = warnings.find((w) => w.stage === 'agent-publish');
+      expect(aabWarning?.errorMessage).toEqual(expect.stringContaining('TestAgent'));
+      expect(complete.status).toBe('SucceededWithWarnings');
+    });
+  });
+});
+
+/**
+ * Staged-deploy integration. Templates that declare `deployStages` in their
+ * template.json (the load-bearing case for this PR — `data-curator` uses
+ * staged deploy with a dedicated `manifest/authoring-bundle-package.xml`
+ * stage) hit a different code path than the single-pass deploy fixture
+ * above. The hook MUST integrate cleanly with the staged path: warnings
+ * land on the same SSE stream, the `complete` event aggregates them
+ * alongside any optional-stage warnings, and the per-stage `status`
+ * values in `complete.stages[]` reflect the SDR outcomes (independent
+ * of the hook's success/failure).
+ */
+describe('POST /v1/projects/:id/deployments — staged deploy + AAB integration', () => {
+  let app: ReturnType<typeof createApp>;
+  let tmpDir: string;
+  let projectId: string;
+  let hermeticHome: string;
+  const mockPollStatus = vi.fn();
+  const mockChild = vi.fn();
+
+  beforeAll(async () => {
+    hermeticHome = await setupHermeticHome();
+    const setup = await setupStagedTemplateProject({
+      stages: [
+        { manifest: 'manifest/package.xml' },
+        { manifest: 'manifest/authoring-bundle-package.xml' },
+      ],
+    });
+    tmpDir = setup.tmpDir;
+    projectId = setup.projectId;
+  });
+
+  afterAll(async () => {
+    await cleanupStagedTemplateProject(tmpDir);
+    await cleanupHermeticHome(hermeticHome);
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = createApp();
+    await app.ready();
+    setupDeployMock(mockPollStatus);
+    mockResolveAlias.mockImplementation((alias: string) =>
+      alias === TEST_ORG_ALIAS ? TEST_USERNAME : undefined
+    );
+    mockAuthInfoCreate.mockResolvedValue({});
+    mockConnectionCreate.mockResolvedValue({
+      refreshAuth: vi.fn().mockResolvedValue(undefined),
+      getAuthInfoFields: () => ({ instanceUrl: TEST_INSTANCE_URL }),
+    });
+    setRunPublishAabChildForTesting(mockChild);
+  });
+
+  afterEach(async () => {
+    await app.close();
+    setRunPublishAabChildForTesting(null);
+  });
+
+  it('publish hook fires when an AAB lands in a later stage of a staged deploy', async () => {
+    // Stage 1 ships standard metadata; Stage 2 ships the AiAuthoringBundle.
+    // The hook must inspect the *aggregated* fileResponses across all
+    // stages and run publish for any AAB it finds, regardless of which
+    // stage produced it.
+    mockPollStatus
+      .mockResolvedValueOnce(deployResponseWithComponents(COMPONENT_RESPONSES))
+      .mockResolvedValueOnce(
+        deployResponseWithComponents([
+          { fullName: 'StagedAgent', type: 'AiAuthoringBundle', state: 'Created' },
+        ])
+      );
+    mockChild.mockResolvedValue({
+      ok: true,
+      botId: '0Xx00000000099',
+      botVersionId: '0XV00000000099',
+      botVersionStatus: 'Active',
+    });
+
+    const deployRes = await request(app.server)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .send({ orgAlias: TEST_ORG_ALIAS });
+    const depId = deployRes.body.deploymentId;
+
+    const { warnings, complete } = await streamUntilComplete(
+      app,
+      `/v1/projects/${projectId}/deployments/${depId}/events`
+    );
+    expect(mockChild).toHaveBeenCalledTimes(1);
+    expect((mockChild.mock.calls[0]![1] as { aabName: string }).aabName).toBe('StagedAgent');
+    expect(warnings).toEqual([]);
+    expect(complete.status).toBe('Succeeded');
+    // The staged-deploy `complete` event includes a `stages[]` summary;
+    // the hook MUST NOT pollute that array — it stays SDR-only.
+    expect(Array.isArray((complete as { stages: unknown[] }).stages)).toBe(true);
+  });
+
+  it('agent-publish warnings from a staged deploy surface in both the SSE stream and `complete.warnings[]`', async () => {
+    // Failure case for the staged path: stage succeeds but the publish
+    // step fails. The warning must land on the live SSE stream AND in
+    // the aggregated `complete.warnings[]` array that staged deploys
+    // emit (defined in spec/deploy/contract.md). Single-pass deploys do
+    // not aggregate warnings into `complete`, so this assertion is
+    // staged-specific.
+    mockPollStatus
+      .mockResolvedValueOnce(deployResponseWithComponents(COMPONENT_RESPONSES))
+      .mockResolvedValueOnce(
+        deployResponseWithComponents([
+          { fullName: 'StagedAgent', type: 'AiAuthoringBundle', state: 'Created' },
+        ])
+      );
+    mockChild.mockResolvedValue({
+      ok: false,
+      stage: 'agent-publish',
+      errorMessage: "Failed to publish AiAuthoringBundle 'StagedAgent': server returned 503",
+    });
+
+    const deployRes = await request(app.server)
+      .post(`/v1/projects/${projectId}/deployments`)
+      .send({ orgAlias: TEST_ORG_ALIAS });
+    const depId = deployRes.body.deploymentId;
+
+    const { warnings, complete } = await streamUntilComplete(
+      app,
+      `/v1/projects/${projectId}/deployments/${depId}/events`
+    );
+    // Live SSE stream
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.stage).toBe('agent-publish');
+    expect(warnings[0]!.errorMessage).toEqual(expect.stringContaining('StagedAgent'));
+    expect(complete.status).toBe('SucceededWithWarnings');
+    // Aggregated `complete.warnings[]` (staged-deploy contract)
+    const completeWarnings = (
+      complete as { warnings: Array<{ stage: string; errorMessage: string }> }
+    ).warnings;
+    expect(Array.isArray(completeWarnings)).toBe(true);
+    expect(completeWarnings.some((w) => w.stage === 'agent-publish')).toBe(true);
+    expect(completeWarnings.some((w) => w.errorMessage.includes('StagedAgent'))).toBe(true);
   });
 });

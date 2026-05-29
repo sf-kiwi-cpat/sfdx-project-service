@@ -63,10 +63,43 @@ For each unique bundle, the hook supplies:
 | Input | Source |
 |---|---|
 | `username` | The deploying user, resolved through the zero-auth chain (body alias → project target-org → `SF_TARGET_ORG` env → global default). Same identity the deploy ran against. |
-| `projectDir` | The resolved project directory on disk for the deployment (under the project store). |
+| `projectDir` | The resolved project directory on disk for the deployment (under the project store). Always an absolute path of the form `<projectsRoot>/<projectId>` — not a substring or sibling. |
 | `aabName` | The bundle's `fullName` from `componentSuccesses`. |
 
 The publish step uses `username` to (re)derive an org `Connection` from the SFDX keychain and `projectDir` to locate the bundle's source on disk.
+
+---
+
+## What the publish step returns
+
+The publish step returns a result envelope with one of two shapes. The shape is part of the contract because it determines what the hook can surface as warnings — but **success-path fields are not observable on the SSE stream**. They exist for parent-side logging (deployment record, structured logs) so an operator can correlate a successful publish with the org-side IDs.
+
+### Success
+
+```jsonc
+{
+  "ok": true,
+  "botId": "0Xx...",            // BotDefinition row id created/found in the org
+  "botVersionId": "0XV...",     // BotVersion row id created by publish
+  "botVersionStatus": "Active"  // Status reported by activate (typically "Active")
+}
+```
+
+When `ok: true`, the hook does **not** emit any SSE event. The IDs and status are logged but not surfaced — SSE consumers are expected to assume success in the absence of a warning.
+
+### Failure
+
+```jsonc
+{
+  "ok": false,
+  "stage": "agent-publish" | "agent-activate",
+  "errorMessage": "..."
+}
+```
+
+When `ok: false`, the hook emits a `warning` event with the supplied `stage` and `errorMessage`. See [SSE event contract](#sse-event-contract) below for the wire shape.
+
+The `stage` value the publish step returns is preserved on the wire when it equals `agent-activate`; every other failure mode (including transport-level errors and unexpected stage values) is collapsed to `agent-publish`. This keeps the SSE warning surface tight — consumers handle exactly two stage values.
 
 ---
 
