@@ -17,9 +17,10 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
-import { Connection, AuthInfo, SfProject } from '@salesforce/core';
-import { Agent } from '@salesforce/agents';
+import { Connection, AuthInfo } from '@salesforce/core';
 import { logger } from '../logger.js';
 import { type ResolvedAuth } from './deploy-auth.js';
 import {
@@ -195,28 +196,171 @@ export async function assignDeployedPermissionSets(
  * BotVersion exists in `Inactive` state and a follow-up activate is
  * required to set `Status = Active`.
  *
- * We use the `@salesforce/agents` library directly rather than
- * shelling out to `sf agent publish` — the library is the same code
- * the CLI wraps, and avoids subprocess management, DX-project assumptions
- * baked into the CLI, and SF_TEST_API env quirks.
+ * Originally this hook called `Agent.init` from `@salesforce/agents`
+ * directly in-process — same code the `sf agent publish` CLI wraps,
+ * but invoked as a library import to avoid the CLI's subprocess
+ * overhead, DX-project assumptions, and `SF_TEST_API` env quirks.
  *
- * Idempotency: republishing an already-published bundle is tolerated
- * — the publish API will create a new BotVersion N+1 against the
- * existing BotDefinition. Activate then targets the latest version.
+ * ## Why we fork a child process instead
  *
- * Failures are logged as warnings on the deployment, not raised: the
- * metadata is correctly in place, the deploy itself succeeded, and a
- * missing publish/activate is recoverable (the user can run
- * `sf agent publish` + `sf agent activate` manually) — surfacing it
- * as a deploy failure would be a regression for templates that don't
- * ship an AiAuthoringBundle.
+ * `@salesforce/agents@1.6.x` declares `nock` as a *runtime* dependency
+ * (not devDependency). Importing the library transitively imports
+ * `lib/maybe-mock.js`, which `require()`s `nock`, whose module-init
+ * constructs a `BatchInterceptor` from `@mswjs/interceptors` and
+ * monkey-patches `http.ClientRequest` and `http.request` globally —
+ * see `node_modules/@mswjs/interceptors/lib/node/ClientRequest-*.cjs`,
+ * which `MockHttpSocket`-wraps every outgoing socket. The result: any
+ * deploy in the same Node process that imports `@salesforce/agents`
+ * sees its SOAP / metadata API calls fail with `read EINVAL` because
+ * the mock socket aborts requests it doesn't have a matching scope for.
+ *
+ * Concretely: even templates that ship NO AiAuthoringBundle were
+ * failing to deploy because `import { Agent } from '@salesforce/agents'`
+ * at the top of this file fired nock's side effect at module-load
+ * time — long before the bundleNames check ran.
+ *
+ * Forking a child process for the publish + activate calls contains
+ * the side effect:
+ *   - The parent project-service stays clean for the metadata-deploy
+ *     phase (which always runs before this hook, in any case).
+ *   - The child's nock pollution dies with the process when it exits.
+ *   - Cold-start cost (~500ms-1s for `Agent` init) is bounded — only
+ *     fires when an AiAuthoringBundle is in the deploy. The deploy
+ *     itself is the slow part (~30s), so this is not user-visible.
+ *
+ * ## Stop-gap, not durable
+ *
+ * This is a stop-gap. The real fix belongs upstream in
+ * `@salesforce/agents`: `nock` should move to `devDependencies`, and
+ * `lib/maybe-mock.js` should not be imported on the production code
+ * path (or should lazy-require nock only when `SF_MOCK_DIR` is set).
+ *
+ * Once that lands and we bump our pinned version, this hook should
+ * collapse back to an in-process call. The relevant changes to revert:
+ *   - Delete `src/domain/publish-aab-child.ts`.
+ *   - Restore the in-process `Agent.init` + `publish` + `activate`
+ *     calls here, including the `getDefaultPackage` workaround (see
+ *     publish-aab-child.ts for the original shape and rationale —
+ *     that workaround is independent of the nock issue and may also
+ *     be fixed by then).
+ *   - Drop `username` from the parameter list — the in-process path
+ *     reuses the parent's `connection` directly.
+ *
+ * ## Idempotency
+ *
+ * Republishing an already-published bundle is tolerated — the publish
+ * API creates a new BotVersion N+1 against the existing BotDefinition.
+ * Activate then targets the latest version.
+ *
+ * ## Error contract
+ *
+ * Failures emit warning SSE events on the deployment but do not raise:
+ * the metadata is in place, the deploy itself succeeded, and a missing
+ * publish/activate is recoverable (the user can run `sf agent publish`
+ * + `sf agent activate` manually). Surfacing as a deploy failure would
+ * regress templates that don't ship an AiAuthoringBundle.
  *
  * No-op when the deploy ships zero AiAuthoringBundle components.
  */
+
+interface ChildSuccess {
+  ok: true;
+  botId: string;
+  botVersionId: string;
+  botVersionStatus: string;
+}
+interface ChildFailure {
+  ok: false;
+  stage: 'agent-init' | 'agent-publish' | 'agent-activate' | 'sfproject-resolve' | 'connection';
+  errorMessage: string;
+}
+type ChildResult = ChildSuccess | ChildFailure;
+
+/**
+ * Resolve the on-disk path to the compiled child entry point.
+ *
+ * `import.meta.url` resolves to `dist/domain/deploy.js` at runtime, so
+ * the sibling child script sits at `./publish-aab-child.js`. Exported
+ * so tests can stub it without re-deriving the path themselves.
+ */
+export function resolvePublishAabChildPath(): string {
+  return fileURLToPath(new URL('./publish-aab-child.js', import.meta.url));
+}
+
+/**
+ * Fork the publish-aab child for a single bundle. Resolves to the
+ * structured ChildResult parsed from the child's stdout, or rejects if
+ * the child cannot be spawned, exits without emitting a parsable
+ * result, or stays alive past the timeout.
+ *
+ * Exposed via `runPublishAabChildImpl` so unit tests can swap the
+ * fork+IPC plumbing for a stub without monkey-patching `child_process`.
+ */
+export async function runPublishAabChildImpl(
+  childPath: string,
+  input: { username: string; projectDir: string; aabName: string }
+): Promise<ChildResult> {
+  return new Promise((resolve, reject) => {
+    // `silent: true` pipes the child's stdio to us so we can read its
+    // single-line JSON result. `stderr` is forwarded to our stderr so
+    // pino logs from inside @salesforce/agents still surface in the
+    // parent's log stream.
+    const child = fork(childPath, [], {
+      silent: true,
+      stdio: ['pipe', 'pipe', 'inherit', 'ipc'],
+    });
+    let stdout = '';
+    let settled = false;
+    const finalize = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8');
+    });
+    child.on('error', (err) => finalize(() => reject(err)));
+    child.on('exit', () => {
+      finalize(() => {
+        // Child writes a single line of JSON regardless of success.
+        // If it's missing or malformed, treat it as a transport failure.
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          reject(new Error('publish-aab child exited without writing a result'));
+          return;
+        }
+        try {
+          resolve(JSON.parse(trimmed) as ChildResult);
+        } catch (parseErr) {
+          reject(
+            new Error(
+              `publish-aab child wrote unparsable result: ${parseErr instanceof Error ? parseErr.message : 'unknown error'}; raw=${trimmed.slice(0, 500)}`
+            )
+          );
+        }
+      });
+    });
+    child.stdin?.write(JSON.stringify(input));
+    child.stdin?.end();
+  });
+}
+
+/**
+ * Internal indirection so unit tests can stub the spawn-and-IPC layer
+ * without monkey-patching `child_process`. Production code calls
+ * `publishDeployedAiAuthoringBundles`, which calls `runPublishAabChild`,
+ * which calls `runPublishAabChildImpl`. Tests reassign `runPublishAabChild`.
+ */
+export let runPublishAabChild = runPublishAabChildImpl;
+export function setRunPublishAabChildForTesting(fn: typeof runPublishAabChildImpl | null): void {
+  runPublishAabChild = fn ?? runPublishAabChildImpl;
+}
+
 export async function publishDeployedAiAuthoringBundles(
   deploymentId: string,
   fileResponses: Array<{ fullName: string; type: string; state: string }>,
-  connection: Connection,
+  username: string,
   projectDir: string
 ): Promise<DeploymentWarning[]> {
   const bundleNames = Array.from(
@@ -226,103 +370,41 @@ export async function publishDeployedAiAuthoringBundles(
     return [];
   }
 
-  let project: SfProject;
-  try {
-    project = await SfProject.resolve(projectDir);
-  } catch (err) {
-    const warning: DeploymentWarning = {
-      stage: 'agent-publish',
-      errorMessage: `Could not resolve SfProject for AiAuthoringBundle publish: ${err instanceof Error ? err.message : 'unknown error'}`,
-    };
-    addWarningEvent(deploymentId, warning);
-    return [warning];
-  }
-
-  // Workaround for a bug in @salesforce/agents@1.6.x:
-  // `scriptAgentPublisher.validateDeveloperName()` calls
-  // `path.resolve(this.project.getDefaultPackage().path)` without passing
-  // the project root as the first arg. `path` is the relative string
-  // declared in `sfdx-project.json` (e.g. "force-app"), so `path.resolve`
-  // joins it against `process.cwd()` — which under vaas-user-workspace is
-  // the project-service install directory, not the user project. Result:
-  // `Cannot find an authoring bundle in /app/services-legacy/.../force-app
-  // that matches DataCuratorAgent`, even when the bundle is correctly
-  // located under <projectDir>/force-app/main/default/aiAuthoringBundles.
-  //
-  // Override `getDefaultPackage` on this single `project` instance to
-  // return an absolute path. The library's `path.resolve(<absolute>)` is
-  // a no-op, so the lookup succeeds. Other code paths that read `path`
-  // expecting the relative form are unaffected because they hold their
-  // own SfProject instances.
-  //
-  // Remove this block once @salesforce/agents ships a fix that uses
-  // `project.getPath()` (or the package's `fullPath` field) for the
-  // base directory.
-  const origGetDefaultPackage = project.getDefaultPackage.bind(project);
-  project.getDefaultPackage = () => {
-    const pkg = origGetDefaultPackage();
-    return { ...pkg, path: pkg.fullPath ?? path.resolve(projectDir, pkg.path) };
-  };
-
+  const childPath = resolvePublishAabChildPath();
   const warnings: DeploymentWarning[] = [];
+
   for (const aabName of bundleNames) {
-    let scriptAgent;
+    let result: ChildResult;
     try {
-      scriptAgent = await Agent.init({ connection, project, aabName });
+      result = await runPublishAabChild(childPath, { username, projectDir, aabName });
     } catch (err) {
       const warning: DeploymentWarning = {
         stage: 'agent-publish',
-        errorMessage: `Failed to initialize Agent for '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+        errorMessage: `Failed to run publish-aab child for '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
       };
       warnings.push(warning);
       addWarningEvent(deploymentId, warning);
       continue;
     }
 
-    let publishResult;
-    try {
-      // skipMetadataRetrieve=true: don't mutate the local DX project on
-      // every deploy. We only care about the org-side BotDefinition +
-      // BotVersion, not pulling the regenerated metadata back to disk.
-      publishResult = await scriptAgent.publish(true);
+    if (result.ok) {
       logger.info(
         {
           deploymentId,
           aabName,
-          botId: publishResult.botId,
-          botVersionId: publishResult.botVersionId,
+          botId: result.botId,
+          botVersionId: result.botVersionId,
+          botVersionStatus: result.botVersionStatus,
         },
-        'Published AiAuthoringBundle'
+        'Published + activated AiAuthoringBundle'
       );
-    } catch (err) {
-      const warning: DeploymentWarning = {
-        stage: 'agent-publish',
-        errorMessage: `Failed to publish AiAuthoringBundle '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
-      };
-      warnings.push(warning);
-      addWarningEvent(deploymentId, warning);
       continue;
     }
 
-    try {
-      const productionAgent = await Agent.init({
-        connection,
-        project,
-        apiNameOrId: publishResult.botId,
-      });
-      const activated = await productionAgent.activate();
-      logger.info(
-        { deploymentId, aabName, botVersionId: activated.Id, status: activated.Status },
-        'Activated AiAuthoringBundle BotVersion'
-      );
-    } catch (err) {
-      const warning: DeploymentWarning = {
-        stage: 'agent-activate',
-        errorMessage: `Failed to activate AiAuthoringBundle '${aabName}': ${err instanceof Error ? err.message : 'unknown error'}`,
-      };
-      warnings.push(warning);
-      addWarningEvent(deploymentId, warning);
-    }
+    const stage = result.stage === 'agent-activate' ? 'agent-activate' : 'agent-publish';
+    const warning: DeploymentWarning = { stage, errorMessage: result.errorMessage };
+    warnings.push(warning);
+    addWarningEvent(deploymentId, warning);
   }
   return warnings;
 }
@@ -596,7 +678,7 @@ async function runStagedDeploy(
       const aabWarnings = await publishDeployedAiAuthoringBundles(
         deploymentId,
         allFileResponses,
-        connection,
+        orgUsername,
         projectDir
       );
       warnings.push(...aabWarnings);
@@ -751,7 +833,7 @@ export async function deployMetadataAsync(
         const aabWarnings = await publishDeployedAiAuthoringBundles(
           deploymentId,
           runResult.fileResponses,
-          connection,
+          auth.username,
           projectDir
         );
         postDeployWarnings.push(...aabWarnings);
