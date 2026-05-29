@@ -102,6 +102,7 @@
 import path from 'node:path';
 import { AuthInfo, Connection, SfProject } from '@salesforce/core';
 import { Agent } from '@salesforce/agents';
+import { findPackageDirContainingBundle } from './aab-locator.js';
 
 interface ChildInput {
   username: string;
@@ -177,21 +178,41 @@ async function run(): Promise<number> {
     return 1;
   }
 
-  // Workaround for a bug in @salesforce/agents@1.6.x:
-  // `scriptAgentPublisher.validateDeveloperName()` calls
-  // `path.resolve(this.project.getDefaultPackage().path)` without passing
-  // the project root as the first arg. `path` is the relative string from
-  // sfdx-project.json (e.g. "force-app"), so `path.resolve` joins it
-  // against `process.cwd()` instead of the project root. Override
-  // `getDefaultPackage` on this single project instance to return an
-  // absolute path; `path.resolve(<absolute>)` is then a no-op.
+  // Workaround for two bugs in @salesforce/agents@1.6.x's
+  // `scriptAgentPublisher.validateDeveloperName()`:
   //
-  // Remove once @salesforce/agents ships a fix that uses
-  // `project.getPath()` (or the existing `fullPath` field) as the base.
+  // 1. It calls `path.resolve(this.project.getDefaultPackage().path)` without
+  //    passing the project root as the first arg. `path` is the relative string
+  //    from sfdx-project.json (e.g. "force-app"), so `path.resolve` joins it
+  //    against `process.cwd()` instead of the project root.
+  //
+  // 2. It only searches the *default* package directory for the bundle. Templates
+  //    that legitimately keep `aiAuthoringBundles/` under a non-default
+  //    `packageDirectory` (e.g. data-curator's `agentforce-bundle/`) cannot be
+  //    published without this workaround, even though the metadata-API deploy
+  //    happily resolves bundles from any declared package dir.
+  //
+  // Walk every package directory looking for `aiAuthoringBundles/<aabName>/`,
+  // then override `getDefaultPackage()` to return that directory's absolute
+  // path. The library's `path.resolve(<absolute>)` becomes a no-op and the
+  // recursive `findAuthoringBundle` lookup succeeds. If no package directory
+  // contains the bundle, fall back to the original default's absolute path so
+  // the library produces its normal "Cannot find an authoring bundle" error
+  // (rather than us pre-empting it with a less informative message).
+  //
+  // Remove once @salesforce/agents (a) uses `project.getPath()` for the base
+  // and (b) searches all package directories instead of only the default.
+  const projectRoot = project.getPath();
+  const packageDirsAbs = project
+    .getPackageDirectories()
+    .map((pkg) => pkg.fullPath ?? path.resolve(projectRoot, pkg.path));
+  const containingPackage = findPackageDirContainingBundle(packageDirsAbs, input.aabName);
   const origGetDefaultPackage = project.getDefaultPackage.bind(project);
   project.getDefaultPackage = () => {
     const pkg = origGetDefaultPackage();
-    return { ...pkg, path: pkg.fullPath ?? path.resolve(input.projectDir, pkg.path) };
+    const absolutePath =
+      containingPackage ?? pkg.fullPath ?? path.resolve(input.projectDir, pkg.path);
+    return { ...pkg, path: absolutePath };
   };
 
   let publishResult: { botId: string; botVersionId: string; developerName: string };
