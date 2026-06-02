@@ -46,7 +46,15 @@
  * GET /projects/:id, detail-only (NOT in GET /projects list), omitted
  * entirely when absent or all-malformed (never an empty array). Each element
  * is { role: string, content: string }. A template may ship both fields
- * independently. Malformed or oversized entries are dropped, not fatal.
+ * independently. Malformed or oversized entries are
+ * dropped, not fatal. seedMessages carries structural CONTRACT caps — at most
+ * 50 messages (surplus truncated), at most 10,000 chars per content (oversized
+ * dropped), all-malformed → field omitted and never a 500 — so a runaway
+ * template cannot write an unbounded blob. These caps are driven through the
+ * public API over spec-owned fixture templates (built into an isolated
+ * TEMPLATES_DIR, see writeFixtureTemplate) rather than reusing a shipped
+ * template, so the bound lives in the executable contract and the contract is
+ * not coupled to any editable shipped template's seed copy.
  *
  * POST /projects accepts an optional `orgAlias` that names a Salesforce org
  * already authenticated via the SFDX CLI. When provided:
@@ -73,6 +81,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const { mockGetUsername } = vi.hoisted(() => ({
   mockGetUsername: vi.fn(),
@@ -100,6 +109,61 @@ import { createApp } from '../../src/app.js';
 
 const TEST_ORG_ALIAS = 'my-scratch-org';
 const TEST_USERNAME = 'test-user@example.com';
+
+/**
+ * Build a spec-owned fixture template directly into an isolated TEMPLATES_DIR.
+ *
+ * The seedMessages caps and the initial/seed independence claims are CONTRACT
+ * guarantees, so they must be exercised through the public API rather than left
+ * to agent-mutable unit tests. Reusing a shipped template (e.g. local-react-test)
+ * would couple the human-guarded contract to that template's editable seed copy:
+ * editing the seeds out of a product template would then fail contract tests far
+ * from the apparent cause. These fixtures are owned by the spec and constructed
+ * per-test, so the contract stands on its own.
+ *
+ * Layout mirrors templates/dist/<id>/ — a sibling `template.json` (read for
+ * name/initialMessages/seedMessages) and a `content.zip` that createProject
+ * unzips. The zip carries a minimal-but-valid SFDX scaffold; it ships no
+ * UIBundle, so it never participates in the tier-1/tier-3 deployability suites
+ * (those auto-discover templates/src/, not this temp dir).
+ */
+async function writeFixtureTemplate(
+  templatesDir: string,
+  id: string,
+  extraMeta: Record<string, unknown>
+): Promise<void> {
+  const outDir = path.join(templatesDir, id);
+  await fs.mkdir(outDir, { recursive: true });
+  const meta = {
+    id,
+    name: id,
+    description: `spec fixture template ${id}`,
+    ...extraMeta,
+  };
+  await fs.writeFile(path.join(outDir, 'template.json'), JSON.stringify(meta, null, 2));
+
+  // Stage a minimal SFDX project and zip it with the same `zip -r -q -X`
+  // invocation the build pipeline uses (scripts/zip-templates.js), so the
+  // archive extract-zip consumes is byte-compatible with production output.
+  const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-fixture-stage-'));
+  try {
+    await fs.writeFile(
+      path.join(staging, 'sfdx-project.json'),
+      JSON.stringify(
+        { packageDirectories: [{ path: 'force-app', default: true }], sourceApiVersion: '66.0' },
+        null,
+        2
+      )
+    );
+    await fs.mkdir(path.join(staging, 'force-app', 'main', 'default'), { recursive: true });
+    execFileSync('zip', ['-r', '-q', '-X', path.join(outDir, 'content.zip'), '.'], {
+      cwd: staging,
+      stdio: 'pipe',
+    });
+  } finally {
+    await fs.rm(staging, { recursive: true, force: true });
+  }
+}
 
 describe('Projects API', () => {
   let app: ReturnType<typeof createApp>;
@@ -1111,6 +1175,145 @@ describe('Projects API', () => {
       const parsed = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as { name?: string };
       expect(parsed.name).toBe('recovered-name');
       expect(parsed.name).not.toBe(createRes.body.id);
+    });
+  });
+
+  describe('seedMessages structural caps (contract)', () => {
+    // These caps are a CONTRACT guarantee, not an implementation detail: a
+    // malformed or runaway template must not be able to write an unbounded blob
+    // into .project-meta.json and onto every project response. The guarantees:
+    //   1. at most 50 messages (surplus truncated)
+    //   2. at most 10,000 characters per `content` (oversized elements dropped)
+    //   3. malformed elements dropped, not fatal
+    //   4. all-malformed / nothing-valid → field omitted, never a 500
+    // They are driven through the public API (POST /v1/projects, GET /:id) over
+    // spec-owned fixture templates so the bound lives in the executable contract,
+    // not just in agent-mutable unit tests.
+    let templatesDir: string;
+    let isolatedDir: string;
+    let isolatedApp: ReturnType<typeof createApp>;
+    let originalTemplatesDir: string | undefined;
+    let originalRoot: string | undefined;
+
+    beforeEach(async () => {
+      templatesDir = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-caps-templates-'));
+      isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-caps-projects-'));
+      originalTemplatesDir = process.env.TEMPLATES_DIR;
+      originalRoot = process.env.PROJECTS_ROOT;
+      process.env.TEMPLATES_DIR = templatesDir;
+      process.env.PROJECTS_ROOT = isolatedDir;
+      isolatedApp = createApp();
+      await isolatedApp.ready();
+    });
+
+    afterEach(async () => {
+      await isolatedApp.close();
+      process.env.TEMPLATES_DIR = originalTemplatesDir;
+      process.env.PROJECTS_ROOT = originalRoot;
+      await fs.rm(templatesDir, { recursive: true, force: true });
+      await fs.rm(isolatedDir, { recursive: true, force: true });
+    });
+
+    it('caps seedMessages at 50 entries, dropping the surplus (create + GET)', async () => {
+      // 60 well-formed entries → contract bounds the surfaced array to 50.
+      const many = Array.from({ length: 60 }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `seed turn ${i}`,
+      }));
+      await writeFixtureTemplate(templatesDir, 'seed-overflow', { seedMessages: many });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-overflow' })
+        .expect(201);
+
+      expect(Array.isArray(createRes.body.seedMessages)).toBe(true);
+      expect(createRes.body.seedMessages).toHaveLength(50);
+      // The surplus is truncated from the tail — the first 50 survive in order.
+      expect(createRes.body.seedMessages[0]).toEqual(many[0]);
+      expect(createRes.body.seedMessages[49]).toEqual(many[49]);
+
+      // The capped array is what persists and what GET returns — not the raw 60.
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.seedMessages).toEqual(createRes.body.seedMessages);
+    });
+
+    it('drops a seed whose content exceeds 10,000 characters, keeping the rest (create + GET)', async () => {
+      const oversized = { role: 'user', content: 'x'.repeat(10_001) };
+      const kept = { role: 'assistant', content: 'within the bound' };
+      await writeFixtureTemplate(templatesDir, 'seed-oversized', {
+        seedMessages: [oversized, kept],
+      });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-oversized' })
+        .expect(201);
+
+      // Oversized element dropped; the in-bound one survives. Not a 500.
+      expect(createRes.body.seedMessages).toEqual([kept]);
+
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.seedMessages).toEqual([kept]);
+    });
+
+    it('keeps a seed whose content is exactly 10,000 characters (boundary, create)', async () => {
+      // The cap is inclusive — a content of exactly 10,000 chars is valid. This
+      // pins the boundary so an implementation can't quietly tighten it to `<`.
+      const atCap = { role: 'user', content: 'y'.repeat(10_000) };
+      await writeFixtureTemplate(templatesDir, 'seed-at-cap', { seedMessages: [atCap] });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-at-cap' })
+        .expect(201);
+
+      expect(createRes.body.seedMessages).toEqual([atCap]);
+    });
+
+    it('drops malformed seed entries but keeps the well-formed ones (create + GET)', async () => {
+      // Mixed array: a string, an object missing `content`, a null, and one
+      // valid message. Only the valid message survives — malformed is not fatal.
+      const good = { role: 'assistant', content: 'the one good seed' };
+      await writeFixtureTemplate(templatesDir, 'seed-malformed-mix', {
+        seedMessages: ['not an object', { role: 'user' }, null, good],
+      });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-malformed-mix' })
+        .expect(201);
+
+      expect(createRes.body.seedMessages).toEqual([good]);
+
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.seedMessages).toEqual([good]);
+    });
+
+    it('omits seedMessages (never 500) when every declared entry is malformed', async () => {
+      await writeFixtureTemplate(templatesDir, 'seed-all-malformed', {
+        seedMessages: [{ role: 'user' }, 42, null],
+      });
+
+      // The create must still succeed (201, not 500) — the field is simply
+      // absent because nothing valid survived the parse.
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-all-malformed' })
+        .expect(201);
+
+      expect(createRes.body.seedMessages).toBeUndefined();
+
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.seedMessages).toBeUndefined();
     });
   });
 });
