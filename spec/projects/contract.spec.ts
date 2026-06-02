@@ -46,7 +46,8 @@
  * GET /projects/:id, detail-only (NOT in GET /projects list), omitted
  * entirely when absent or all-malformed (never an empty array). Each element
  * is { role: string, content: string }. A template may ship both fields
- * independently. Malformed or oversized entries are
+ * independently (a template may ship only one of them — the asymmetric cases
+ * are exercised, not just "both present"). Malformed or oversized entries are
  * dropped, not fatal. seedMessages carries structural CONTRACT caps — at most
  * 50 messages (surplus truncated), at most 10,000 chars per content (oversized
  * dropped), all-malformed → field omitted and never a 500 — so a runaway
@@ -1313,6 +1314,77 @@ describe('Projects API', () => {
       const getRes = await request(isolatedApp.server)
         .get(`/v1/projects/${createRes.body.id}`)
         .expect(200);
+      expect(getRes.body.seedMessages).toBeUndefined();
+    });
+  });
+
+  describe('initialMessages / seedMessages independence (contract)', () => {
+    // The contract claims "neither field's presence implies or affects the
+    // other." The "both present" case is covered elsewhere; these two tests
+    // prove the asymmetric cases — a template shipping ONLY seedMessages, and
+    // one shipping ONLY initialMessages — using spec-owned fixtures so the
+    // independence claim is backed by assertions rather than a shipped
+    // template that happens to declare both.
+    let templatesDir: string;
+    let isolatedDir: string;
+    let isolatedApp: ReturnType<typeof createApp>;
+    let originalTemplatesDir: string | undefined;
+    let originalRoot: string | undefined;
+
+    beforeEach(async () => {
+      templatesDir = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-independence-templates-'));
+      isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-independence-projects-'));
+      originalTemplatesDir = process.env.TEMPLATES_DIR;
+      originalRoot = process.env.PROJECTS_ROOT;
+      process.env.TEMPLATES_DIR = templatesDir;
+      process.env.PROJECTS_ROOT = isolatedDir;
+      isolatedApp = createApp();
+      await isolatedApp.ready();
+    });
+
+    afterEach(async () => {
+      await isolatedApp.close();
+      process.env.TEMPLATES_DIR = originalTemplatesDir;
+      process.env.PROJECTS_ROOT = originalRoot;
+      await fs.rm(templatesDir, { recursive: true, force: true });
+      await fs.rm(isolatedDir, { recursive: true, force: true });
+    });
+
+    it('surfaces seedMessages and omits initialMessages when a template ships only seedMessages', async () => {
+      const seeds = [{ role: 'user', content: 'hidden anchor' }];
+      await writeFixtureTemplate(templatesDir, 'seed-only', { seedMessages: seeds });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'seed-only' })
+        .expect(201);
+
+      expect(createRes.body.seedMessages).toEqual(seeds);
+      expect(createRes.body.initialMessages).toBeUndefined();
+
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.seedMessages).toEqual(seeds);
+      expect(getRes.body.initialMessages).toBeUndefined();
+    });
+
+    it('surfaces initialMessages and omits seedMessages when a template ships only initialMessages', async () => {
+      const initial = [{ role: 'assistant', content: 'visible opener' }];
+      await writeFixtureTemplate(templatesDir, 'initial-only', { initialMessages: initial });
+
+      const createRes = await request(isolatedApp.server)
+        .post('/v1/projects')
+        .send({ template: 'initial-only' })
+        .expect(201);
+
+      expect(createRes.body.initialMessages).toEqual(initial);
+      expect(createRes.body.seedMessages).toBeUndefined();
+
+      const getRes = await request(isolatedApp.server)
+        .get(`/v1/projects/${createRes.body.id}`)
+        .expect(200);
+      expect(getRes.body.initialMessages).toEqual(initial);
       expect(getRes.body.seedMessages).toBeUndefined();
     });
   });
