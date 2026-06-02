@@ -76,6 +76,68 @@ templates currently include `data-curator`, `local-react-test`,
 
 ---
 
+#### Template Authoring — Seed Messages
+
+A template's `template.json` may declare two independent message arrays.
+Both use the identical element shape `{ "role": string, "content": string }`
+and both are **captured into a project at create time** (copied into
+`.project-meta.json`) — later edits to the template do not retroactively
+change existing projects.
+
+| Field             | Visibility  | Purpose                                                                                  |
+| ----------------- | ----------- | ---------------------------------------------------------------------------------------- |
+| `initialMessages` | **Visible** | Pre-written opening turns the chat panel renders into the transcript.                    |
+| `seedMessages`    | **Hidden**  | Persona-anchoring few-shot turns injected as hidden context (`transcriptVisible: false`). |
+
+`seedMessages` exists so a template author can anchor the agent's persona
+and voice with an example exchange the model sees every turn but that
+never appears in the user-visible transcript. The consuming mechanism
+(App Studio core → agent service) injects them once at chat-session
+creation via `POST /v1/agents/:a/chats/:c/messages` with
+`{ noReply: true, transcriptVisible: false }` — the array passes through
+unchanged. (That hidden-few-shot channel was built under W-22370020; this
+field supplies the data for it.)
+
+**Authoring guidance:**
+
+- Use **alternating** `user` / `assistant` turns — that is what makes a
+  few-shot example anchor persona well downstream.
+- Keep it short and exemplary: a 2–4 turn exchange that demonstrates the
+  voice, boundaries, and decision-making you want the agent to mirror.
+- Roles are free strings as far as this service is concerned; the agent
+  service decides what it accepts.
+
+**Limits (enforced at project-create time):**
+
+- At most **50** messages — surplus entries beyond the 50th are dropped.
+- At most **10,000** characters per `content` — an oversized element is
+  dropped (the rest are kept).
+- Malformed elements (missing/`non-string` `role` or `content`) are
+  dropped. If nothing valid remains, the field is omitted entirely (never
+  returned as `[]`). A malformed `seedMessages` block never fails project
+  creation — it degrades to "no seeds".
+
+Example `template.json` fragment:
+
+```json
+{
+  "id": "data-curator",
+  "name": "Data Curator",
+  "description": "...",
+  "categories": ["Governance"],
+  "initialMessages": [
+    { "role": "user", "content": "Help me build a governance app." },
+    { "role": "assistant", "content": "Done — here's your workspace." }
+  ],
+  "seedMessages": [
+    { "role": "user", "content": "We have 312 custom objects and nobody knows which are used. Where do I start?" },
+    { "role": "assistant", "content": "Start with risk, not volume — triage stale + unowned first…" }
+  ]
+}
+```
+
+---
+
 ### Projects
 
 #### `POST /v1/projects`
@@ -102,6 +164,10 @@ offending key.
   "initialMessages": [
     { "role": "user", "content": "Build me something" },
     { "role": "assistant", "content": "On it!" }
+  ],
+  "seedMessages": [
+    { "role": "user", "content": "How should I phrase a failure?" },
+    { "role": "assistant", "content": "Lead with the cause and the next action." }
   ]
 }
 ```
@@ -112,7 +178,15 @@ offending key.
 - `initialMessages` — present only when the template's `template.json`
   declares a non-empty `initialMessages` array. Omitted entirely (not
   returned as `[]`) for blank projects or templates without
-  `initialMessages`.
+  `initialMessages`. **Visible** starter turns meant to be rendered into
+  the chat transcript.
+- `seedMessages` — present only when the template's `template.json`
+  declares a non-empty `seedMessages` array. Omitted entirely (not
+  returned as `[]`) for blank projects or templates without
+  `seedMessages`. **Hidden** persona-anchoring few-shot turns — distinct
+  from `initialMessages`; meant to be injected into a chat session as
+  hidden context (`transcriptVisible: false`), not displayed. See
+  [Template Authoring](#template-authoring--seed-messages) below.
 
 **Response: 400 Bad Request** — unknown template identifier. Problem-detail body.
 
@@ -136,8 +210,9 @@ List all projects.
 
 - Returns `[]` when no projects exist.
 - No pagination — all projects are returned; the client decides sort order.
-- `initialMessages` is intentionally not included in the list response
-  (detail-only; fetch per-project via `GET /v1/projects/:id`).
+- `initialMessages` and `seedMessages` are intentionally not included in
+  the list response (detail-only; fetch per-project via
+  `GET /v1/projects/:id`).
 
 ---
 
@@ -160,6 +235,10 @@ Retrieve a single project.
   "initialMessages": [
     { "role": "user", "content": "Build me something" },
     { "role": "assistant", "content": "On it!" }
+  ],
+  "seedMessages": [
+    { "role": "user", "content": "How should I phrase a failure?" },
+    { "role": "assistant", "content": "Lead with the cause and the next action." }
   ]
 }
 ```
@@ -169,6 +248,8 @@ Retrieve a single project.
   creation time (and any prior PATCH rename time).
 - `initialMessages` is present only when seeded from a template that
   declared it, and is preserved across PATCH rename.
+- `seedMessages` is present only when the source template declared it,
+  and is likewise preserved across PATCH rename.
 
 **Response: 404 Not Found** — project does not exist, or `id` is not a
 well-formed UUID. Problem-detail body.
@@ -196,7 +277,7 @@ Rename a project.
 ```
 
 - `lastAccessedAt` is bumped to the rename time.
-- `initialMessages`, when set at creation, is preserved.
+- `initialMessages` and `seedMessages`, when set at creation, are preserved.
 
 **Response: 400 Bad Request** — `name` missing or empty. Problem-detail body.
 

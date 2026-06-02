@@ -39,6 +39,15 @@
  * is NOT included in GET /projects (list). Blank projects and templates
  * without initialMessages omit the field entirely (not an empty array).
  *
+ * Templates may ALSO declare a seedMessages array in their template.json.
+ * seedMessages are hidden, persona-anchoring few-shot turns — semantically
+ * distinct from the visible initialMessages — captured into the project at
+ * create time and surfaced the same way: on POST /projects and
+ * GET /projects/:id, detail-only (NOT in GET /projects list), omitted
+ * entirely when absent or all-malformed (never an empty array). Each element
+ * is { role: string, content: string }. A template may ship both fields
+ * independently. Malformed or oversized entries are dropped, not fatal.
+ *
  * POST /projects accepts an optional `orgAlias` that names a Salesforce org
  * already authenticated via the SFDX CLI. When provided:
  *   - The alias is validated against the local auth store (StateAggregator).
@@ -238,6 +247,54 @@ describe('Projects API', () => {
       expect(getRes.body.initialMessages).toEqual(createRes.body.initialMessages);
     });
 
+    it('returns seedMessages when the template defines them', async () => {
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      expect(Array.isArray(res.body.seedMessages)).toBe(true);
+      expect(res.body.seedMessages.length).toBeGreaterThan(0);
+      for (const msg of res.body.seedMessages) {
+        expect(typeof msg.role).toBe('string');
+        expect(msg.role.length).toBeGreaterThan(0);
+        expect(typeof msg.content).toBe('string');
+        expect(msg.content.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('omits seedMessages when creating a blank project (no template)', async () => {
+      const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      expect(res.body.seedMessages).toBeUndefined();
+    });
+
+    it('seedMessages in the create response matches the value returned by GET /projects/:id', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const getRes = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(getRes.body.seedMessages).toEqual(createRes.body.seedMessages);
+    });
+
+    it('returns initialMessages and seedMessages independently when a template defines both', async () => {
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      // The two fields are distinct concepts (visible starter vs hidden seed)
+      // and must both surface, each as its own non-empty array.
+      expect(Array.isArray(res.body.initialMessages)).toBe(true);
+      expect(res.body.initialMessages.length).toBeGreaterThan(0);
+      expect(Array.isArray(res.body.seedMessages)).toBe(true);
+      expect(res.body.seedMessages.length).toBeGreaterThan(0);
+      expect(res.body.seedMessages).not.toEqual(res.body.initialMessages);
+    });
+
     describe('orgAlias', () => {
       beforeEach(() => {
         // Default for this describe: the canonical test alias resolves to a
@@ -425,8 +482,7 @@ describe('Projects API', () => {
         expect(r1.body.name).toBe('Data Curator');
         expect(r2.body.name).toBe('Data Curator 2');
         expect(r3.body.name).toBe('Data Curator 3');
-      }, // Template extraction copies a real React/Vite scaffold, which is heavy. // Three sequential extractions can exceed the default 5s budget.
-      30000);
+      }, 30000); // Template extraction copies a real React/Vite scaffold, which is heavy. // Three sequential extractions can exceed the default 5s budget.
 
       it('names persist across project list and retrieve', async () => {
         const createRes = await request(isolatedApp.server)
@@ -478,6 +534,22 @@ describe('Projects API', () => {
         expect(project).toHaveProperty('lastAccessedAt');
         expect(typeof project.lastAccessedAt).toBe('string');
         expect(new Date(project.lastAccessedAt).toISOString()).toBe(project.lastAccessedAt);
+      }
+    });
+
+    it('does not include seedMessages in the list response (detail-only)', async () => {
+      // Create a project from a template that ships seedMessages, then assert
+      // the list view never carries the hidden seeds — same posture as
+      // initialMessages and targetOrg.
+      await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const res = await request(app.server).get('/v1/projects').expect(200);
+
+      for (const project of res.body) {
+        expect(project.seedMessages).toBeUndefined();
       }
     });
 
@@ -699,6 +771,50 @@ describe('Projects API', () => {
       const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
 
       expect(res.body.initialMessages).toEqual(seeded);
+    });
+
+    it('returns seedMessages for a project created from a template that defines them', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(Array.isArray(res.body.seedMessages)).toBe(true);
+      expect(res.body.seedMessages.length).toBeGreaterThan(0);
+      for (const msg of res.body.seedMessages) {
+        expect(typeof msg.role).toBe('string');
+        expect(msg.role.length).toBeGreaterThan(0);
+        expect(typeof msg.content).toBe('string');
+        expect(msg.content.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('omits seedMessages for a blank project', async () => {
+      const createRes = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body.seedMessages).toBeUndefined();
+    });
+
+    it('preserves seedMessages across PATCH rename', async () => {
+      const createRes = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: 'local-react-test' })
+        .expect(201);
+      const seeded = createRes.body.seedMessages;
+      expect(Array.isArray(seeded) && seeded.length > 0).toBe(true);
+
+      await request(app.server)
+        .patch(`/v1/projects/${createRes.body.id}`)
+        .send({ name: 'renamed-with-hidden-seed' })
+        .expect(200);
+
+      const res = await request(app.server).get(`/v1/projects/${createRes.body.id}`).expect(200);
+
+      expect(res.body.seedMessages).toEqual(seeded);
     });
   });
 

@@ -13,5 +13,15 @@
       "role": "assistant",
       "content": "I'll build that for you. The project has a React frontend ready to go. I'll start with the deployment list view and status polling, then add filtering and the component detail drilldown. Here goes!"
     }
+  ],
+  "seedMessages": [
+    {
+      "role": "user",
+      "content": "How should I describe a failed deployment in the activity feed?"
+    },
+    {
+      "role": "assistant",
+      "content": "Lead with the outcome and the cause, never just a red badge. Say what failed, which component, and the single next action — e.g. \"Deploy failed: ApexClass OrderTrigger — line 42 references a field that no longer exists. Re-pull metadata and redeploy.\" Concise, blameless, actionable."
+    }
   ]
 }

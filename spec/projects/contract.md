@@ -8,6 +8,8 @@ The projects system manages SFDX project creation, listing, retrieval, naming, a
 
 Templates may optionally declare an `initialMessages` array in their `template.json`. When a project is created from such a template, those messages are persisted to the project's metadata and surfaced on both `POST /projects` (create) and `GET /projects/:id` (retrieve) responses so a downstream UI (e.g., an agentic chat panel) can seed a conversation with pre-written context.
 
+Templates may **also** declare a `seedMessages` array. `seedMessages` are **hidden**, persona-anchoring few-shot turns — semantically distinct from the **visible** `initialMessages` — captured into the project at create time and surfaced the same way (on `POST /projects` and `GET /projects/:id`, detail-only, omitted entirely when absent). A template may ship both fields independently: a visible opening exchange (`initialMessages`) and a hidden persona anchor (`seedMessages`). See the "Templates Can Seed Hidden Agent Context" design principle below.
+
 `POST /projects` also accepts an optional `orgAlias` that names an SFDX-authenticated org. On success it is persisted to `.sf/config.json` as `target-org`, which the deploy endpoint then reads to resolve auth server-side (see `spec/deploy/contract.spec.ts` for the deploy-time resolution chain).
 
 ## Endpoints
@@ -37,6 +39,10 @@ Templates may optionally declare an `initialMessages` array in their `template.j
     "initialMessages": [
       { "role": "user", "content": "Build me something" },
       { "role": "assistant", "content": "On it!" }
+    ],
+    "seedMessages": [
+      { "role": "user", "content": "How should I phrase a failure?" },
+      { "role": "assistant", "content": "Lead with the cause and the next action." }
     ]
   }
   ```
@@ -47,9 +53,12 @@ Templates may optionally declare an `initialMessages` array in their `template.j
   - `targetOrg` (optional) — present as a string echoing the resolved `orgAlias` when one was provided; omitted when `orgAlias` was not provided
   - `initialMessages` (optional) — present as a non-empty array when the template's `template.json` declares `initialMessages`; each element has non-empty `role` (string) and non-empty `content` (string)
   - `initialMessages` is omitted entirely (not an empty array) when the project was created blank or the template does not declare them
-  - Returned for both template-based and blank projects (with the `initialMessages` / `targetOrg` rules above)
+  - `seedMessages` (optional) — present as a non-empty array when the template's `template.json` declares `seedMessages`; each element has non-empty `role` (string) and non-empty `content` (string). Hidden few-shot seeds, distinct from `initialMessages`.
+  - `seedMessages` is omitted entirely (not an empty array) when the project was created blank or the template does not declare them
+  - When a template declares both, `initialMessages` and `seedMessages` are returned independently (each its own non-empty array)
+  - Returned for both template-based and blank projects (with the `initialMessages` / `seedMessages` / `targetOrg` rules above)
   - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
-  - The returned `initialMessages` (when present) matches the value that `GET /v1/projects/:id` will return for this project
+  - The returned `initialMessages` / `seedMessages` (when present) match the values that `GET /v1/projects/:id` will return for this project
 
 - **400 Bad Request** — Invalid input
   - Template name is not recognized
@@ -98,6 +107,7 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
   - Returns empty array `[]` when no projects exist
   - No pagination — returns all projects
   - `initialMessages` is intentionally NOT surfaced in the list response (detail-only field; see GET `/v1/projects/:id`)
+  - `seedMessages` is likewise NOT surfaced in the list response (detail-only field; see GET `/v1/projects/:id`)
 
 ---
 
@@ -121,6 +131,10 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
     "initialMessages": [
       { "role": "user", "content": "Build me something" },
       { "role": "assistant", "content": "On it!" }
+    ],
+    "seedMessages": [
+      { "role": "user", "content": "How should I phrase a failure?" },
+      { "role": "assistant", "content": "Lead with the cause and the next action." }
     ]
   }
   ```
@@ -131,6 +145,9 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
   - `initialMessages` (optional) — present as a non-empty array when the project was created from a template whose `template.json` declared initialMessages; each element has non-empty `role` (string) and non-empty `content` (string)
   - `initialMessages` is omitted entirely (not an empty array) for blank projects or projects created from templates without initialMessages
   - `initialMessages` is preserved across PATCH rename — rename does not clear or modify it
+  - `seedMessages` (optional) — present as a non-empty array when the project was created from a template whose `template.json` declared seedMessages; each element has non-empty `role` (string) and non-empty `content` (string). Hidden few-shot seeds, distinct from `initialMessages`.
+  - `seedMessages` is omitted entirely (not an empty array) for blank projects or projects created from templates without seedMessages
+  - `seedMessages` is preserved across PATCH rename — rename does not clear or modify it
   - **Access side effect:** every retrieval bumps `lastAccessedAt` to the current time, not just the first access after a mutation. The returned value is the post-bump value, and is strictly greater than both the creation time and any prior PATCH-time `lastAccessedAt`. This invariant applies only when the project's meta file is valid — see Meta-File Integrity below for the missing/unparseable carve-out.
   - The returned `lastAccessedAt` matches the value that the next `GET /v1/projects` will report for this project
 
@@ -163,6 +180,7 @@ Both template-based and blank scenarios produce a valid SFDX project with `sfdx-
   - `lastAccessedAt` is bumped to the rename time (strictly greater than the prior value)
   - The returned `lastAccessedAt` matches the value that `GET /v1/projects` will report for this project
   - `initialMessages`, when set at project creation, is preserved through rename and can be observed via a subsequent `GET /v1/projects/:id`
+  - `seedMessages`, when set at project creation, is likewise preserved through rename and observable via a subsequent `GET /v1/projects/:id`
 
 - **400 Bad Request** — Invalid input
   - `name` field is missing
@@ -259,10 +277,21 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 - `initialMessages` is read-only post-creation: no endpoint mutates it, and PATCH rename leaves it untouched
 - Role vocabulary and content length are unconstrained by this contract; downstream consumers (UI, agent service) are responsible for validating what they accept
 
+### Templates Can Seed Hidden Agent Context
+
+- Templates may declare a `seedMessages` array in their `template.json`, each element `{ role: string, content: string }` — the **same shape** as `initialMessages`
+- `seedMessages` are **hidden** persona-anchoring few-shot turns: distinct in purpose from `initialMessages` (which are **visible** starter turns rendered into the transcript). Hidden seeds are intended to be injected into a chat session as model-visible-but-transcript-hidden context (the consuming mechanism sets `transcriptVisible: false`); they anchor the agent's persona without appearing in the user-visible conversation
+- A single template may declare **both** fields — they coexist and are surfaced independently. Neither field's presence implies or affects the other
+- When a project is created from such a template, `seedMessages` are persisted into the project's metadata (`.project-meta.json`) at creation time, exactly like `initialMessages` (capture-at-create: later template edits do not retroactively change existing projects)
+- Both the `POST /v1/projects` create response and the `GET /v1/projects/:id` retrieve response surface `seedMessages` when present; it is detail-only (NOT in `GET /v1/projects` list) and omitted entirely (never `[]`) when absent
+- `seedMessages` is read-only post-creation: no endpoint mutates it, and PATCH rename leaves it untouched
+- **Validation and caps:** each element must satisfy the same `{ role: string, content: string }` shape (`isMessage`); malformed elements are dropped, not fatal. Structural caps bound the field so a malformed/runaway template cannot write an unbounded blob: at most **50** messages (surplus truncated) and at most **10,000** characters per `content` (oversized elements dropped). If nothing valid survives, the field is omitted (treated as absent) — never a 500
+- Role vocabulary is unconstrained by this contract (consistent with `initialMessages`); downstream consumers validate what they accept. Note: the consuming agent/SDK expects alternating `user`/`assistant` turns for few-shot anchoring to work well, but that is a downstream concern, not enforced here
+
 ### Uniform Response Shape
 
-- Both blank and template-based creation return the same core `{ id, name, lastAccessedAt }` response; optional fields (`initialMessages`, `targetOrg`) appear when set
-- `GET /v1/projects/:id` returns the same shape, matching create, rename, and list for the core fields, and additionally surfaces `initialMessages` when present
+- Both blank and template-based creation return the same core `{ id, name, lastAccessedAt }` response; optional fields (`initialMessages`, `seedMessages`, `targetOrg`) appear when set
+- `GET /v1/projects/:id` returns the same shape, matching create, rename, and list for the core fields, and additionally surfaces `initialMessages` and `seedMessages` when present
 - Both produce a directory with a valid `sfdx-project.json`
 - Downstream endpoints (tree, file read, deploy) work identically on both
 - Response shape is consistent across create, retrieve, rename, and list — clients never have to reconstruct `lastAccessedAt` themselves
@@ -273,9 +302,9 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 - This keeps the contract honest: the only answerable question about a project ID is "does this project exist?" A malformed ID is just one kind of "no"
 - Consistent across GET `/:id`, PATCH `/:id`, and GET `/:id/tree`
 
-### Initial Messages Are Detail-Only
+### Initial & Seed Messages Are Detail-Only
 
-- Like `targetOrg`, `initialMessages` is not surfaced in `GET /v1/projects` (list) — clients fetch the field per-project via `GET /:id` or receive it inline on `POST /projects` creation
+- Like `targetOrg`, both `initialMessages` and `seedMessages` are not surfaced in `GET /v1/projects` (list) — clients fetch the fields per-project via `GET /:id` or receive them inline on `POST /projects` creation
 - Keeps the list response compact for UIs that only need ID, name, and recency
 
 ### On-Disk State Is Never Fabricated
@@ -305,9 +334,9 @@ Context: historically, a read fallback returned `{ name: path.basename(projectDi
 
 ## Test Summary
 
-- **POST /projects**: includes orgAlias resolution, blank-project Untitled-N numbering, template-flow `<TemplateName> N` numbering, name-persistence-across-list/retrieve, and initialMessages handling from templates.
-- **GET /projects**: array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state.
-- **GET /projects/:id**: 200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH.
+- **POST /projects**: includes orgAlias resolution, blank-project Untitled-N numbering, template-flow `<TemplateName> N` numbering, name-persistence-across-list/retrieve, initialMessages handling from templates, and seedMessages handling (present from template, absent on blank, create/get parity, independent from initialMessages when both present).
+- **GET /projects**: array contents, element shape with lastAccessedAt, initial lastAccessedAt at creation time, access-updates-timestamp, empty state, seedMessages absent from list (detail-only).
+- **GET /projects/:id**: 200 shape, lastAccessedAt bump past creation, get/list consistency, post-rename name + bump-past-PATCH, every-GET-bumps, 404 for valid-UUID miss, 404 for non-UUID, initialMessages from template, initialMessages absent on blank, initialMessages preserved across PATCH, seedMessages from template, seedMessages absent on blank, seedMessages preserved across PATCH.
 - **PATCH /projects/:id**: rename with lastAccessedAt bump, persistence, rename/list consistency, 404 for nonexistent, missing name, empty/whitespace name (400), >80-char name (400), exactly-80-char name (200), trim semantics.
 - **GET /projects/:id/tree**: template project, blank project, nonexistent.
 - **Meta file integrity**: missing meta not fabricated on /:id; unparseable meta preserved on /:id, /:id/tree, /:id/file; PATCH rename recovers a corrupted project.

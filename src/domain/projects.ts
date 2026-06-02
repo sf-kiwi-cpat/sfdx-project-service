@@ -42,10 +42,41 @@ function isMessage(value: unknown): value is Message {
   return typeof m.role === 'string' && typeof m.content === 'string';
 }
 
+// Bounds for template-declared seedMessages. seeds are hidden, persona-anchoring
+// few-shot turns (distinct from the visible initialMessages); these caps keep a
+// malformed or runaway template from writing an unbounded blob into
+// .project-meta.json and onto every project response. Oversized or malformed
+// entries are dropped (never fatal) — see parseSeedMessages.
+const MAX_SEED_MESSAGES = 50;
+const MAX_SEED_CONTENT_LENGTH = 10_000;
+
+/**
+ * Validate + bound a raw `seedMessages` value read from a template.json.
+ *
+ * Mirrors the `initialMessages` parse posture (malformed degrades to "no
+ * seeds", never throws) and adds structural caps: each element must satisfy
+ * `isMessage` and carry `content` no longer than MAX_SEED_CONTENT_LENGTH;
+ * surviving elements are capped to the first MAX_SEED_MESSAGES. Returns
+ * `undefined` when nothing valid remains (so the field is omitted, never `[]`).
+ */
+function parseSeedMessages(raw: unknown): Message[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const valid = raw
+    .filter(isMessage)
+    .filter((m) => m.content.length <= MAX_SEED_CONTENT_LENGTH)
+    .slice(0, MAX_SEED_MESSAGES);
+  return valid.length > 0 ? valid : undefined;
+}
+
 interface ProjectMeta {
   name: string;
   lastAccessedAt?: string;
   initialMessages?: Message[];
+  // Hidden, persona-anchoring few-shot seed turns captured from the source
+  // template at create time. Distinct from initialMessages (visible starter
+  // turns): seedMessages are meant to be injected into a chat session with
+  // transcriptVisible:false. See spec/projects/contract.md.
+  seedMessages?: Message[];
   // Per-project token suffixed onto singular-shipped metadata DeveloperNames
   // (UIBundle, CustomApplication) so concurrent deploys to a shared org
   // don't collide. See spec/app-naming/contract.md.
@@ -162,6 +193,7 @@ export interface ProjectResult {
   lastAccessedAt: string;
   targetOrg?: string;
   initialMessages?: Message[];
+  seedMessages?: Message[];
 }
 
 /**
@@ -287,25 +319,39 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   const lastAccessedAt = new Date().toISOString();
 
   let initialMessages: Message[] | undefined;
+  let seedMessages: Message[] | undefined;
   try {
     const raw = await fs.readFile(
       path.join(getTemplatesDir(), templateId, 'template.json'),
       'utf-8'
     );
-    const templateMeta = JSON.parse(raw) as { initialMessages?: unknown };
+    const templateMeta = JSON.parse(raw) as {
+      initialMessages?: unknown;
+      seedMessages?: unknown;
+    };
+    // initialMessages is intentionally parsed inline and UNcapped — its
+    // contract (spec/projects/contract.md) places no count/length bounds on
+    // visible starter turns. seedMessages goes through parseSeedMessages,
+    // which adds structural caps. Don't "unify" these by routing both through
+    // the helper — that would silently start capping initialMessages and
+    // change its contract.
     if (Array.isArray(templateMeta.initialMessages)) {
       const valid = templateMeta.initialMessages.filter(isMessage);
       if (valid.length > 0) {
         initialMessages = valid;
       }
     }
+    seedMessages = parseSeedMessages(templateMeta.seedMessages);
   } catch {
-    // template.json is optional for initialMessages; absence is not an error
+    // template.json is optional for initialMessages/seedMessages; absence is not an error
   }
 
   const meta: ProjectMeta = { name, lastAccessedAt, appNameToken };
   if (initialMessages) {
     meta.initialMessages = initialMessages;
+  }
+  if (seedMessages) {
+    meta.seedMessages = seedMessages;
   }
   await writeProjectMeta(projectDir, meta);
 
@@ -313,6 +359,9 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   const result: ProjectResult = { id: projectId, name, lastAccessedAt };
   if (initialMessages) {
     result.initialMessages = initialMessages;
+  }
+  if (seedMessages) {
+    result.seedMessages = seedMessages;
   }
   return result;
 }
@@ -360,6 +409,9 @@ export async function getProject(projectId: string): Promise<ProjectResult> {
   };
   if (meta.initialMessages) {
     result.initialMessages = meta.initialMessages;
+  }
+  if (meta.seedMessages) {
+    result.seedMessages = meta.seedMessages;
   }
   return result;
 }
