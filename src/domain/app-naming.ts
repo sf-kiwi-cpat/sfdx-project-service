@@ -22,7 +22,14 @@ import { logger } from '../logger.js';
 
 const UI_BUNDLES_REL = 'force-app/main/default/uiBundles';
 const APPLICATIONS_REL = 'force-app/main/default/applications';
+const FORCE_APP_DEFAULT_REL = 'force-app/main/default';
 const MANIFEST_DIR_REL = 'manifest';
+const FORCEIGNORE_REL = '.forceignore';
+// The path prefix `.forceignore` patterns use to scope rules to the single
+// shipped UIBundle. Templates pin their ignore rules to `<this>/<bundle>/...`;
+// when the bundle dir is renamed to `<bundle>_<token>` the prefix must be
+// rewritten in lockstep or the rules stop matching.
+const UI_BUNDLES_IGNORE_PREFIX = 'force-app/main/default/uiBundles';
 
 /**
  * Escape regex metacharacters in a literal so it can be safely
@@ -54,6 +61,13 @@ export function generateAppNameToken(): string {
  *     inside it (`<name>.uibundle-meta.xml`).
  *   - `force-app/main/default/applications/<name>.app-meta.xml` — file rename.
  *
+ * Renaming the CustomApplication file is not sufficient on its own:
+ * other metadata references the application by its old DeveloperName via
+ * `<application>` elements (PermissionSet / Profile
+ * `<applicationVisibilities>`). Those references are rewritten to the
+ * tokenized name too — otherwise the deploy fails with "no
+ * CustomApplication named <old> found".
+ *
  * The bundle's internal contents (index.html, src/, vite.config.ts, etc.)
  * use relative paths; renaming the parent directory does not require any
  * content edits. The XML metadata files have no `<fullName>` element —
@@ -77,6 +91,23 @@ export async function uniquifyAppNames(
 ): Promise<string> {
   const oldBundleName = await renameSingularBundleDir(path.join(projectDir, UI_BUNDLES_REL), token);
   const renamedApps = await renameApplicationFiles(path.join(projectDir, APPLICATIONS_REL), token);
+  // Cross-references to the renamed CustomApplication(s) — e.g. a
+  // PermissionSet's `<applicationVisibilities><application>` — still name
+  // the old DeveloperName. Rewrite them so they resolve to the renamed
+  // app at deploy time.
+  await rewriteApplicationReferences(
+    path.join(projectDir, FORCE_APP_DEFAULT_REL),
+    renamedApps,
+    token
+  );
+  // `.forceignore` rules are pinned to the bundle's original path
+  // (`uiBundles/<bundle>/...`). After the dir is renamed to
+  // `<bundle>_<token>` those globs no longer match, so the bundle's
+  // node_modules/, src/, lockfiles, etc. stop being excluded and get
+  // swept into the deploy payload — blowing the Metadata API's
+  // 39MB/10,000-file UIBundle content limit ("Content deployment failed
+  // for UIBundle"). Rewrite the path prefix to track the rename.
+  await rewriteForceIgnoreBundlePaths(path.join(projectDir, FORCEIGNORE_REL), oldBundleName, token);
   // Manifests under `manifest/` reference metadata DeveloperNames by
   // old value; rewrite them to point at the new names so SDR's
   // ComponentSet.fromManifest resolves correctly. Templates with
@@ -151,6 +182,107 @@ async function renameApplicationFiles(applicationsRoot: string, token: string): 
     renamed.push(base);
   }
   return renamed;
+}
+
+/**
+ * Rewrite `<application>OldName</application>` references that name a
+ * renamed CustomApplication. PermissionSets and Profiles reference an
+ * app by DeveloperName inside `<applicationVisibilities>`; renaming the
+ * `.app-meta.xml` file without rewriting these leaves a dangling
+ * reference and the deploy fails with "In field: application - no
+ * CustomApplication named <old> found".
+ *
+ * Walks the whole `force-app/main/default` tree (not just permissionsets/)
+ * so any current or future metadata type that references the app —
+ * profiles today, others later — is covered without enumerating types.
+ * Only the exact `<application>` element value is rewritten, so unrelated
+ * occurrences of the same string (labels, descriptions) are untouched.
+ */
+async function rewriteApplicationReferences(
+  forceAppRoot: string,
+  renamedApps: string[],
+  token: string
+): Promise<void> {
+  if (renamedApps.length === 0) return;
+  const files = await collectXmlFiles(forceAppRoot);
+  for (const filePath of files) {
+    const xml = await fs.readFile(filePath, 'utf-8');
+    let updated = xml;
+    for (const app of renamedApps) {
+      const exact = new RegExp(`<application>${escapeRegExp(app)}</application>`, 'g');
+      updated = updated.replace(exact, `<application>${app}_${token}</application>`);
+    }
+    if (updated !== xml) {
+      await fs.writeFile(filePath, updated);
+    }
+  }
+}
+
+/**
+ * Rewrite `.forceignore` glob prefixes that point at the original bundle
+ * directory so they track the rename to `<bundle>_<token>`.
+ *
+ * Templates pin their ignore rules to the bundle's path, e.g.
+ * `force-app/main/default/uiBundles/App/node_modules/**`. Once
+ * `renameSingularBundleDir` renames the dir to `App_<token>`, every such
+ * rule stops matching and the excluded files (node_modules/, src/,
+ * lockfiles, configs) are no longer ignored — SDR's `walkContent` then
+ * sweeps them into the UIBundle content payload, exceeding the Metadata
+ * API's 39MB / 10,000-file limit and failing the deploy with the opaque
+ * "Content deployment failed for UIBundle '<name>'" server error.
+ *
+ * Rewrites only the exact path segment `uiBundles/<bundle>/` →
+ * `uiBundles/<bundle>_<token>/`, anchored on the trailing slash so a
+ * bundle named `App` does not also rewrite a sibling like `AppExtras`.
+ * No-op when no bundle was renamed or the file is absent.
+ */
+async function rewriteForceIgnoreBundlePaths(
+  forceIgnorePath: string,
+  oldBundleName: string | undefined,
+  token: string
+): Promise<void> {
+  if (!oldBundleName) return;
+  let content: string;
+  try {
+    content = await fs.readFile(forceIgnorePath, 'utf-8');
+  } catch {
+    // No `.forceignore` — nothing to keep in sync. The bundle's
+    // node_modules/src will ship, but that is a pre-existing template
+    // concern, not something this rename introduced.
+    return;
+  }
+  const oldPrefix = `${UI_BUNDLES_IGNORE_PREFIX}/${oldBundleName}/`;
+  const newPrefix = `${UI_BUNDLES_IGNORE_PREFIX}/${oldBundleName}_${token}/`;
+  const pattern = new RegExp(escapeRegExp(oldPrefix), 'g');
+  const updated = content.replace(pattern, newPrefix);
+  if (updated !== content) {
+    await fs.writeFile(forceIgnorePath, updated);
+  }
+}
+
+/**
+ * Recursively collect `*.xml` files under a directory. Returns an empty
+ * list if the directory does not exist (a blank project may ship no
+ * force-app tree). Never throws on a missing root — mirrors the
+ * defensive readdir pattern used elsewhere in this module.
+ */
+async function collectXmlFiles(root: string): Promise<string[]> {
+  let dirents: import('node:fs').Dirent[];
+  try {
+    dirents = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const dirent of dirents) {
+    const full = path.join(root, dirent.name);
+    if (dirent.isDirectory()) {
+      out.push(...(await collectXmlFiles(full)));
+    } else if (dirent.name.endsWith('.xml')) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 /**
