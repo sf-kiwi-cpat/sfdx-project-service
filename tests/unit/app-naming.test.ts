@@ -38,6 +38,12 @@ const DEVELOPER_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
 async function stageFakeProject(
   opts: {
     withCustomApp?: { name: string };
+    // Stage a PermissionSet whose `<applicationVisibilities>` references the
+    // given app DeveloperName — the cross-reference the rename must rewrite.
+    withPermSetForApp?: string;
+    // Stage a `.forceignore` whose rules are pinned to the bundle's original
+    // path (`uiBundles/App/...`) — these prefixes must track the rename.
+    withForceIgnore?: boolean;
   } = {}
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-naming-test-'));
@@ -55,6 +61,32 @@ async function stageFakeProject(
     await fs.writeFile(
       path.join(appsDir, `${opts.withCustomApp.name}.app-meta.xml`),
       '<?xml version="1.0"?><CustomApplication/>'
+    );
+  }
+
+  if (opts.withPermSetForApp) {
+    const permSetsDir = path.join(dir, 'force-app/main/default/permissionsets');
+    await fs.mkdir(permSetsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(permSetsDir, 'Data_Curator_Admin.permissionset-meta.xml'),
+      '<?xml version="1.0"?>\n<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">\n' +
+        '  <applicationVisibilities>\n' +
+        `    <application>${opts.withPermSetForApp}</application>\n` +
+        '    <visible>true</visible>\n' +
+        '  </applicationVisibilities>\n' +
+        '</PermissionSet>\n'
+    );
+  }
+
+  if (opts.withForceIgnore) {
+    await fs.writeFile(
+      path.join(dir, '.forceignore'),
+      [
+        'force-app/main/default/uiBundles/App/node_modules/**',
+        'force-app/main/default/uiBundles/App/src/**',
+        'force-app/main/default/uiBundles/App/package-lock.json',
+        '',
+      ].join('\n')
     );
   }
   return dir;
@@ -107,6 +139,74 @@ describe('uniquifyAppNames', () => {
 
     const apps = await fs.readdir(path.join(projectDir, APPLICATIONS_REL));
     expect(apps).toEqual(['Data_Curator_abc12345.app-meta.xml']);
+  });
+
+  it('rewrites PermissionSet applicationVisibilities to the renamed app', async () => {
+    // A renamed CustomApplication leaves a dangling reference in any
+    // PermissionSet that names it via <applicationVisibilities>. Without
+    // the rewrite the deploy fails: "no CustomApplication named Data_Curator
+    // found".
+    projectDir = await stageFakeProject({
+      withCustomApp: { name: 'Data_Curator' },
+      withPermSetForApp: 'Data_Curator',
+    });
+    await uniquifyAppNames(projectDir, 'abc12345');
+
+    const permSet = await fs.readFile(
+      path.join(
+        projectDir,
+        'force-app/main/default/permissionsets/Data_Curator_Admin.permissionset-meta.xml'
+      ),
+      'utf-8'
+    );
+    expect(permSet).toContain('<application>Data_Curator_abc12345</application>');
+    expect(permSet).not.toContain('<application>Data_Curator</application>');
+  });
+
+  it('rewrites .forceignore bundle paths to track the renamed bundle dir', async () => {
+    // .forceignore rules pinned to uiBundles/App/** stop matching once the
+    // dir is renamed to App_<token>, so node_modules/src would be swept into
+    // the UIBundle content payload and blow the Metadata API size limit.
+    projectDir = await stageFakeProject({ withForceIgnore: true });
+    await uniquifyAppNames(projectDir, 'abc12345');
+
+    const forceIgnore = await fs.readFile(path.join(projectDir, '.forceignore'), 'utf-8');
+    expect(forceIgnore).toContain('force-app/main/default/uiBundles/App_abc12345/node_modules/**');
+    expect(forceIgnore).toContain('force-app/main/default/uiBundles/App_abc12345/src/**');
+    // No stale pre-rename prefix should remain.
+    expect(forceIgnore).not.toMatch(/uiBundles\/App\//);
+  });
+
+  it('does not rewrite .forceignore prefixes for sibling bundle names', async () => {
+    // The rewrite is anchored on the trailing slash, so renaming `App` must
+    // not touch `AppExtras` or unrelated substrings.
+    projectDir = await stageFakeProject();
+    await fs.writeFile(
+      path.join(projectDir, '.forceignore'),
+      [
+        'force-app/main/default/uiBundles/App/node_modules/**',
+        'force-app/main/default/uiBundles/AppExtras/keep/**',
+        'some/other/App/path/**',
+        '',
+      ].join('\n')
+    );
+    await uniquifyAppNames(projectDir, 'abc12345');
+
+    const forceIgnore = await fs.readFile(path.join(projectDir, '.forceignore'), 'utf-8');
+    expect(forceIgnore).toContain('uiBundles/App_abc12345/node_modules/**');
+    expect(forceIgnore).toContain('uiBundles/AppExtras/keep/**');
+    expect(forceIgnore).toContain('some/other/App/path/**');
+  });
+
+  it('is a no-op on .forceignore rewrite when no bundle was renamed', async () => {
+    // Blank project (no bundle dir) must not touch an existing .forceignore.
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-naming-no-bundle-'));
+    const original = 'force-app/main/default/uiBundles/App/node_modules/**\n';
+    await fs.writeFile(path.join(projectDir, '.forceignore'), original);
+    await uniquifyAppNames(projectDir, 'abc12345');
+
+    const forceIgnore = await fs.readFile(path.join(projectDir, '.forceignore'), 'utf-8');
+    expect(forceIgnore).toBe(original);
   });
 
   it('uses generated token when none provided', async () => {
