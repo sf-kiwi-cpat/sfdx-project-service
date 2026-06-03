@@ -128,7 +128,7 @@ for (const name of templates) {
   // with `npm ci --omit=dev` to keep ~190 MB of dev toolchain (typescript,
   // esbuild, @babel, rollup, vite) out of content.zip. This is the dominant
   // cost in extraction: data-curator's bundle node_modules drops from ~7,972
-  // files to ~240. See spec/template-packaging/contract.md (C2).
+  // files to ~240. (Invariants asserted by tests/integration/templates.deployable.test.ts.)
   //
   // `installedNodeModules` records every node_modules dir we deliberately
   // created — a Set of absolute paths. Both this Set and the walk below build
@@ -136,7 +136,7 @@ for (const name of templates) {
   // so identity comparison is exact; keep it that way. Any node_modules NOT in
   // this Set is unmanaged (e.g. stale local cruft from a dev `npm install`
   // next to a package.json-less directory) and must be kept out of the archive
-  // (C1) — `zip -r` would otherwise sweep it in, since it ignores .gitignore.
+  // — `zip -r` would otherwise sweep it in, since it ignores .gitignore.
   const installedNodeModules = new Set();
 
   const installProdDeps = (dir, label) => {
@@ -213,7 +213,7 @@ for (const name of templates) {
   // Info-ZIP builds, and an unmatched pattern fails OPEN (silently ships the
   // tree). Re-read the archive and fail the build loudly if any unmanaged
   // node_modules leaked in. This turns a silent perf/size regression into a
-  // hard build error on any host. (C1, see spec/template-packaging/contract.md)
+  // hard build error on any host.
   if (unmanaged.length > 0) {
     const entries = listZipEntries(zipPath);
     const unmanagedRels = new Set(

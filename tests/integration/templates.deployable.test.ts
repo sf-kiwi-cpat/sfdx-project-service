@@ -91,9 +91,10 @@ describe('tier-1: every template is deployable (structurally)', async () => {
     let projectId: string;
     let projectDir: string;
 
-    // 30s timeout: data-curator extracts ~1k files; under quality-suite load
-    // this can exceed the default 5s budget and cascade-fail every dependent
-    // test in the same describe.each block.
+    // 30s timeout: generous headroom under quality-suite load so a slow
+    // create can't cascade-fail every dependent test in the same
+    // describe.each block. (Extraction itself is fast — ~455 files for
+    // data-curator — but the suite shares CI runners.)
     it('creates a project via POST /v1/projects', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
@@ -237,17 +238,23 @@ describe('tier-1: every template is deployable (structurally)', async () => {
 });
 
 /**
- * Template packaging contract — see spec/template-packaging/contract.md.
+ * Template packaging invariants.
  *
- * The build (`scripts/zip-templates.js`, run by `pretest:integration`)
- * ships only the files a created project needs. These tests assert the
- * post-extraction project tree, which is the surface the runtime actually
- * sees:
- *   • No dev-toolchain packages (typescript, vite, esbuild, …) anywhere
- *     under node_modules — only production deps ship (C2).
+ * The build (`scripts/zip-templates.js`, run by `pretest:integration`) ships
+ * only the files a created project needs at runtime: it installs production
+ * dependencies (`npm ci --omit=dev`) and keeps any node_modules it did not
+ * itself install out of content.zip. The build & preview servers resolve
+ * their Vite toolchain from their own node_modules, never the project's, so
+ * shipping the dev toolchain per project is pure dead weight (it dominated
+ * extraction time — data-curator was 15,519 files, ~99% node_modules).
+ *
+ * These tests assert the post-extraction project tree, the surface the
+ * runtime actually sees:
+ *   • No dev-toolchain packages (typescript, vite, esbuild, …) under any
+ *     node_modules — only production deps ship.
  *   • No unmanaged node_modules: a node_modules dir may exist only where a
- *     sibling package.json does (the build only installs next to one) (C1).
- *   • The runtime deps the app imports (react) are present (C3 sanity).
+ *     sibling package.json does (the build installs only next to one).
+ *   • The runtime deps the app imports (react) are present.
  */
 describe('tier-1: template packaging is slim', async () => {
   const templates = await discoverTemplates();
@@ -318,7 +325,7 @@ describe('tier-1: template packaging is slim', async () => {
       projectDir = path.join(tmpRoot, res.body.id as string);
     }, 30_000);
 
-    it('ships no dev-toolchain packages under any node_modules (C2)', async () => {
+    it('ships no dev-toolchain packages under any node_modules', async () => {
       const nmDirs = await findNodeModulesDirs(projectDir);
       for (const nm of nmDirs) {
         for (const dep of DEV_TOOLCHAIN) {
@@ -337,7 +344,7 @@ describe('tier-1: template packaging is slim', async () => {
       }
     });
 
-    it('has a node_modules only where a sibling package.json exists (C1)', async () => {
+    it('has a node_modules only where a sibling package.json exists', async () => {
       const nmDirs = await findNodeModulesDirs(projectDir);
       for (const nm of nmDirs) {
         const siblingPkg = path.join(path.dirname(nm), 'package.json');
@@ -348,8 +355,8 @@ describe('tier-1: template packaging is slim', async () => {
       }
     });
 
-    it('does not ship a node_modules the template never declared (C1, direct)', async () => {
-      // The converse of the C1 test above: a template that ships no root
+    it('does not ship a node_modules the template never declared', async () => {
+      // The converse of the sibling-package.json test above: a template that ships no root
       // package.json (bundle layout, e.g. data-curator) must not carry a
       // root-level node_modules — that would be the stale, unmanaged tree the
       // build is responsible for excluding. Directly catches a host-specific
@@ -366,7 +373,7 @@ describe('tier-1: template packaging is slim', async () => {
       }
     });
 
-    it('ships react where the project declares it as a runtime dep (C3)', async () => {
+    it('ships react where the project declares it as a runtime dep', async () => {
       // Every built-in template's React app depends on react. Find the
       // package.json that declares it and assert react resolved into the
       // sibling node_modules.
