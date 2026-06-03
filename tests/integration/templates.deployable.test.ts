@@ -91,9 +91,10 @@ describe('tier-1: every template is deployable (structurally)', async () => {
     let projectId: string;
     let projectDir: string;
 
-    // 30s timeout: data-curator extracts ~1k files; under quality-suite load
-    // this can exceed the default 5s budget and cascade-fail every dependent
-    // test in the same describe.each block.
+    // 30s timeout: generous headroom under quality-suite load so a slow
+    // create can't cascade-fail every dependent test in the same
+    // describe.each block. (Extraction itself is fast — ~455 files for
+    // data-curator — but the suite shares CI runners.)
     it('creates a project via POST /v1/projects', async () => {
       const res = await request(app.server)
         .post('/v1/projects')
@@ -233,5 +234,168 @@ describe('tier-1: every template is deployable (structurally)', async () => {
         await expect(fs.stat(file), `walked content ${file} must exist`).resolves.toBeDefined();
       }
     }, 30_000);
+  });
+});
+
+/**
+ * Template packaging invariants.
+ *
+ * The build (`scripts/zip-templates.js`, run by `pretest:integration`) ships
+ * only the files a created project needs at runtime: it installs production
+ * dependencies (`npm ci --omit=dev`) and keeps any node_modules it did not
+ * itself install out of content.zip. The build & preview servers resolve
+ * their Vite toolchain from their own node_modules, never the project's, so
+ * shipping the dev toolchain per project is pure dead weight (it dominated
+ * extraction time — data-curator was 15,519 files, ~99% node_modules).
+ *
+ * These tests assert the post-extraction project tree, the surface the
+ * runtime actually sees:
+ *   • No dev-toolchain packages (typescript, vite, esbuild, …) under any
+ *     node_modules — only production deps ship.
+ *   • No unmanaged node_modules: a node_modules dir may exist only where a
+ *     sibling package.json does (the build installs only next to one).
+ *   • The runtime deps the app imports (react) are present.
+ */
+describe('tier-1: template packaging is slim', async () => {
+  const templates = await discoverTemplates();
+
+  let tmpRoot: string;
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(async () => {
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-tier1-pkg-'));
+    process.env.PROJECTS_ROOT = tmpRoot;
+    app = createApp();
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    delete process.env.PROJECTS_ROOT;
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  // Dev-only packages that must never appear in a shipped node_modules.
+  // Their presence means a `--omit=dev` install regressed to a full one.
+  // @salesforce/vite-plugin-ui-bundle is the most likely accidental leak —
+  // it lives in devDependencies but sounds runtime-ish; the build/preview
+  // servers resolve it from their own node_modules, never the project's.
+  const DEV_TOOLCHAIN = [
+    'typescript',
+    'vite',
+    'esbuild',
+    'rollup',
+    '@vitejs',
+    '@babel',
+    '@salesforce/vite-plugin-ui-bundle',
+  ];
+
+  /** Recursively collect every node_modules directory under `root`. */
+  async function findNodeModulesDirs(root: string): Promise<string[]> {
+    const out: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      let entries: Awaited<ReturnType<typeof fs.readdir>>;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true } as never);
+      } catch {
+        return;
+      }
+      for (const e of entries as unknown as Array<{ name: string; isDirectory(): boolean }>) {
+        if (!e.isDirectory()) continue;
+        const abs = path.join(dir, e.name);
+        if (e.name === 'node_modules') {
+          out.push(abs);
+          continue; // don't descend into node_modules
+        }
+        await walk(abs);
+      }
+    };
+    await walk(root);
+    return out;
+  }
+
+  describe.each(templates)('%s', (templateId) => {
+    let projectDir: string;
+
+    beforeAll(async () => {
+      const res = await request(app.server)
+        .post('/v1/projects')
+        .send({ template: templateId })
+        .expect(201);
+      projectDir = path.join(tmpRoot, res.body.id as string);
+    }, 30_000);
+
+    it('ships no dev-toolchain packages under any node_modules', async () => {
+      const nmDirs = await findNodeModulesDirs(projectDir);
+      for (const nm of nmDirs) {
+        for (const dep of DEV_TOOLCHAIN) {
+          // Check the actual package directory exists (handles scoped names
+          // like @salesforce/vite-plugin-ui-bundle without false-positiving on
+          // a sibling scoped prod dep such as @salesforce/sdk-data).
+          const present = await fs
+            .stat(path.join(nm, dep, 'package.json'))
+            .then(() => true)
+            .catch(() => false);
+          expect(
+            present,
+            `${path.relative(projectDir, nm)} must not ship dev dependency "${dep}"`
+          ).toBe(false);
+        }
+      }
+    });
+
+    it('has a node_modules only where a sibling package.json exists', async () => {
+      const nmDirs = await findNodeModulesDirs(projectDir);
+      for (const nm of nmDirs) {
+        const siblingPkg = path.join(path.dirname(nm), 'package.json');
+        await expect(
+          fs.stat(siblingPkg),
+          `unmanaged node_modules at ${path.relative(projectDir, nm)} — no sibling package.json`
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('does not ship a node_modules the template never declared', async () => {
+      // The converse of the sibling-package.json test above: a template that ships no root
+      // package.json (bundle layout, e.g. data-curator) must not carry a
+      // root-level node_modules — that would be the stale, unmanaged tree the
+      // build is responsible for excluding. Directly catches a host-specific
+      // `zip -x` regression that the build's own post-zip check might miss.
+      const hasRootPkg = await fs
+        .stat(path.join(projectDir, 'package.json'))
+        .then(() => true)
+        .catch(() => false);
+      if (!hasRootPkg) {
+        await expect(
+          fs.stat(path.join(projectDir, 'node_modules')),
+          'bundle-layout project (no root package.json) must not ship a root node_modules'
+        ).rejects.toThrow();
+      }
+    });
+
+    it('ships react where the project declares it as a runtime dep', async () => {
+      // Every built-in template's React app depends on react. Find the
+      // package.json that declares it and assert react resolved into the
+      // sibling node_modules.
+      const nmDirs = await findNodeModulesDirs(projectDir);
+      let foundReact = false;
+      for (const nm of nmDirs) {
+        const pkgPath = path.join(path.dirname(nm), 'package.json');
+        let pkg: { dependencies?: Record<string, string> };
+        try {
+          pkg = JSON.parse(await fs.readFile(pkgPath, 'utf-8')) as typeof pkg;
+        } catch {
+          continue;
+        }
+        if (pkg.dependencies?.react) {
+          await expect(
+            fs.stat(path.join(nm, 'react')),
+            `react declared in ${path.relative(projectDir, pkgPath)} but not installed`
+          ).resolves.toBeDefined();
+          foundReact = true;
+        }
+      }
+      expect(foundReact, 'expected at least one package.json declaring react').toBe(true);
+    });
   });
 });

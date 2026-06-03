@@ -266,10 +266,13 @@ export async function createProject(templateId: string): Promise<ProjectResult> 
   const projectDir = path.join(getProjectsRoot(), projectId);
   await fs.mkdir(projectDir, { recursive: true });
 
-  // extract-zip is async (yauzl-backed) so a ~40 MB template extraction
-  // does not stall the event loop. Entry modes are honored from the zip
-  // itself — the build path in scripts/zip-templates.js embeds Unix mode
-  // bits, so we don't need defaultFileMode / defaultDirMode.
+  // extract-zip is async (yauzl-backed) so extraction does not stall the
+  // event loop. The archive ships only the template source plus production
+  // node_modules (scripts/zip-templates.js installs --omit=dev and excludes
+  // unmanaged trees), so this is a small, fast write — data-curator is
+  // ~1.5 MB / ~455 files, ~240 ms. Entry modes are honored from the zip
+  // itself — the build embeds Unix mode bits, so we don't need
+  // defaultFileMode / defaultDirMode.
   try {
     // extract-zip's `dir` option requires an absolute path.
     await extract(templatePath, { dir: path.resolve(projectDir) });
