@@ -143,6 +143,29 @@ for (const name of templates) {
     // `npm ci` installs exactly the lockfile (deterministic contents, not just
     // a clean tree) and removes any existing node_modules first, so a dev's
     // prior full install can't leak in. `--omit=dev` drops devDependencies.
+    // `--ignore-scripts` is load-bearing on TWO counts: (1) supply-chain
+    // hardening — no arbitrary postinstall runs at build time; (2) it keeps
+    // the install deterministic. The tradeoff: a production dependency that
+    // relies on a postinstall/native build step to materialize files would
+    // ship incompletely. Today's runtime deps (react, react-dom,
+    // @salesforce/sdk-data) are pure-JS with no meaningful postinstall, so
+    // this is correct — but a future template adding such a dep must vendor
+    // it install-hook-free.
+    //
+    // Preflight the lockfile: `npm ci` hard-fails (EUSAGE) without one, and an
+    // uncaught throw here would abort the whole build:templates run (and with
+    // it prepack + every pretest hook), not just this template. A template is
+    // auto-discovered, so a future one authored with package.json but no
+    // committed lockfile would otherwise break the repo with a raw npm error.
+    // Fail with an actionable message instead, mirroring the requireZipCli
+    // preflight at the top of this file.
+    if (!existsSync(join(dir, 'package-lock.json'))) {
+      throw new Error(
+        `${name} (${label}): package.json present but package-lock.json missing at ${dir}. ` +
+          `Templates must commit a lockfile so the build installs deterministic, ` +
+          `production-only deps via 'npm ci'. Run 'npm install' in that directory and commit the lockfile.`
+      );
+    }
     console.error(`  ${name}: installing production dependencies (${label})…`);
     execSync('npm ci --omit=dev --ignore-scripts', { cwd: dir, stdio: 'pipe' });
     installedNodeModules.add(join(dir, 'node_modules'));
