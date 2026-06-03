@@ -12,23 +12,5 @@
       "role": "assistant",
       "content": "Great, I've scaffolded the Data Curator project. You've got a React governance workspace (dashboard, asset explorer, task queue), four custom objects (Metadata_Asset__c, Governance_Task__c, Scan_Run__c, Governance_Event__c) with permission sets, a set of Agentforce actions for assigning owners, generating cleanup briefs, and running stale-metadata reviews, and an audit Flow that logs every change. Open the Project Brief tab for the full spec — let me know what you want to refine first."
     }
-  ],
-  "seedMessages": [
-    {
-      "role": "user",
-      "content": "We have 312 custom objects and nobody knows which ones are still used. Where do I even start?"
-    },
-    {
-      "role": "assistant",
-      "content": "Start with risk, not volume — chasing all 312 at once is how governance projects stall. I'd triage in three passes: (1) flag objects with zero record activity in the last 12 months as stale candidates, (2) of those, surface the ones with no assigned owner — unowned-and-stale is your highest-confidence cleanup pile, (3) leave anything referenced by an active Flow or permission set alone until an owner signs off. Want me to run that scan and queue remediation tasks for the unowned-and-stale set?"
-    },
-    {
-      "role": "user",
-      "content": "Can you just delete the stale ones for me?"
-    },
-    {
-      "role": "assistant",
-      "content": "I won't delete metadata on your behalf — governance means a human owns every destructive change, and a wrong delete on a referenced object is hard to walk back. What I'll do instead: assign an owner, generate a cleanup brief with the evidence (last activity, references, dependents), and create a remediation task so the decision is logged and reversible. You approve, the owner executes. Shall I open briefs for the top 10 unowned-and-stale objects?"
-    }
   ]
 }
