@@ -45,6 +45,23 @@
  * template) and CustomApplication (data-curator, the only template
  * that ships one today).
  *
+ * Renaming a component is not sufficient on its own — other files in the
+ * project reference the old DeveloperName and break the deploy unless
+ * they are rewritten in lockstep with the rename. This contract pins two
+ * such cross-reference invariants:
+ *
+ *   - CustomApplication references: a PermissionSet/Profile names the app
+ *     by DeveloperName inside `<applicationVisibilities><application>`.
+ *     Renaming the `.app-meta.xml` file without rewriting these leaves a
+ *     dangling reference and the deploy fails with "In field: application
+ *     - no CustomApplication named <old> found".
+ *   - `.forceignore` bundle globs: templates pin their ignore rules to the
+ *     bundle's original path (`uiBundles/<bundle>/...`). After the bundle
+ *     dir is renamed, those globs stop matching, so the bundle's
+ *     node_modules/src/lockfiles are no longer excluded and get swept into
+ *     the UIBundle content payload — exceeding the Metadata API's
+ *     39MB / 10,000-file limit ("Content deployment failed for UIBundle").
+ *
  * Scope:
  *   - Newly-created projects (POST /v1/projects).
  *   - The build/deploy pipeline's relationship between the on-disk
@@ -52,6 +69,9 @@
  *     returned `appUrl`.
  *   - The on-disk uniqueness of any sibling singular-named metadata
  *     (CustomApplication being today's only other instance).
+ *   - The on-disk consistency of cross-references to renamed components:
+ *     CustomApplication references in metadata, and `.forceignore` globs
+ *     pinned to the bundle directory.
  *
  * Out of scope:
  *   - The human-readable `<masterLabel>` (stays as the template author
@@ -62,7 +82,8 @@
  *   - Multi-bundle templates (no template ships more than one UIBundle
  *     today; if/when one does, this contract may need extension).
  *   - Blank projects (POST /v1/projects with no template). They ship
- *     no UIBundle, so no naming invariant applies.
+ *     no UIBundle, so no naming invariant applies — but the cross-reference
+ *     rewrites must be no-ops on them (asserted below).
  *
  * Note on idempotency tests: the two idempotency assertions pass
  * vacuously today — today's hardcoded names already don't change
@@ -127,6 +148,8 @@ const TEST_ORG_ALIAS = 'test-alias';
 const TEST_USERNAME = 'test-user@example.com';
 const UI_BUNDLES_REL_PATH = 'force-app/main/default/uiBundles';
 const APPLICATIONS_REL_PATH = 'force-app/main/default/applications';
+const FORCE_APP_DEFAULT_REL_PATH = 'force-app/main/default';
+const FORCEIGNORE_REL_PATH = '.forceignore';
 
 /**
  * Salesforce DeveloperName format. Starts with a letter, alphanumeric or
@@ -172,6 +195,55 @@ async function findCustomApplicationName(projectDir: string): Promise<string | u
     );
   }
   return appFiles[0].replace(/\.app-meta\.xml$/, '');
+}
+
+/**
+ * Collect every `<application>…</application>` reference value found in the
+ * project's metadata tree. PermissionSets and Profiles name a
+ * CustomApplication by DeveloperName inside `<applicationVisibilities>`;
+ * the rename must rewrite these in lockstep with the `.app-meta.xml` file
+ * rename or the deploy fails with "no CustomApplication named <old> found".
+ *
+ * Discovers references by walking `force-app/main/default` (mirroring how
+ * the implementation finds them) rather than pinning a literal
+ * permissionset path — consistent with the rest of this file's
+ * assert-the-shape-not-the-literal style.
+ */
+async function collectApplicationReferences(projectDir: string): Promise<string[]> {
+  const root = path.join(projectDir, FORCE_APP_DEFAULT_REL_PATH);
+  const refs: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    let dirents: import('node:fs').Dirent[];
+    try {
+      dirents = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const dirent of dirents) {
+      const full = path.join(dir, dirent.name);
+      if (dirent.isDirectory()) {
+        await walk(full);
+      } else if (dirent.name.endsWith('.xml')) {
+        const xml = await fs.readFile(full, 'utf-8');
+        for (const match of xml.matchAll(/<application>([^<]+)<\/application>/g)) {
+          refs.push(match[1]);
+        }
+      }
+    }
+  }
+  await walk(root);
+  return refs;
+}
+
+/**
+ * Extract the bundle-directory segment from every `.forceignore` glob that
+ * is scoped to a UIBundle path (`…/uiBundles/<segment>/…`). The capture is
+ * delimited by slashes, so it inherently respects the trailing-slash
+ * anchoring the rewrite relies on (`App/` ≠ `App_<token>/`). Returns the
+ * list of referenced segments — empty if the file pins no bundle globs.
+ */
+function bundleGlobSegments(forceIgnore: string): string[] {
+  return [...forceIgnore.matchAll(/uiBundles\/([^/\n]+)\//g)].map((m) => m[1]);
 }
 
 describe('per-project unique App (UIBundle) DeveloperName', () => {
@@ -352,6 +424,111 @@ describe('per-project unique App (UIBundle) DeveloperName', () => {
         const nameB = await findBundleDir(path.join(tmpDir, b.body.id));
 
         expect(nameA).not.toBe(nameB);
+      }
+    );
+  });
+
+  describe('cross-reference rewrites that track the rename', () => {
+    // Renaming a component (UIBundle dir, CustomApplication file) is not
+    // enough: other files reference the OLD DeveloperName and break the
+    // deploy unless rewritten in lockstep. These assertions pin the
+    // observable on-disk state of a created project — consistent with this
+    // file's "assert through the public surface" principle (POST
+    // /v1/projects is the surface; the project tree it writes is the
+    // observable). The data-curator template is the vehicle: it ships a
+    // PermissionSet referencing its CustomApplication AND a `.forceignore`
+    // pinned to the bundle path, so a single project creation exercises
+    // both rewrites end-to-end.
+    //
+    // Not covered here, by design: the sibling-name precision guard (a
+    // bundle named `App` must not rewrite a sibling `AppExtras`, anchored
+    // on the trailing slash). No shipped template provides a sibling bundle
+    // to exercise that through the HTTP surface, so it stays a unit test in
+    // tests/unit/app-naming.test.ts where the project tree can be staged
+    // arbitrarily. The trailing-slash anchoring is still partially
+    // exercised below: the bundle segment extraction is slash-delimited, so
+    // a stale pre-rename `App/` prefix would surface as a segment mismatch.
+    it(
+      'rewrites CustomApplication references to the renamed app DeveloperName',
+      { timeout: 30_000 },
+      async () => {
+        // Without this rewrite the deploy fails: "In field: application - no
+        // CustomApplication named Data_Curator found". Every
+        // `<application>` reference in the tree must name the RENAMED app,
+        // not the template's original literal.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+
+        const projectDir = path.join(tmpDir, res.body.id);
+        const appName = await findCustomApplicationName(projectDir);
+        expect(appName).toBeDefined();
+
+        const refs = await collectApplicationReferences(projectDir);
+        // data-curator ships a PermissionSet that references its app, so
+        // there is at least one reference to rewrite — assert presence so
+        // the test fails loudly if the template ever drops it.
+        expect(refs.length).toBeGreaterThan(0);
+        // Every reference resolves to the renamed CustomApplication on disk.
+        for (const ref of refs) {
+          expect(ref).toBe(appName);
+        }
+      }
+    );
+
+    it(
+      'rewrites .forceignore bundle globs to the renamed bundle directory',
+      { timeout: 30_000 },
+      async () => {
+        // `.forceignore` rules pinned to `uiBundles/App/**` stop matching
+        // once the dir is renamed to `App_<token>`, so node_modules/src get
+        // swept into the UIBundle content payload and blow the Metadata
+        // API's 39MB / 10,000-file limit ("Content deployment failed for
+        // UIBundle"). Every bundle-scoped glob must track the renamed dir.
+        const res = await request(app.server)
+          .post('/v1/projects')
+          .send({ template: 'data-curator' })
+          .expect(201);
+
+        const projectDir = path.join(tmpDir, res.body.id);
+        const bundleName = await findBundleDir(projectDir);
+
+        const forceIgnore = await fs.readFile(path.join(projectDir, FORCEIGNORE_REL_PATH), 'utf-8');
+        const segments = bundleGlobSegments(forceIgnore);
+        // data-curator pins ignore rules to its bundle path — assert presence
+        // so the test fails loudly if the template stops shipping them.
+        expect(segments.length).toBeGreaterThan(0);
+        // Every bundle-scoped glob points at the dir that actually exists on
+        // disk; no stale pre-rename prefix survives.
+        for (const segment of segments) {
+          expect(segment).toBe(bundleName);
+        }
+      }
+    );
+
+    it(
+      'is a no-op on a blank project (no bundle to rename, no app to rewrite)',
+      { timeout: 30_000 },
+      async () => {
+        // A blank project ships no UIBundle and no CustomApplication, so both
+        // cross-reference rewrites must be no-ops: nothing is injected into
+        // `.forceignore`, and no `<application>` reference is fabricated.
+        const res = await request(app.server).post('/v1/projects').send({}).expect(201);
+
+        const projectDir = path.join(tmpDir, res.body.id);
+
+        // No UIBundle directory exists.
+        await expect(fs.readdir(path.join(projectDir, UI_BUNDLES_REL_PATH))).rejects.toThrow();
+
+        // The `.forceignore` carries no bundle-scoped glob — the rewrite had
+        // no renamed dir to track and must not invent one.
+        const forceIgnore = await fs.readFile(path.join(projectDir, FORCEIGNORE_REL_PATH), 'utf-8');
+        expect(bundleGlobSegments(forceIgnore)).toEqual([]);
+
+        // No CustomApplication reference exists to rewrite.
+        const refs = await collectApplicationReferences(projectDir);
+        expect(refs).toEqual([]);
       }
     );
   });
