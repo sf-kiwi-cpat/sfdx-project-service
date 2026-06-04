@@ -49,6 +49,36 @@ const ProjectSummary = Type.Object(
         description: 'Salesforce org alias bound to this project, when one was supplied.',
       })
     ),
+    initialMessages: Type.Optional(
+      Type.Array(
+        Type.Object({
+          role: Type.String({ description: 'Message role (e.g. "user", "assistant").' }),
+          content: Type.String({ description: 'Message text.' }),
+        }),
+        {
+          description:
+            'Visible starter conversation turns the source template declared, captured at ' +
+            'create time. Present only when the template defined a non-empty initialMessages ' +
+            'array; omitted otherwise. Detail-only (not returned by GET /v1/projects).',
+        }
+      )
+    ),
+    seedMessages: Type.Optional(
+      Type.Array(
+        Type.Object({
+          role: Type.String({ description: 'Message role (e.g. "user", "assistant").' }),
+          content: Type.String({ description: 'Message text.' }),
+        }),
+        {
+          description:
+            'Hidden, persona-anchoring few-shot seed turns the source template declared, ' +
+            'captured at create time. Distinct from initialMessages: these are intended to be ' +
+            'injected into a chat session as hidden context (transcriptVisible:false), not ' +
+            'displayed. Present only when the template defined a non-empty seedMessages array; ' +
+            'omitted otherwise. Detail-only (not returned by GET /v1/projects).',
+        }
+      )
+    ),
   },
   {
     description: 'Project record returned by create/rename/list endpoints.',

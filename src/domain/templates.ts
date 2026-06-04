@@ -35,6 +35,10 @@ interface TemplateMeta {
   categories?: string[];
   visible?: boolean;
   initialMessages?: Message[];
+  // Hidden, persona-anchoring few-shot seeds. Captured into a project at
+  // create time (see createProject in ./projects.ts) and surfaced on the
+  // project responses — NOT on the template list (mirrors initialMessages).
+  seedMessages?: Message[];
 }
 
 /**

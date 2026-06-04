@@ -317,6 +317,157 @@ describe('createProject', () => {
     });
   });
 
+  describe('seedMessages', () => {
+    it('persists seedMessages from template.json into .project-meta.json', async () => {
+      const messages = [
+        { role: 'user', content: 'Anchor the persona' },
+        { role: 'assistant', content: 'Anchored.' },
+      ];
+      await createTemplateWithZip('with-seeds', {
+        id: 'with-seeds',
+        name: 'With Seeds',
+        description: 'test',
+        seedMessages: messages,
+      });
+
+      const result = await createProject('with-seeds');
+
+      expect(result.seedMessages).toEqual(messages);
+      const meta = JSON.parse(
+        await fs.readFile(path.join(projectsRoot, result.id, '.project-meta.json'), 'utf-8')
+      );
+      expect(meta.seedMessages).toEqual(messages);
+    });
+
+    it('omits seedMessages when template.json has no seedMessages key', async () => {
+      await createTemplateWithZip('no-seeds', {
+        id: 'no-seeds',
+        name: 'No Seeds',
+        description: 'test',
+      });
+
+      const result = await createProject('no-seeds');
+
+      expect(result.seedMessages).toBeUndefined();
+      const meta = JSON.parse(
+        await fs.readFile(path.join(projectsRoot, result.id, '.project-meta.json'), 'utf-8')
+      );
+      expect(meta.seedMessages).toBeUndefined();
+    });
+
+    it('omits seedMessages when template.json has an empty array', async () => {
+      await createTemplateWithZip('empty-seeds', {
+        id: 'empty-seeds',
+        name: 'Empty Seeds',
+        description: 'test',
+        seedMessages: [],
+      });
+
+      const result = await createProject('empty-seeds');
+
+      expect(result.seedMessages).toBeUndefined();
+    });
+
+    it('filters out malformed elements from template.json seedMessages', async () => {
+      await createTemplateWithZip('mixed-seeds', {
+        id: 'mixed-seeds',
+        name: 'Mixed Seeds',
+        description: 'test',
+        seedMessages: [
+          { role: 'user' }, // missing content
+          { content: 'no role' }, // missing role
+          { role: 42, content: 'bad role type' },
+          42,
+          null,
+          { role: 'assistant', content: 'the one good seed' },
+        ],
+      });
+
+      const result = await createProject('mixed-seeds');
+
+      expect(result.seedMessages).toEqual([{ role: 'assistant', content: 'the one good seed' }]);
+    });
+
+    it('omits seedMessages when every element is malformed', async () => {
+      await createTemplateWithZip('all-bad-seeds', {
+        id: 'all-bad-seeds',
+        name: 'All Bad Seeds',
+        description: 'test',
+        seedMessages: [{ role: 'user' }, 42, null],
+      });
+
+      const result = await createProject('all-bad-seeds');
+
+      expect(result.seedMessages).toBeUndefined();
+    });
+
+    it('drops a seed whose content exceeds the 10k-char cap, keeping valid ones', async () => {
+      const oversized = 'x'.repeat(10_001);
+      await createTemplateWithZip('oversized-seeds', {
+        id: 'oversized-seeds',
+        name: 'Oversized Seeds',
+        description: 'test',
+        seedMessages: [
+          { role: 'user', content: oversized },
+          { role: 'assistant', content: 'kept' },
+        ],
+      });
+
+      const result = await createProject('oversized-seeds');
+
+      expect(result.seedMessages).toEqual([{ role: 'assistant', content: 'kept' }]);
+    });
+
+    it('keeps a seed whose content is exactly at the 10k-char cap', async () => {
+      const atCap = 'y'.repeat(10_000);
+      await createTemplateWithZip('atcap-seeds', {
+        id: 'atcap-seeds',
+        name: 'At Cap Seeds',
+        description: 'test',
+        seedMessages: [{ role: 'user', content: atCap }],
+      });
+
+      const result = await createProject('atcap-seeds');
+
+      expect(result.seedMessages).toEqual([{ role: 'user', content: atCap }]);
+    });
+
+    it('caps seedMessages at 50 entries, truncating the surplus', async () => {
+      const many = Array.from({ length: 60 }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `turn ${i}`,
+      }));
+      await createTemplateWithZip('many-seeds', {
+        id: 'many-seeds',
+        name: 'Many Seeds',
+        description: 'test',
+        seedMessages: many,
+      });
+
+      const result = await createProject('many-seeds');
+
+      expect(result.seedMessages).toHaveLength(50);
+      expect(result.seedMessages).toEqual(many.slice(0, 50));
+    });
+
+    it('captures initialMessages and seedMessages independently when a template declares both', async () => {
+      const initial = [{ role: 'user', content: 'visible opener' }];
+      const seeds = [{ role: 'assistant', content: 'hidden anchor' }];
+      await createTemplateWithZip('both-fields', {
+        id: 'both-fields',
+        name: 'Both Fields',
+        description: 'test',
+        initialMessages: initial,
+        seedMessages: seeds,
+      });
+
+      const result = await createProject('both-fields');
+
+      expect(result.initialMessages).toEqual(initial);
+      expect(result.seedMessages).toEqual(seeds);
+    });
+  });
+
   describe('getProjectDir', () => {
     it('throws ProjectNotFoundError for invalid UUID format', async () => {
       await expect(getProjectDir('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
@@ -415,6 +566,32 @@ describe('createProject', () => {
       const result = await getProject(id);
 
       expect(result.initialMessages).toBeUndefined();
+    });
+
+    it('surfaces seedMessages when present in project meta', async () => {
+      const seeds = [
+        { role: 'user', content: 'Anchor the persona' },
+        { role: 'assistant', content: 'Anchored.' },
+      ];
+      await createTemplateWithZip('get-with-seeds', {
+        id: 'get-with-seeds',
+        name: 'Get With Seeds',
+        description: 'test',
+        seedMessages: seeds,
+      });
+      const { id } = await createProject('get-with-seeds');
+
+      const result = await getProject(id);
+
+      expect(result.seedMessages).toEqual(seeds);
+    });
+
+    it('omits seedMessages when not present in project meta', async () => {
+      const { id } = await createBlankProject();
+
+      const result = await getProject(id);
+
+      expect(result.seedMessages).toBeUndefined();
     });
   });
 

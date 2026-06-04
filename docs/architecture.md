@@ -84,7 +84,8 @@ POST /v1/projects { template?: "...", orgAlias?: "..." }
   │   │   ├─→ Unzip templates/dist/<id>/content.zip
   │   │   │   into projects/<uuid>/
   │   │   └─→ Write .project-meta.json (creation time,
-  │   │       name, initialMessages if template had any)
+  │   │       name, initialMessages + seedMessages if
+  │   │       template had any)
   │   │
   │   └─ Blank: createBlankProject(orgAlias?)
   │       ├─→ Reject empty-string orgAlias (OrgAliasEmptyError → 400)
@@ -92,7 +93,7 @@ POST /v1/projects { template?: "...", orgAlias?: "..." }
   │       └─→ If orgAlias supplied, pin project target-org
   │
   └─→ Return 201 Created { id, name, lastAccessedAt,
-                           initialMessages? }
+                           initialMessages?, seedMessages? }
 ```
 
 ### Deployment Flow
