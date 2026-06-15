@@ -1,0 +1,16 @@
+{
+  "id": "enhanced-chat",
+  "name": "Enhanced Chat",
+  "description": "Salesforce Enhanced Chat (Messaging for Web) deployment with a React test page that embeds the live chat widget",
+  "categories": ["Service", "Messaging"],
+  "initialMessages": [
+    {
+      "role": "user",
+      "content": "Set up an Enhanced Chat (Messaging for Web) deployment so I can embed a chat widget on my website. I need everything deployed and a test page where I can see the widget in action."
+    },
+    {
+      "role": "assistant",
+      "content": "I've scaffolded the Enhanced Chat project. It includes the full site bundle (BrandingSet, CustomSite, Network, DigitalExperienceConfig, DigitalExperienceBundle), an EmbeddedServiceConfig wired to a Messaging Channel of your choice, and a React test page that embeds the live widget using the bootstrap snippet. Deploy to your org, update the messaging channel name and scrt2 URL in the React app, and you'll see the chat button appear on the test page."
+    }
+  ]
+}

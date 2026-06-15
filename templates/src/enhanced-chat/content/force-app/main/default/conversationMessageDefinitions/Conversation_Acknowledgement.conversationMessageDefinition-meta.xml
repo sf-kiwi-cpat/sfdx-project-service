@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConversationMessageDefinition xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Conversation Acknowledgement</label>
+    <language>en_US</language>
+    <type>AutoResponse</type>
+    <constants>
+        <constantType>Title</constantType>
+        <primitiveValues>
+            <textValue>Thanks for reaching out to {{ORG_NAME}}</textValue>
+            <type>Text</type>
+        </primitiveValues>
+    </constants>
+    <messageLayouts>
+        <formatType>Text</formatType>
+        <layoutItems>
+            <collectionType>None</collectionType>
+            <name>text</name>
+            <primitiveValues>
+                <formulaTemplate>Thanks for reaching out to {{ORG_NAME}}! We&apos;ve received your message and an agent will be with you shortly.</formulaTemplate>
+                <type>FormulaTemplate</type>
+            </primitiveValues>
+        </layoutItems>
+        <messageType>StaticContent</messageType>
+    </messageLayouts>
+</ConversationMessageDefinition>

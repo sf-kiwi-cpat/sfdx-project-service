@@ -1,0 +1,9 @@
+{
+  "deployStages": [
+    { "manifest": "manifest/branding-package.xml" },
+    { "manifest": "manifest/site-package.xml" },
+    { "manifest": "manifest/channel-package.xml" },
+    { "manifest": "manifest/esw-package.xml" },
+    { "manifest": "manifest/app-package.xml" }
+  ]
+}

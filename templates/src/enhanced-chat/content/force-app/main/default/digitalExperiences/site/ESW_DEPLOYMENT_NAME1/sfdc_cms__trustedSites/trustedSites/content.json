@@ -1,0 +1,12 @@
+{
+  "type" : "sfdc_cms__trustedSites",
+  "title" : "Trusted Sites",
+  "contentBody" : {
+    "trustedSites" : [ {
+      "sourceName" : "salesforce_scrt",
+      "source" : "https://${SUBDOMAIN}.salesforce-scrt.com",
+      "isActive" : true
+    } ]
+  },
+  "urlName" : "trusted-sites"
+}
