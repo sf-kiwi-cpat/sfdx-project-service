@@ -1,0 +1,16 @@
+{
+  "id": "help-agent",
+  "name": "Help Agent",
+  "description": "Agentforce help agent with embedded chat and a React help portal. Includes a basic agent shell with OOB actions, full ESW V2 deployment, and a Salesforce-style help portal React app.",
+  "categories": ["Service", "Agentforce", "Messaging"],
+  "initialMessages": [
+    {
+      "role": "user",
+      "content": "Set up an Agentforce help agent with embedded chat so customers can ask questions and get AI-powered answers, with escalation to a human rep when needed. I want a React help portal page that loads the chat widget."
+    },
+    {
+      "role": "assistant",
+      "content": "I've scaffolded the Help Agent project. It includes a basic Agentforce agent shell (OOB AnswerQuestionsWithKnowledge and escalation actions), the full ESW V2 site bundle (BrandingSet, CustomSite, Network, DigitalExperienceConfig, DigitalExperienceBundle), an EmbeddedServiceConfig wired to the agent's MessagingChannel, and a React help portal app styled like the Salesforce Help homepage. After deploying, run `sf agent publish authoring-bundle --agent-api-name HelpAgent` to activate the agent, then update the ESW config values in the React app."
+    }
+  ]
+}

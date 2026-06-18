@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EmbeddedServiceConfig deploys after site bundle, agent, and channel are live. -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>HelpAgent</members>
+        <name>EmbeddedServiceConfig</name>
+    </types>
+    <version>67.0</version>
+</Package>

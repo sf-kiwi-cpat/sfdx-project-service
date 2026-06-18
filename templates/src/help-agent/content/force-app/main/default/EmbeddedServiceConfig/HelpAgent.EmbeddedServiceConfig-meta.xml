@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EmbeddedServiceConfig xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Wizard default — embedded chat runs unauthenticated; guest privileges not needed. -->
+    <areGuestUsersAllowed>false</areGuestUsersAllowed>
+
+    <!-- REQUIRED: must be deployed before EmbeddedServiceConfig. -->
+    <branding>HelpAgent_Branding</branding>
+
+    <!-- WebV2 uses cwcMessaging:container in the DEB home view. -->
+    <clientVersion>WebV2</clientVersion>
+
+    <deploymentFeature>EmbeddedMessaging</deploymentFeature>
+    <deploymentType>Web</deploymentType>
+
+    <embeddedServiceMessagingChannel>
+        <isChatInvitationCustomizable>false</isChatInvitationCustomizable>
+        <isEnabled>true</isEnabled>
+        <isInvitationEnabled>false</isInvitationEnabled>
+        <isSendInvtAllowedAfterAccept>false</isSendInvtAllowedAfterAccept>
+        <isSendInvtAllowedAfterReject>false</isSendInvtAllowedAfterReject>
+        <messagingChannel>HelpAgent</messagingChannel>
+        <shouldShowAgentforceTagline>true</shouldShowAgentforceTagline>
+        <shouldShowDeliveryReceipts>true</shouldShowDeliveryReceipts>
+        <shouldShowEmojiSelection>true</shouldShowEmojiSelection>
+        <shouldShowReadReceipts>true</shouldShowReadReceipts>
+        <shouldShowTypingIndicators>true</shouldShowTypingIndicators>
+        <shouldStartNewLineOnEnter>false</shouldStartNewLineOnEnter>
+    </embeddedServiceMessagingChannel>
+
+    <isEnabled>true</isEnabled>
+    <isTermsAndConditionsEnabled>false</isTermsAndConditionsEnabled>
+    <isTermsAndConditionsRequired>false</isTermsAndConditionsRequired>
+
+    <masterLabel>Help Agent</masterLabel>
+    <!-- MUST be false when <site> is set -->
+    <shouldHideAuthDialog>false</shouldHideAuthDialog>
+
+    <!-- References the ChatterNetworkPicasso companion (ESW_HelpAgent1), NOT the parent CustomSite. -->
+    <site>ESW_HelpAgent1</site>
+</EmbeddedServiceConfig>

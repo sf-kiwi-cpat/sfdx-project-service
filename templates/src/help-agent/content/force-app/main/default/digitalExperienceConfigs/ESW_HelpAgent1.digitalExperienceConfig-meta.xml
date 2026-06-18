@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DigitalExperienceConfig xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>ESW_HelpAgent</label>
+    <site>
+        <urlPathPrefix>${ESW_URL}</urlPathPrefix>
+    </site>
+    <!-- space must match the DEB folder: site/ESW_HelpAgent1 -->
+    <space>site/ESW_HelpAgent1</space>
+</DigitalExperienceConfig>
