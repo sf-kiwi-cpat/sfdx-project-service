@@ -312,5 +312,27 @@ async function doBuild(projectDir: string, orgAlias?: string): Promise<void> {
     if (timer) clearTimeout(timer);
   }
 
+  // Under bundle layout the template ships React sources inside the UIBundle
+  // directory (src/, index.html, package.json, node_modules/). SDR walks the
+  // entire bundle dir and would upload all of those to the platform. Write a
+  // .forceignore so SDR only deploys the built dist/ output.
+  if (layout === 'bundle') {
+    const bundleRelDir = path.relative(resolvedProjectDir, viteRoot);
+    const forceignorePath = path.join(resolvedProjectDir, '.forceignore');
+    const lines = [
+      `${bundleRelDir}/src`,
+      `${bundleRelDir}/node_modules`,
+      `${bundleRelDir}/package.json`,
+      `${bundleRelDir}/package-lock.json`,
+      `${bundleRelDir}/index.html`,
+      `${bundleRelDir}/uibundle.json`,
+    ];
+    await fs.writeFile(forceignorePath, lines.join('\n') + '\n');
+    logger.info(
+      { forceignorePath, bundleRelDir },
+      'Wrote .forceignore to exclude bundle sources from deploy'
+    );
+  }
+
   logger.info({ projectDir }, 'Vite build completed');
 }
