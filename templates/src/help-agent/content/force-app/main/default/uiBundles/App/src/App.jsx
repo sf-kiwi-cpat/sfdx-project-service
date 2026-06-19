@@ -1,11 +1,12 @@
 import React from 'react';
 
-const ORG_ID = window.__ESW_ORG_ID__ ?? '';
-const CONFIG_NAME = window.__ESW_CONFIG_NAME__ ?? 'HelpAgent';
-const SITE_URL = window.__ESW_SITE_URL__ ?? '';
-const SCRT_URL = window.__ESW_SCRT_URL__ ?? '';
+const ORG_ID = '${ORG_ID}';
+const CONFIG_NAME = 'HelpAgent';
+const SITE_URL = 'https://${SITE_DOMAIN}/${ESW_URL}';
+const SCRT_URL = '${SCRT_URL}';
 
-const isConfigured = Boolean(SITE_URL && SCRT_URL);
+// isConfigured is false when tokens haven't been substituted yet (local dev).
+const isConfigured = !SITE_URL.includes('${');
 
 const TOPICS = [
   { icon: '🙋', label: 'Get Help' },

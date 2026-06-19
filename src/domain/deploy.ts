@@ -940,7 +940,8 @@ async function runOneDeploy(
 async function substituteEswTokens(
   dir: string,
   adminUsername: string,
-  instanceUrl: string
+  instanceUrl: string,
+  connection: Connection
 ): Promise<void> {
   // Derive site domain: instanceUrl like `https://foo.my.salesforce.com`
   // → `foo.my.site.com`. Handles pc-rnd sandbox and production patterns.
@@ -949,6 +950,12 @@ async function substituteEswTokens(
     .replace(/\.my\.salesforce\.com$/, '.my.site.com')
     .replace(/\.my\.pc-rnd\.salesforce\.com$/, '.my.pc-rnd.site.com')
     .replace(/\.my\..*\.salesforce\.com$/, (m) => m.replace('.salesforce.com', '.site.com'));
+
+  // SCRT2 URL: replace salesforce.com host suffix with salesforce-scrt.com.
+  const scrtUrl = instanceUrl.replace(
+    /^(https:\/\/[^.]+(?:\.[^.]+)*?)\.salesforce\.com$/,
+    '$1.salesforce-scrt.com'
+  );
 
   // Derive ESW URL prefix from the CustomSite name in `sites/*.site-meta.xml`.
   // Convention: strip the `ESW_` prefix, remove remaining underscores, CamelCase each segment.
@@ -970,12 +977,17 @@ async function substituteEswTokens(
 
   if (!eswUrl) return;
 
+  const orgResult = await connection.query<{ Id: string }>('SELECT Id FROM Organization LIMIT 1');
+  const orgId = orgResult.records[0]?.Id ?? '';
+
   const tokens: Record<string, string> = {
     '${ADMIN_USERNAME}': adminUsername,
     '${SITE_DOMAIN}': siteDomain,
     '${ESW_URL_PARENT}': eswUrl,
     '${ESW_URL_LOWER}': eswUrl.toLowerCase(),
     '${ESW_URL}': eswUrl,
+    '${ORG_ID}': orgId,
+    '${SCRT_URL}': scrtUrl,
   };
 
   const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true });
@@ -984,7 +996,11 @@ async function substituteEswTokens(
       .filter(
         (e) =>
           e.isFile() &&
-          (e.name.endsWith('.xml') || e.name.endsWith('.json') || e.name.endsWith('.agent'))
+          (e.name.endsWith('.xml') ||
+            e.name.endsWith('.json') ||
+            e.name.endsWith('.agent') ||
+            e.name.endsWith('.jsx') ||
+            e.name.endsWith('.tsx'))
       )
       .map(async (e) => {
         const filePath = path.join(e.parentPath, e.name);
@@ -1000,7 +1016,7 @@ async function substituteEswTokens(
       })
   );
 
-  logger.info({ adminUsername, siteDomain, eswUrl }, 'Substituted ESW platform tokens');
+  logger.info({ adminUsername, siteDomain, eswUrl, orgId }, 'Substituted ESW platform tokens');
 }
 
 /**
@@ -1046,7 +1062,7 @@ async function runStagedDeploy(
 
   const instanceUrl = connection.getAuthInfoFields().instanceUrl;
   if (instanceUrl) {
-    await substituteEswTokens(projectDir, orgUsername, instanceUrl);
+    await substituteEswTokens(projectDir, orgUsername, instanceUrl, connection);
   }
 
   if (await hasReactFiles(projectDir)) {
