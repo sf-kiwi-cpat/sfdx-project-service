@@ -26,6 +26,7 @@ import { shouldIgnoreEntry } from './files.js';
 const BUILD_TIMEOUT_MS = 300_000; // 5 minutes
 const REACT_EXTENSIONS = new Set(['.tsx', '.jsx']);
 const UI_BUNDLES_REL = 'force-app/main/default/uiBundles';
+const STATIC_RESOURCES_REL = 'force-app/main/default/staticresources';
 
 /**
  * Resolve the project's bundle directory (relative to the project root).
@@ -46,6 +47,30 @@ async function resolveBundleRel(projectDir: string): Promise<string> {
     /* no bundles dir; return legacy fallback */
   }
   return `${UI_BUNDLES_REL}/App`;
+}
+
+/**
+ * Detect the first StaticResource directory under staticresources/ that
+ * has a corresponding .resource-meta.xml with contentType application/zip.
+ * Returns the directory name, or null if none found.
+ */
+async function resolveStaticResourceName(projectDir: string): Promise<string | null> {
+  const srRoot = path.join(projectDir, STATIC_RESOURCES_REL);
+  try {
+    const entries = await fs.readdir(srRoot);
+    for (const entry of entries) {
+      if (entry.endsWith('.resource-meta.xml')) {
+        const metaPath = path.join(srRoot, entry);
+        const content = await fs.readFile(metaPath, 'utf8');
+        if (content.includes('application/zip')) {
+          return entry.replace('.resource-meta.xml', '');
+        }
+      }
+    }
+  } catch {
+    /* no staticresources dir */
+  }
+  return null;
 }
 
 const buildLocks = new Map<string, Promise<void>>();
@@ -75,32 +100,39 @@ export async function hasReactFiles(projectDir: string): Promise<boolean> {
 interface ResolvedLayout {
   viteRoot: string;
   outDir: string;
-  layout: 'bundle' | 'legacy';
+  layout: 'bundle' | 'legacy' | 'staticresource';
+  /** StaticResource name (e.g. "EnhancedChatApp") — only set for staticresource layout */
+  staticResourceName?: string;
 }
 
 /**
  * Determine Vite's root directory for a project.
  *
- * Two supported layouts:
+ * Three supported layouts:
  *
- * - **Bundle layout** (preferred, matches webapps `base-react-app` convention):
- *   `<project>/force-app/main/default/uiBundles/App/` contains `index.html`,
- *   `src/`, `vite.config.ts`, `package.json`, and `ui-bundle.json`. Vite roots
- *   at the bundle dir and builds into `<bundle>/dist`. This is also the layout
- *   the preview-service requires, so restructured templates can be both built
- *   and previewed.
+ * - **StaticResource layout**: a `staticresources/<Name>.resource-meta.xml` with
+ *   `contentType: application/zip` exists. Vite builds an IIFE bundle into
+ *   `staticresources/<Name>/` so SDR auto-zips it for deploy. Used for React apps
+ *   hosted by VF pages (which have permissive CSP, unlike UIBundle's `script-src self`).
  *
- * - **Legacy layout** (transitional): `index.html` + `src/` at project root,
- *   bundle dir only holds metadata (`App.uibundle-meta.xml`). Vite roots at
- *   the project dir; a `ui-bundle.json` is synthesized at the project root
- *   for the plugin. Output still goes to `<bundle>/dist` via Vite's
- *   `build.outDir` override so SDR picks it up as a `UIBundle`.
+ * - **Bundle layout** (preferred UIBundle): `uiBundles/App/` contains `index.html`.
+ *   Vite roots at the bundle dir, builds into `<bundle>/dist`.
  *
- * Layout is detected by checking for `<bundle>/index.html`. When neither
- * layout applies (no `.tsx`/`.jsx` anywhere), the caller should have
- * short-circuited via `hasReactFiles` and not invoked the build at all.
+ * - **Legacy layout** (transitional UIBundle): `index.html` + `src/` at project root.
+ *   Vite roots at project dir, outputs to `<bundle>/dist`.
  */
 async function resolveLayout(projectDir: string): Promise<ResolvedLayout> {
+  // StaticResource layout takes priority — check for zip-typed resource first.
+  const srName = await resolveStaticResourceName(projectDir);
+  if (srName) {
+    return {
+      viteRoot: projectDir,
+      outDir: path.join(projectDir, STATIC_RESOURCES_REL, srName),
+      layout: 'staticresource',
+      staticResourceName: srName,
+    };
+  }
+
   const bundleRel = await resolveBundleRel(projectDir);
   const bundleDir = path.join(projectDir, bundleRel);
   const bundleIndexHtml = path.join(bundleDir, 'index.html');
@@ -184,23 +216,79 @@ async function doBuild(projectDir: string, orgAlias?: string): Promise<void> {
   // Without this, the vite:build-html plugin can reject `index.html`'s
   // absolute path during asset emission.
   const resolvedProjectDir = await fs.realpath(projectDir);
-  const { viteRoot, outDir, layout } = await resolveLayout(resolvedProjectDir);
+  const { viteRoot, outDir, layout, staticResourceName } = await resolveLayout(resolvedProjectDir);
   logger.info({ projectDir, orgAlias, viteRoot, layout }, 'Running Vite build');
-  await ensureUiBundleManifest(viteRoot, outDir);
 
   let timer: NodeJS.Timeout | undefined;
   try {
-    const buildPromise = build({
-      root: viteRoot,
-      base: './',
-      configFile: false,
-      plugins: [react(), uiBundlePlugin({ orgAlias, debug: false })],
-      build: {
-        outDir,
-        emptyOutDir: true,
-      },
-      logLevel: 'silent',
-    });
+    let buildPromise: Promise<unknown>;
+    if (layout === 'staticresource' && staticResourceName) {
+      // IIFE build for StaticResource layout — no UIBundle plugin.
+      // VF pages host the React app and have permissive CSP, unlike UIBundle.
+      // After build, rename Vite's default CSS output (derived from package
+      // name) to match the StaticResource name so {!URLFOR($Resource.X, 'X.css')} resolves.
+      const srName = staticResourceName;
+      buildPromise = build({
+        root: viteRoot,
+        configFile: false,
+        plugins: [
+          react(),
+          {
+            name: 'rename-css-and-write-index',
+            closeBundle: async () => {
+              const files = await fs.readdir(outDir);
+              for (const f of files) {
+                if (f.endsWith('.css') && f !== `${srName}.css`) {
+                  await fs.rename(path.join(outDir, f), path.join(outDir, `${srName}.css`));
+                }
+              }
+              // Write index.html so the VF page can load the bundle.
+              // emptyOutDir wipes the dir before Vite writes JS/CSS; closeBundle
+              // runs after, so this is the correct place to write it.
+              const indexHtml = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${srName}</title>
+    <link rel="stylesheet" href="/resource/${srName}/${srName}.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="/resource/${srName}/${srName}.js"></script>
+  </body>
+</html>`;
+              await fs.writeFile(path.join(outDir, 'index.html'), indexHtml);
+            },
+          },
+        ],
+        build: {
+          lib: {
+            entry: path.join(viteRoot, 'src/main.jsx'),
+            name: srName,
+            formats: ['iife'],
+            fileName: () => `${srName}.js`,
+          },
+          outDir,
+          emptyOutDir: true,
+          cssCodeSplit: false,
+        },
+        logLevel: 'silent',
+      });
+    } else {
+      await ensureUiBundleManifest(viteRoot, outDir);
+      buildPromise = build({
+        root: viteRoot,
+        base: './',
+        configFile: false,
+        plugins: [react(), uiBundlePlugin({ orgAlias, debug: false })],
+        build: {
+          outDir,
+          emptyOutDir: true,
+        },
+        logLevel: 'silent',
+      });
+    }
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {

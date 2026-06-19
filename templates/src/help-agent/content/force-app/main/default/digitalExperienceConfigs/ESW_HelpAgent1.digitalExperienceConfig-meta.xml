@@ -4,6 +4,5 @@
     <site>
         <urlPathPrefix>${ESW_URL}</urlPathPrefix>
     </site>
-    <!-- space must match the DEB folder: site/ESW_HelpAgent1 -->
     <space>site/ESW_HelpAgent1</space>
 </DigitalExperienceConfig>

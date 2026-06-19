@@ -2,7 +2,7 @@
   "type" : "sfdc_cms__route",
   "title" : "Service Not Available",
   "contentBody" : {
-    "activeViewId" : "serviceNotAvailable",
+    "activeViewId" : "snaFallback",
     "configurationTags" : [ ],
     "pageAccess" : "UseParent",
     "routeType" : "service-not-available",

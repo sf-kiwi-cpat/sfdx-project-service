@@ -7,6 +7,15 @@ const SCRT_URL = window.__ESW_SCRT_URL__ ?? '';
 
 const isConfigured = Boolean(SITE_URL && SCRT_URL);
 
+const TOPICS = [
+  { icon: '🙋', label: 'Get Help' },
+  { icon: '📖', label: 'Topics' },
+  { icon: '💬', label: 'Discuss' },
+  { icon: '💡', label: 'Ideas' },
+  { icon: '🔔', label: 'Updates' },
+  { icon: '🛒', label: 'Orders' },
+];
+
 export default function App() {
   const [query, setQuery] = React.useState('');
 
@@ -26,59 +35,70 @@ export default function App() {
     document.body.appendChild(script);
   }, []);
 
-  const openChat = () => {
+  const handleSubmit = (e) => {
+    e.preventDefault();
     if (window.embeddedservice_bootstrap?.utilAPI?.launchChat) {
       window.embeddedservice_bootstrap.utilAPI.launchChat();
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    openChat();
-  };
-
   return (
-    <div className="hero">
-      <div className="avatar">✦</div>
+    <div className="page">
+      <header className="nav">
+        <div className="nav-inner">
+          <div className="nav-logo">
+            <div className="logo-mark">✦</div>
+            <span className="logo-text">Help Center</span>
+          </div>
+          <nav className="nav-links">
+            <a href="#">Home</a>
+            <a href="#">Community</a>
+            <a href="#">Support</a>
+            <a href="#">Topics</a>
+          </nav>
+        </div>
+      </header>
 
-      <h1>How can <span>Agentforce</span> help?</h1>
-
-      {isConfigured ? (
-        <>
+      <section className="hero">
+        <div className="hero-inner">
+          <h1>How can we help you?</h1>
           <form className="search-bar" onSubmit={handleSubmit}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0176d3" strokeWidth="2">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Ask Agentforce"
-              aria-label="Ask Agentforce"
+              placeholder="Search..."
+              aria-label="Search help articles"
             />
-            <button type="submit" aria-label="Submit">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="5" y1="12" x2="19" y2="12"/>
-                <polyline points="12 5 19 12 12 19"/>
-              </svg>
-            </button>
+            <button type="submit">Search</button>
           </form>
-
-          <div className="chips">
-            <button className="chip" onClick={openChat}>Answer a question</button>
-            <button className="chip" onClick={openChat}>Transfer to an agent</button>
-            <button className="chip" onClick={openChat}>Get product help</button>
-          </div>
-        </>
-      ) : (
-        <div className="setup-notice">
-          <strong>ESW not yet configured.</strong><br />
-          Deploy this project to Salesforce, then set <code>window.__ESW_ORG_ID__</code>,
-          {' '}<code>window.__ESW_SITE_URL__</code>, and <code>window.__ESW_SCRT_URL__</code>
-          {' '}in the static resource to load the chat widget.
         </div>
-      )}
+      </section>
 
-      <p className="tagline">Powered by Agentforce</p>
+      <main className="content">
+        <div className="content-inner">
+          <div className="welcome-card">
+            <h2>Welcome!</h2>
+            <p>We're glad you're here. Ask our AI agent a question, or browse the topics below to find what you need.</p>
+            <button className="btn-primary" onClick={handleSubmit}>Ask Agentforce</button>
+          </div>
+
+          <div className="topics-grid">
+            {TOPICS.map(({ icon, label }) => (
+              <button key={label} className="topic-card" onClick={handleSubmit}>
+                <span className="topic-icon">{icon}</span>
+                <span className="topic-label">{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </main>
+
+      <footer className="footer">
+        <span>Powered by Agentforce</span>
+      </footer>
     </div>
   );
 }

@@ -32,7 +32,7 @@ config:
     agent_label: "Help Agent"
     developer_name: "HelpAgent"
     description: "Customer help agent. Answers questions from published Knowledge and escalates to a service rep when needed."
-    default_agent_user: ""
+    default_agent_user: "${ADMIN_USERNAME}"
 
 language:
     default_locale: "en_US"

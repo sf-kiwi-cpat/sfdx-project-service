@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- AiAuthoringBundle must deploy before MessagingChannel references the agent via sessionHandlerAsa. -->
+<!-- AiAuthoringBundle + escalation flow must deploy before agent publish and before MessagingChannel. -->
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
         <members>HelpAgent</members>
         <name>AiAuthoringBundle</name>
+    </types>
+    <types>
+        <members>HelpAgent_Escalate_to_Queue</members>
+        <name>Flow</name>
     </types>
     <version>67.0</version>
 </Package>

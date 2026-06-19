@@ -84,6 +84,27 @@ export function escapeSoql(value: string): string {
  * non-resolving host; that's still preferable to today's behavior of
  * pointing at a resolving host where every API call 401s.
  */
+/**
+ * Rewrite an org instance URL to the Visualforce domain used by the
+ * auto-generated Embedded Service test page.
+ *
+ *   https://orgfarm-abc.test1.my.pc-rnd.salesforce.com
+ *   → https://orgfarm-abc--c.test1.vf.pc-rnd.force.com
+ *
+ * Pattern: insert `--c` on the first label, drop `.my`, insert `vf.`
+ * before the region segment, and swap `salesforce.com` for `force.com`.
+ */
+export function toVfDomainUrl(instanceUrl: string): string | null {
+  // Expected shape: https://<org>.<env>.my.<region>.salesforce.com
+  const match = instanceUrl.match(
+    /^(https?:\/\/)([^.]+)\.([^.]+)\.my\.([^/]+)\.salesforce\.com(\/.*)?$/
+  );
+  if (!match) return null;
+  const [, scheme, org, env, region, rest = ''] = match;
+  if (org.includes('--')) return null;
+  return `${scheme}${org}--c.${env}.vf.${region}.force.com${rest}`;
+}
+
 export function toAppDomainUrl(instanceUrl: string): string | null {
   const match = instanceUrl.match(/^(https?:\/\/)([^/]+)(.*)$/);
   if (!match) return null;
@@ -210,6 +231,180 @@ export async function assignDeployedPermissionSets(
 }
 
 /**
+ * Activate every MessagingChannel that landed in the deploy.
+ *
+ * Deploying a MessagingChannel sets it up but leaves it inactive —
+ * agents and routing rules only fire on active channels. Activation
+ * is a record update: IsActive=true on the MessagingChannel sobject.
+ *
+ * Failures are warnings, not errors: the channel config is correctly
+ * deployed and the user can activate manually in Setup → Messaging →
+ * Messaging Channels.
+ */
+export async function activateDeployedMessagingChannels(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection
+): Promise<DeploymentWarning[]> {
+  const channelNames = Array.from(
+    new Set(
+      fileResponses
+        .filter((f) => f.type === 'MessagingChannel' && f.state !== 'Failed')
+        .map((f) => f.fullName)
+    )
+  );
+  if (channelNames.length === 0) return [];
+
+  const warnings: DeploymentWarning[] = [];
+  for (const name of channelNames) {
+    const query = await connection.query<{ Id: string }>(
+      `SELECT Id FROM MessagingChannel WHERE DeveloperName = '${escapeSoql(name)}' LIMIT 1`
+    );
+    const id = query.records[0]?.Id;
+    if (!id) {
+      const warning: DeploymentWarning = {
+        stage: 'messaging-channel-activate',
+        errorMessage: `MessagingChannel '${name}' not found after deploy; skipping activation`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    const result = await connection.sobject('MessagingChannel').update({ Id: id, IsActive: true });
+    if (!result.success) {
+      const errs = (result.errors ?? []).map((e) => e.message ?? String(e)).join('; ');
+      const warning: DeploymentWarning = {
+        stage: 'messaging-channel-activate',
+        errorMessage: `Failed to activate MessagingChannel '${name}': ${errs}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    } else {
+      logger.info({ deploymentId, channel: name }, 'Activated MessagingChannel');
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Publish every EmbeddedServiceConfig and its companion Experience site
+ * that landed in the deploy.
+ *
+ * After metadata deploy the EmbeddedServiceConfig exists but is unpublished —
+ * the bootstrap snippet is not generated and the chat widget won't load.
+ * Two publish calls are needed:
+ *   1. Connect API POST to generate the bootstrap snapshot for the config.
+ *   2. sf community publish on the companion Experience site (Network) so
+ *      the DEB pages are live and reachable by the chat widget iframe.
+ *
+ * The Connect publish endpoint requires release 260.14+. On older orgs it
+ * returns NOT_FOUND — surfaced as a warning so the user can publish manually.
+ *
+ * Failures are warnings, not errors.
+ */
+export async function publishDeployedEmbeddedServiceConfigs(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection
+): Promise<DeploymentWarning[]> {
+  const configNames = Array.from(
+    new Set(
+      fileResponses
+        .filter((f) => f.type === 'EmbeddedServiceConfig' && f.state !== 'Failed')
+        .map((f) => f.fullName)
+    )
+  );
+  if (configNames.length === 0) return [];
+
+  const warnings: DeploymentWarning[] = [];
+  const instanceUrl = connection.getAuthInfoFields().instanceUrl ?? '';
+  const apiVersion = '66.0';
+
+  for (const name of configNames) {
+    // 1. Publish the EmbeddedServiceConfig via the Connect API.
+    const configQuery = await connection.tooling.query<{ Id: string }>(
+      `SELECT Id FROM EmbeddedServiceConfig WHERE DeveloperName = '${escapeSoql(name)}' LIMIT 1`
+    );
+    const configId = configQuery.records[0]?.Id;
+    if (!configId) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `EmbeddedServiceConfig '${name}' not found after deploy; skipping publish`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    try {
+      const publishPath = `/services/data/v${apiVersion}/connect/embeddedservice/embeddedserviceconfig/publish/${configId}`;
+      const response = (await connection.request({
+        method: 'POST',
+        url: `${instanceUrl}${publishPath}`,
+        body: '{}',
+        headers: { 'Content-Type': 'application/json' },
+      })) as { isSuccess?: boolean; errorCode?: string; message?: string };
+
+      if (response.errorCode) {
+        const warning: DeploymentWarning = {
+          stage: 'embedded-service-publish',
+          errorMessage:
+            response.errorCode === 'NOT_FOUND'
+              ? `EmbeddedServiceConfig '${name}': Connect publish endpoint not available on this org. Publish manually via Setup → Embedded Service Deployments → ${name} → Publish.`
+              : `EmbeddedServiceConfig '${name}' Connect publish failed (${response.errorCode}): ${response.message ?? 'unknown error'}. Publish manually via Setup → Embedded Service Deployments.`,
+        };
+        warnings.push(warning);
+        addWarningEvent(deploymentId, warning);
+      } else {
+        logger.info({ deploymentId, config: name }, 'Published EmbeddedServiceConfig');
+      }
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `EmbeddedServiceConfig '${name}' Connect publish error: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+
+    // 2. Publish the companion Experience site (Network named ESW_<name>).
+    const networkQuery = await connection.query<{ Id: string; Name: string }>(
+      `SELECT Id, Name FROM Network WHERE Name LIKE 'ESW_${escapeSoql(name)}%' ORDER BY CreatedDate DESC LIMIT 1`
+    );
+    const network = networkQuery.records[0];
+    if (!network) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `No companion Network found for EmbeddedServiceConfig '${name}'; skipping site publish`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    try {
+      const publishPath = `/services/data/v${apiVersion}/connect/communities/${network.Id}/publish`;
+      await connection.request({
+        method: 'POST',
+        url: `${instanceUrl}${publishPath}`,
+        body: '{}',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      logger.info({ deploymentId, network: network.Name }, 'Published Experience site');
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `Experience site '${network.Name}' publish failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+  }
+  return warnings;
+}
+
+/**
  * Publish + activate every AiAuthoringBundle that landed in the deploy.
  *
  * Deploying an AiAuthoringBundle ships the source file (the `.agent`
@@ -300,6 +495,116 @@ interface ChildFailure {
   errorMessage: string;
 }
 type ChildResult = ChildSuccess | ChildFailure;
+
+/**
+ * After an EmbeddedServiceConfig deploy, patch the auto-generated VF test
+ * page (ESW<ConfigName>1) to load the React bundle from the co-deployed
+ * StaticResource.
+ *
+ * The VF page is auto-created by Salesforce when EmbeddedServiceConfig
+ * deploys — its markup contains working ESW bootstrap values. We inject
+ * the React app bundle so the page renders the styled React UI while
+ * keeping the existing bootstrap intact. UIBundle can't host the React
+ * app because its platform enforces `script-src 'self'`, blocking the
+ * external ESW bootstrap script.
+ *
+ * Only runs if both a StaticResource and an EmbeddedServiceConfig were
+ * deployed in the same operation.
+ */
+export async function patchDeployedVfPagesWithReactBundle(
+  deploymentId: string,
+  fileResponses: Array<{ fullName: string; type: string; state: string }>,
+  connection: Connection
+): Promise<DeploymentWarning[]> {
+  // Find whichever StaticResource was co-deployed (EnhancedChatApp, HelpAgentApp, etc.).
+  const bundleName = fileResponses.find(
+    (f) => f.type === 'StaticResource' && f.state !== 'Failed'
+  )?.fullName;
+  if (!bundleName) return [];
+
+  const esdNames = Array.from(
+    new Set(
+      fileResponses
+        .filter((f) => f.type === 'EmbeddedServiceConfig' && f.state !== 'Failed')
+        .map((f) => f.fullName)
+    )
+  );
+  if (esdNames.length === 0) return [];
+
+  const warnings: DeploymentWarning[] = [];
+  for (const configName of esdNames) {
+    const pageName = `ESW${configName}1`;
+    let pageId: string;
+    try {
+      const result = await connection.tooling.query<{ Id: string }>(
+        `SELECT Id FROM ApexPage WHERE Name = '${escapeSoql(pageName)}' LIMIT 1`
+      );
+      const id = result.records[0]?.Id;
+      if (!id) {
+        const warning: DeploymentWarning = {
+          stage: 'embedded-service-publish',
+          errorMessage: `VF page '${pageName}' not found; React bundle not injected`,
+        };
+        warnings.push(warning);
+        addWarningEvent(deploymentId, warning);
+        continue;
+      }
+      pageId = id;
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `Could not query VF page '${pageName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+      continue;
+    }
+
+    try {
+      const cssRef = `{!URLFOR($Resource.${bundleName}, '${bundleName}.css')}`;
+      const jsRef = `{!URLFOR($Resource.${bundleName}, '${bundleName}.js')}`;
+
+      // Read existing markup to preserve the ESW bootstrap block.
+      const existing = await connection.tooling.query<{ Markup: string }>(
+        `SELECT Markup FROM ApexPage WHERE Id = '${escapeSoql(pageId)}' LIMIT 1`
+      );
+      const markup = existing.records[0]?.Markup ?? '';
+
+      // Inject CSS into <head> and replace static body content with React root.
+      const patchedMarkup = markup
+        .replace(
+          /<apex:slds\s*\/>/,
+          `<apex:slds />\n      <link rel="stylesheet" type="text/css" href="${cssRef}" />`
+        )
+        .replace(
+          /<body>/,
+          `<body>\n      <div id="root"></div>\n      <script type="text/javascript" src="${jsRef}"></script>`
+        );
+
+      if (patchedMarkup === markup) {
+        // Markup didn't have expected anchors — skip to avoid corrupting it.
+        const warning: DeploymentWarning = {
+          stage: 'embedded-service-publish',
+          errorMessage: `VF page '${pageName}' markup didn't match expected structure; React bundle not injected`,
+        };
+        warnings.push(warning);
+        addWarningEvent(deploymentId, warning);
+        continue;
+      }
+
+      await connection.tooling.update('ApexPage', { Id: pageId, Markup: patchedMarkup });
+      logger.info({ deploymentId, pageName }, 'Patched VF page with React bundle');
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `Failed to patch VF page '${pageName}': ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+  }
+  return warnings;
+}
 
 /**
  * Resolve the on-disk path to the compiled child entry point.
@@ -576,7 +881,7 @@ async function runOneDeploy(
   const deploy = await components.deploy({
     usernameOrConnection: connection,
     apiOptions: {
-      rollbackOnError: true,
+      rollbackOnError: false,
       testLevel: 'NoTestRun',
       rest: false,
     },
@@ -618,6 +923,112 @@ async function runOneDeploy(
  *   numberComponents* are summed across all attempted stages.
  *   appUrl is set from the LAST stage that surfaced a UIBundle.
  */
+/**
+ * Substitute Salesforce ESW platform provisioning tokens that the Metadata API
+ * does NOT resolve itself (only the platform's own provisioning flow does).
+ *
+ * Tokens resolved:
+ *   ${ADMIN_USERNAME}  — the deploying user's username
+ *   ${SITE_DOMAIN}     — the org's *.my.site.com domain (or *.force.com fallback)
+ *   ${ESW_URL_PARENT}  — CamelCase URL path prefix derived from the CustomSite name
+ *   ${ESW_URL_LOWER}   — lowercase of ESW_URL_PARENT
+ *   ${ESW_URL}         — same as ESW_URL_PARENT
+ *
+ * The CustomSite name is read from the first `sites/*.site-meta.xml` file found
+ * under `dir`. If no site file is found the substitution is skipped.
+ */
+async function substituteEswTokens(
+  dir: string,
+  adminUsername: string,
+  instanceUrl: string
+): Promise<void> {
+  // Derive site domain: instanceUrl like `https://foo.my.salesforce.com`
+  // → `foo.my.site.com`. Handles pc-rnd sandbox and production patterns.
+  const siteDomain = instanceUrl
+    .replace(/^https?:\/\//, '')
+    .replace(/\.my\.salesforce\.com$/, '.my.site.com')
+    .replace(/\.my\.pc-rnd\.salesforce\.com$/, '.my.pc-rnd.site.com')
+    .replace(/\.my\..*\.salesforce\.com$/, (m) => m.replace('.salesforce.com', '.site.com'));
+
+  // Derive ESW URL prefix from the CustomSite name in `sites/*.site-meta.xml`.
+  // Convention: strip the `ESW_` prefix, remove remaining underscores, CamelCase each segment.
+  // e.g. `ESW_HelpAgent` → `ESWHelpAgent`
+  let eswUrl = '';
+  try {
+    const sitesDir = path.join(dir, 'force-app', 'main', 'default', 'sites');
+    const siteFiles = (await fs.readdir(sitesDir)).filter((f) => f.endsWith('.site-meta.xml'));
+    if (siteFiles.length > 0) {
+      const siteName = siteFiles[0].replace('.site-meta.xml', '');
+      eswUrl = siteName
+        .split('_')
+        .map((seg) => (seg.length > 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : ''))
+        .join('');
+    }
+  } catch {
+    /* no sites dir — not an ESW template */
+  }
+
+  if (!eswUrl) return;
+
+  const tokens: Record<string, string> = {
+    '${ADMIN_USERNAME}': adminUsername,
+    '${SITE_DOMAIN}': siteDomain,
+    '${ESW_URL_PARENT}': eswUrl,
+    '${ESW_URL_LOWER}': eswUrl.toLowerCase(),
+    '${ESW_URL}': eswUrl,
+  };
+
+  const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true });
+  await Promise.all(
+    entries
+      .filter(
+        (e) =>
+          e.isFile() &&
+          (e.name.endsWith('.xml') || e.name.endsWith('.json') || e.name.endsWith('.agent'))
+      )
+      .map(async (e) => {
+        const filePath = path.join(e.parentPath, e.name);
+        let content = await fs.readFile(filePath, 'utf-8');
+        let changed = false;
+        for (const [token, value] of Object.entries(tokens)) {
+          if (content.includes(token)) {
+            content = content.replaceAll(token, value);
+            changed = true;
+          }
+        }
+        if (changed) await fs.writeFile(filePath, content, 'utf-8');
+      })
+  );
+
+  logger.info({ adminUsername, siteDomain, eswUrl }, 'Substituted ESW platform tokens');
+}
+
+/**
+ * Walk all files under `dir` and replace every occurrence of `{{ORG_NAME}}`
+ * with the org's company name. Only touches `.xml` files — the only template
+ * type that uses this placeholder.
+ */
+async function substituteOrgName(dir: string, orgName: string): Promise<void> {
+  const escaped = orgName
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, '&apos;')
+    .replace(/"/g, '&quot;');
+  const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true });
+  await Promise.all(
+    entries
+      .filter((e) => e.isFile() && e.name.endsWith('.xml'))
+      .map(async (e) => {
+        const filePath = path.join(e.parentPath, e.name);
+        const content = await fs.readFile(filePath, 'utf-8');
+        if (content.includes('{{ORG_NAME}}')) {
+          await fs.writeFile(filePath, content.replaceAll('{{ORG_NAME}}', escaped), 'utf-8');
+        }
+      })
+  );
+}
+
 async function runStagedDeploy(
   deploymentId: string,
   projectDir: string,
@@ -625,6 +1036,19 @@ async function runStagedDeploy(
   connection: Connection,
   orgUsername: string
 ): Promise<void> {
+  const orgQuery = await connection.query<{ Name: string }>(
+    'SELECT Name FROM Organization LIMIT 1'
+  );
+  const orgName = orgQuery.records[0]?.Name ?? '';
+  if (orgName) {
+    await substituteOrgName(projectDir, orgName);
+  }
+
+  const instanceUrl = connection.getAuthInfoFields().instanceUrl;
+  if (instanceUrl) {
+    await substituteEswTokens(projectDir, orgUsername, instanceUrl);
+  }
+
   if (await hasReactFiles(projectDir)) {
     await runViteBuild(projectDir, orgUsername);
   }
@@ -672,8 +1096,27 @@ async function runStagedDeploy(
       allFileResponses.push(f);
     }
 
-    const stageFailed = runResult.status !== 'Succeeded';
-    if (stageFailed) {
+    // Treat SucceededPartial or "Failed but some components deployed" as partial success.
+    // With rollbackOnError:false, Salesforce may still return "Failed" status when only
+    // platform-auto-provisioned components failed (e.g. ESW service-not-available route).
+    const someDeployed = (runResult.numberComponentsDeployed ?? 0) > 0;
+    const stagePartial =
+      runResult.status === 'SucceededPartial' || (runResult.status === 'Failed' && someDeployed);
+    const stageFailed = runResult.status !== 'Succeeded' && !stagePartial;
+    if (stagePartial) {
+      // Platform auto-provisioned components failed (e.g. ESW service-not-available pages
+      // on orgs that don't support that route type). Treat as a warning and continue.
+      const failedComponents = runResult.fileResponses
+        .filter((f) => f.state === 'Failed')
+        .map((f) => f.fullName)
+        .join(', ');
+      const warning: DeploymentWarning = {
+        stage: stage.manifest,
+        errorMessage: `Stage '${stage.manifest}' partially succeeded — ${failedComponents || 'some components'} could not be deployed`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    } else if (stageFailed) {
       if (stage.optional) {
         // Optional stage failed — emit a warning and continue.
         const warning: DeploymentWarning = {
@@ -686,6 +1129,31 @@ async function runStagedDeploy(
         // Required stage failed — abort remaining stages.
         failedRequiredStage = stage.manifest;
         break;
+      }
+    }
+
+    // If this stage deployed an AiAuthoringBundle, publish + activate it
+    // immediately so the BotDefinition exists before subsequent stages run.
+    // (MessagingChannel deploy requires BotDefinition to exist.)
+    const stageHasAab = runResult.fileResponses.some(
+      (f) => f.type === 'AiAuthoringBundle' && f.state !== 'Failed'
+    );
+    if (stageHasAab && !failedRequiredStage) {
+      try {
+        const aabWarnings = await publishDeployedAiAuthoringBundles(
+          deploymentId,
+          runResult.fileResponses,
+          orgUsername,
+          projectDir
+        );
+        warnings.push(...aabWarnings);
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: stage.manifest,
+          errorMessage: `AiAuthoringBundle publish/activate failed after stage '${stage.manifest}': ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        warnings.push(warning);
+        addWarningEvent(deploymentId, warning);
       }
     }
   }
@@ -723,6 +1191,54 @@ async function runStagedDeploy(
       warnings.push(warning);
       addWarningEvent(deploymentId, warning);
     }
+
+    try {
+      const mcWarnings = await activateDeployedMessagingChannels(
+        deploymentId,
+        allFileResponses,
+        connection
+      );
+      warnings.push(...mcWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'messaging-channel-activate',
+        errorMessage: `MessagingChannel activation failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+
+    try {
+      const esdWarnings = await publishDeployedEmbeddedServiceConfigs(
+        deploymentId,
+        allFileResponses,
+        connection
+      );
+      warnings.push(...esdWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `EmbeddedServiceConfig publish failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
+
+    try {
+      const vfWarnings = await patchDeployedVfPagesWithReactBundle(
+        deploymentId,
+        allFileResponses,
+        connection
+      );
+      warnings.push(...vfWarnings);
+    } catch (err) {
+      const warning: DeploymentWarning = {
+        stage: 'embedded-service-publish',
+        errorMessage: `VF page React bundle injection failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+      warnings.push(warning);
+      addWarningEvent(deploymentId, warning);
+    }
   }
 
   let aggregateStatus: string;
@@ -754,16 +1270,26 @@ async function runStagedDeploy(
     deploymentResult.failedStage = failedRequiredStage;
   }
 
-  // appUrl comes from the LAST stage that surfaced a UIBundle —
-  // a later stage's bundle supersedes an earlier one. Skip on failure
-  // so partially-deployed apps don't get a misleading URL.
+  // appUrl: prefer the VF test page generated for EmbeddedServiceConfig
+  // (the canonical way to verify a chat deployment), falling back to any
+  // UIBundle that landed. Skip on failure to avoid misleading URLs.
   if (aggregateStatus !== 'Failed') {
-    const uiBundle = [...allFileResponses].reverse().find((f) => f.type === 'UIBundle');
-    if (uiBundle) {
-      const instanceUrl = connection.getAuthInfoFields().instanceUrl;
-      if (instanceUrl) {
-        const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
-        deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
+    const instanceUrl = connection.getAuthInfoFields().instanceUrl;
+    if (instanceUrl) {
+      const esd = [...allFileResponses]
+        .reverse()
+        .find((f) => f.type === 'EmbeddedServiceConfig' && f.state !== 'Failed');
+      if (esd) {
+        const vfHost = toVfDomainUrl(instanceUrl);
+        if (vfHost) {
+          deploymentResult.appUrl = `${vfHost}/apex/ESW${esd.fullName}1`;
+        }
+      } else {
+        const uiBundle = [...allFileResponses].reverse().find((f) => f.type === 'UIBundle');
+        if (uiBundle) {
+          const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+          deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
+        }
       }
     }
   }
@@ -836,12 +1362,22 @@ export async function deployMetadataAsync(
     // appUrl is surfaced only on success — a Failed single-pass deploy
     // must not yield a misleading webapp URL.
     if (runResult.status === 'Succeeded') {
-      const uiBundle = runResult.fileResponses.find((f) => f.type === 'UIBundle');
-      if (uiBundle) {
-        const instanceUrl = connection.getAuthInfoFields().instanceUrl;
-        if (instanceUrl) {
-          const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
-          deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
+      const instanceUrl = connection.getAuthInfoFields().instanceUrl;
+      if (instanceUrl) {
+        const esd = runResult.fileResponses.find(
+          (f) => f.type === 'EmbeddedServiceConfig' && f.state !== 'Failed'
+        );
+        if (esd) {
+          const vfHost = toVfDomainUrl(instanceUrl);
+          if (vfHost) {
+            deploymentResult.appUrl = `${vfHost}/apex/ESW${esd.fullName}1`;
+          }
+        } else {
+          const uiBundle = runResult.fileResponses.find((f) => f.type === 'UIBundle');
+          if (uiBundle) {
+            const appHost = toAppDomainUrl(instanceUrl) ?? instanceUrl;
+            deploymentResult.appUrl = `${appHost}/lwr/application/ai/c-${uiBundle.fullName}`;
+          }
         }
       }
 
@@ -874,6 +1410,22 @@ export async function deployMetadataAsync(
         const warning: DeploymentWarning = {
           stage: 'agent-publish',
           errorMessage: `AiAuthoringBundle publish/activate failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+        addWarningEvent(deploymentId, warning);
+        postDeployWarnings.push(warning);
+      }
+
+      try {
+        const vfWarnings = await patchDeployedVfPagesWithReactBundle(
+          deploymentId,
+          runResult.fileResponses,
+          connection
+        );
+        postDeployWarnings.push(...vfWarnings);
+      } catch (err) {
+        const warning: DeploymentWarning = {
+          stage: 'embedded-service-publish',
+          errorMessage: `VF page React bundle injection failed: ${err instanceof Error ? err.message : 'unknown error'}`,
         };
         addWarningEvent(deploymentId, warning);
         postDeployWarnings.push(warning);

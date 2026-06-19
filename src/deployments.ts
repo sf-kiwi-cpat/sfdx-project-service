@@ -154,12 +154,17 @@ export function setDeploymentResult(deploymentId: string, result: DeploymentResu
 }
 
 /**
- * Store a deployment error
+ * Store a deployment error and set a Failed result so SSE poll loops terminate.
  */
 export function setDeploymentError(deploymentId: string, error: string): void {
   const deployment = deploymentStore.get(deploymentId);
   if (deployment) {
     deployment.error = error;
+    deployment.result = {
+      deploymentId,
+      status: 'Failed',
+      errorMessage: error,
+    };
   }
 }
 

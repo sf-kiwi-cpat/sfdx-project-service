@@ -1,43 +1,38 @@
 {
   "type" : "sfdc_cms__view",
-  "title" : "Home",
+  "title" : "Service Not Available",
   "contentBody" : {
     "component" : {
       "children" : [ {
-        "children" : [ {
-          "attributes" : { },
-          "definition" : "cwcMessaging:container",
-          "id" : "e8043b76-9880-41b2-b0fd-7e350fb0b475",
-          "type" : "component"
-        } ],
-        "id" : "80617dc6-7687-4b2b-9f32-16b495478f67",
+        "children" : [ ],
+        "id" : "548894ef-3b0c-4c85-b000-1ee1b6d78e19",
         "name" : "content",
-        "title" : "content",
+        "title" : "Content",
         "type" : "region"
       }, {
         "children" : [ {
           "attributes" : {
             "customHeadTags" : "",
             "description" : "",
-            "pageTitle" : "Home",
+            "pageTitle" : "Service Not Available",
             "recordId" : "{!recordId}"
           },
           "definition" : "community_builder:seoAssistant",
-          "id" : "4697de51-823a-4973-8c6c-6491258ee732",
+          "id" : "bec3ef3c-4366-49ea-8d69-789fbf94f0ae",
           "type" : "component"
         } ],
-        "id" : "a1baf5f0-79bb-4ad5-8402-00df7364bb75",
+        "id" : "956526b8-f7d1-4f36-8a63-6a3829b21151",
         "name" : "sfdcHiddenRegion",
         "title" : "sfdcHiddenRegion",
         "type" : "region"
       } ],
-      "definition" : "embedded_service_iframe:frameLayout",
-      "id" : "54450df5-73c1-471a-8ab6-f349072b5be5",
+      "definition" : "community_layout:sldsFlexibleLayout",
+      "id" : "2ef815bd-7a06-4788-8d74-23e9ab59d048",
       "type" : "component"
     },
     "dataProviders" : [ ],
     "themeLayoutType" : "Inner",
-    "viewType" : "home"
+    "viewType" : "service-not-available"
   },
-  "urlName" : "home"
+  "urlName" : "sna-fallback"
 }

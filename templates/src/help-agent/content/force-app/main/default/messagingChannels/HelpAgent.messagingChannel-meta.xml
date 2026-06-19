@@ -29,7 +29,7 @@
         <keywordType>Help</keywordType>
         <language>en_US</language>
     </messagingKeywords>
-    <sessionHandlerAsa>HelpAgent</sessionHandlerAsa>
+    <sessionHandlerFlow>HelpAgent_Escalate_to_Queue</sessionHandlerFlow>
     <sessionHandlerQueue>HelpAgent_Queue</sessionHandlerQueue>
-    <sessionHandlerType>AgentforceServiceAgent</sessionHandlerType>
+    <sessionHandlerType>Flow</sessionHandlerType>
 </MessagingChannel>
