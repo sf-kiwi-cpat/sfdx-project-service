@@ -22,7 +22,7 @@ jobs:
       # fetch-depth: 0 so the pragma-justification check (below) can diff
       # against origin/main. The default of 1 makes `git diff origin/main...HEAD`
       # silently empty.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -85,7 +85,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -118,7 +118,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -145,7 +145,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -180,7 +180,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -203,7 +203,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -233,7 +233,7 @@ jobs:
     env:
       HUSKY: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:

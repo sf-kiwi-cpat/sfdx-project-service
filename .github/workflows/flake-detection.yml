@@ -57,7 +57,7 @@ jobs:
       # giving the workflow write access to the issue tracker.
       DRY_RUN: 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
